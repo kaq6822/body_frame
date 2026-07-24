@@ -5,7 +5,7 @@ import 'app_logger.dart';
 
 /// 격자 설정 영속화 서비스.
 ///
-/// MVP.md 4.3: 격자 설정은 앱을 종료한 후에도 유지한다.
+/// 격자 설정을 앱 종료 후에도 유지한다.
 /// shared_preferences에 JSON으로 저장한다.
 ///
 /// 테스트에서는 `SharedPreferences.setMockInitialValues({})` 후

@@ -5,7 +5,7 @@ import '../models/member.dart';
 import '../services/app_logger.dart';
 import '../services/photo_storage_service.dart';
 
-/// 회원 목록 정렬 기준. MVP.md 3.2.
+/// 회원 목록 정렬 기준.
 enum MemberSort {
   /// 최근 촬영순(촬영 기록이 없으면 뒤로).
   recentShot,
@@ -17,7 +17,7 @@ enum MemberSort {
   registeredAt,
 }
 
-/// 회원 목록 표시용 값 객체. MVP.md 3.2: 이름/대표사진/최근 촬영일/촬영 기록 수/최근 수정일.
+/// 회원 목록 표시용 값 객체.
 class MemberListItem {
   final Member member;
 
@@ -50,7 +50,7 @@ abstract class MemberRepository {
   Future<void> update(Member member);
 
   /// 회원과 그에 속한 촬영 기록/사진(DB 행) 및 저장소 파일을 모두 삭제한다.
-  /// MVP.md 3.4: 삭제 확인은 UI 계층에서 처리한다.
+  /// 삭제 확인은 UI 계층에서 처리한다.
   Future<void> delete(String id);
 }
 

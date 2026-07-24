@@ -2,7 +2,7 @@ import 'dart:io';
 
 import '../../../core/database/app_database.dart';
 
-/// 회원별 저장 공간 사용량. MVP.md 12장 '저장 공간 관리'.
+/// 회원별 저장 공간 사용량.
 class MemberStorageUsage {
   final String memberId;
   final String memberName;

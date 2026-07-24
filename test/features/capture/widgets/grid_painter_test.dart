@@ -5,7 +5,7 @@ import 'package:body_frame/features/capture/widgets/grid_painter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// 격자 페인터 단위 테스트. MVP.md 4.3 구성 요소(중앙 세로 기준선, 세로/가로선,
+/// 격자 페인터 구성 요소(중앙 세로 기준선, 세로/가로선,
 /// 중앙 기준점, 좌우 대칭 기준선)가 예외 없이 그려지는지, 그리고 설정 변경
 /// 감지(shouldRepaint)가 올바른지 검증한다.
 void main() {

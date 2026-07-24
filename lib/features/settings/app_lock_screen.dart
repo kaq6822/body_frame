@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/models.dart';
 import 'providers/settings_providers.dart';
 
-/// 17. 앱 잠금 설정 화면. MVP.md 11장.
+/// 앱 잠금 설정 화면.
 ///
 /// 잠금 방식(없음/비밀번호/PIN/생체 인증) 선택, PIN 설정·변경·해제, 생체 인증
 /// 사용 토글, 자동 잠금 시간 설정을 제공한다.

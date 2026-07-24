@@ -9,7 +9,7 @@ void main() {
   runApp(const ProviderScope(child: BodyFrameApp()));
 }
 
-/// 체형 변화 기록 앱. MVP.md 1장.
+/// 체형 변화 기록 앱.
 ///
 /// 로그인/서버 없는 스탠드얼론 앱. ProviderScope + MaterialApp.router로
 /// Riverpod과 go_router를 연결한다.
@@ -31,7 +31,7 @@ class _BodyFrameAppState extends State<BodyFrameApp> {
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       routerConfig: _router,
-      // MVP.md 11장: 앱 잠금·백그라운드 화면 가리기를 전체 화면에 적용.
+      // 앱 잠금과 백그라운드 화면 가리기를 전체 화면에 적용한다.
       builder: (context, child) => AppLockGate(child: child ?? const SizedBox.shrink()),
     );
   }

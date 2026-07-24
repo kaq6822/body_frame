@@ -9,7 +9,7 @@ import '../services/app_logger.dart';
 /// sqflite 데이터베이스 관리자.
 ///
 /// 스키마 정의와 마이그레이션을 담당한다. 사진 파일 자체는 저장하지 않고
-/// (MVP.md 19장) body_photos.file_path에 로컬 경로만 저장한다.
+/// body_photos.file_path에 로컬 경로만 저장한다.
 ///
 /// 테스트에서는 [AppDatabase.forTesting]으로 인메모리 DB를 주입한다.
 class AppDatabase {

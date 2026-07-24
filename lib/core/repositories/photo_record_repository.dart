@@ -5,12 +5,12 @@ import '../models/photo_record.dart';
 import '../services/app_logger.dart';
 import 'body_photo_repository.dart';
 
-/// 촬영 기록 CRUD. MVP.md 6장.
+/// 촬영 기록 CRUD.
 ///
 /// 촬영 기록 삭제 시 소속 사진(DB 행)은 외래 키 CASCADE로 정리되지만
 /// 사진 파일은 [BodyPhotoRepository]를 통해 명시적으로 삭제해야 한다.
 abstract class PhotoRecordRepository {
-  /// 회원의 촬영 기록 목록. MVP.md 6.2: 최신 촬영일 먼저.
+  /// 회원의 촬영 기록 목록(최신 촬영일 먼저).
   Future<List<PhotoRecord>> listByMember(String memberId);
 
   Future<PhotoRecord?> getById(String id);

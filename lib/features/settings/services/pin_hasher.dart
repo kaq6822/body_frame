@@ -3,8 +3,7 @@ import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 
-/// PIN/비밀번호 해시 유틸리티. MVP.md 11장: 원문은 저장하지 않고 salt+해시만
-/// 보관한다.
+/// PIN/비밀번호 원문은 저장하지 않고 salt+해시만 보관하는 유틸리티.
 ///
 /// flutter_secure_storage 등 플랫폼 플러그인에 의존하지 않는 순수 함수라서
 /// 플러그인 없이도 단위 테스트할 수 있다.

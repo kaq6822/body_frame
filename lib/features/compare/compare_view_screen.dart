@@ -16,10 +16,10 @@ final _dateFormat = DateFormat('yyyy.MM.dd');
 
 enum _CompareMode { sideBySide, overlay, slider }
 
-/// 14. 전후 사진 비교 화면. MVP.md 7.2~7.5.
+/// 전후 사진 비교 화면.
 ///
 /// 좌우 비교(이전=왼쪽/이후=오른쪽)를 기본으로 제공한다. 겹쳐 보기/슬라이더
-/// 비교는 4순위 기능이라 진입점만 두고 '준비 중'으로 표시한다(MVP.md 7.3/7.4).
+/// 비교는 아직 구현되지 않아 진입점만 두고 '준비 중'으로 표시한다.
 class CompareViewScreen extends ConsumerWidget {
   static const screenId = 'screen.compare.view';
 
@@ -91,7 +91,7 @@ class _CompareViewBodyState extends ConsumerState<_CompareViewBody> {
   bool _applyingSync = false;
 
   /// 실제 렌더링된 사진 프레임 크기. 생성 화면이 같은 크기로 재현해
-  /// 화면 구도 = 생성 이미지 구도를 보장한다(MVP.md 15장).
+  /// 화면 구도 = 생성 이미지 구도를 보장한다.
   Size? _panePhotoSize;
 
   @override

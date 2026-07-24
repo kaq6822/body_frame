@@ -2,7 +2,7 @@ import 'dart:convert';
 
 /// 촬영/비교 화면에서 사용하는 격자 설정.
 ///
-/// MVP.md 4.3 / 7.5: 표시 여부, 투명도, 선 굵기, 간격, 색상을 조절한다.
+/// 표시 여부, 투명도, 선 굵기, 간격, 색상을 조절한다.
 /// BodyPhoto에는 촬영 당시의 격자 설정을 JSON으로 함께 저장한다.
 class GridSettings {
   /// 격자 표시 여부.
@@ -28,7 +28,7 @@ class GridSettings {
     this.colorValue = 0xFFFFFFFF,
   });
 
-  /// MVP.md 4.3 '설정 초기화'용 기본값.
+  /// 설정 초기화용 기본값.
   static const GridSettings defaults = GridSettings();
 
   GridSettings copyWith({

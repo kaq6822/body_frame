@@ -17,9 +17,9 @@ import 'package:go_router/go_router.dart';
 
 /// 촬영 결과 확인 화면 위젯 테스트.
 ///
-/// MVP.md 4.5: 미리보기/저장 전 회원 이름·방향 재확인/저장 흐름(같은 촬영일
-/// 기록에 추가 또는 새 기록 생성)을 검증한다. 실제 리포지토리 대신
-/// ProviderScope override로 인메모리 Fake를 주입한다(ARCHITECTURE.md §8).
+/// 미리보기/저장 전 회원 이름·방향 재확인/저장 흐름(같은 촬영일 기록에
+/// 추가 또는 새 기록 생성)을 검증한다. 실제 리포지토리 대신 ProviderScope
+/// override로 인메모리 Fake를 주입한다.
 void main() {
   const memberId = 'm1';
   late Member member;
@@ -132,7 +132,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('screen.capture.review')), findsOneWidget);
-    // 저장 전 회원 이름 + 촬영 방향 재확인 표시(MVP.md 4.1/4.5).
+    // 저장 전 회원 이름 + 촬영 방향 재확인 표시.
     expect(find.textContaining('홍길동'), findsWidgets);
     expect(find.textContaining('정면'), findsWidgets);
 

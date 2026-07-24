@@ -1,17 +1,22 @@
-# body_frame
+# Body Frame
 
-A new Flutter project.
+회원의 체형 사진을 기기 안에 기록하고 날짜별로 비교하는 Android/iOS Flutter
+앱입니다. 로그인이나 서버 없이 동작하며, 촬영·갤러리 등록, 기록 관리, 비교 이미지
+생성, 앱 잠금, 백업·복원을 제공합니다.
 
-## Getting Started
+## 실행
 
-This project is a starting point for a Flutter application.
+```sh
+flutter pub get
+flutter run
+```
 
-A few resources to get you started if this is your first Flutter project:
+## 검증
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+```sh
+flutter analyze
+flutter test
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+개발 제약은 [AGENTS.md](AGENTS.md), 아직 남은 구현 범위는
+[ROADMAP.md](ROADMAP.md)를 참고합니다.

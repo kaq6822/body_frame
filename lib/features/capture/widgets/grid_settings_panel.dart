@@ -5,7 +5,7 @@ import 'package:body_frame/core/models/models.dart';
 import '../providers/capture_providers.dart';
 import 'async_status_indicator.dart';
 
-/// 격자 표시/투명도/굵기/간격/색상 설정 패널. MVP.md 4.3.
+/// 격자 표시/투명도/굵기/간격/색상 설정 패널.
 ///
 /// [gridSettingsControllerProvider]가 shared_preferences에 즉시 영속화하므로
 /// 앱을 종료해도 마지막 설정이 유지된다.

@@ -65,7 +65,7 @@ void main() {
 
     expect(find.byKey(const ValueKey(GridCameraScreen.screenId)), findsOneWidget);
     expect(find.byKey(const ValueKey('capture.shutter.button')), findsOneWidget);
-    // 회원 이름이 상시 표시되는지 확인(MVP.md 4.1).
+    // 회원 이름이 상시 표시되는지 확인.
     expect(find.textContaining('홍길동'), findsWidgets);
 
     await tester.tap(find.byKey(const ValueKey('capture.shutter.button')));

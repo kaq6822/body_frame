@@ -17,7 +17,7 @@ import 'widgets/capture_member_banner.dart';
 import 'widgets/grid_overlay.dart';
 import 'widgets/grid_settings_panel.dart';
 
-/// 7. 격자 카메라 화면. MVP.md 4.3 / 4.4.
+/// 격자 카메라 화면.
 ///
 /// 카메라 컨트롤러는 [captureCameraControllerFactoryProvider]로 주입한다.
 /// 테스트에서는 `ProviderScope(overrides: [captureCameraControllerFactoryProvider

@@ -4,11 +4,11 @@ import 'package:flutter/material.dart';
 
 import 'package:body_frame/core/models/models.dart';
 
-/// 촬영 정렬 보조 격자를 그리는 페인터. MVP.md 4.3.
+/// 촬영 정렬 보조 격자를 그리는 페인터.
 ///
 /// 구성 요소: 중앙 세로 기준선(강조), 일정 간격 세로/가로선, 중앙 기준점,
-/// 좌우 대칭 확인용 기준선(점선). 화면 오버레이 전용이며 저장 이미지에는
-/// 합성하지 않는다(MVP.md 15장: 원본 무변형).
+/// 좌우 대칭 확인용 기준선(점선). 화면 오버레이 전용이며 원본 이미지에는
+/// 합성하지 않는다.
 class GridPainter extends CustomPainter {
   final GridSettings settings;
 

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// RULE.md 6: 비동기 작업은 단순 로딩 스피너만 두지 말고 대기/진행/성공/실패를
-/// 구분해 표시한다.
+/// 비동기 작업의 대기/진행/성공/실패를 구분한다.
 enum AsyncStatus { idle, busy, success, failure }
 
 /// 공용 4-상태 표시 위젯. [statusId]로 화면별 `screen.<x>.status` 식별자를

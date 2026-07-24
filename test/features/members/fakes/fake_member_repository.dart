@@ -1,8 +1,7 @@
 import 'package:body_frame/core/models/models.dart';
 import 'package:body_frame/core/repositories/member_repository.dart';
 
-/// 위젯 테스트용 인메모리 [MemberRepository].
-/// ARCHITECTURE.md §8: 리포지토리는 ProviderScope override로 교체한다.
+/// ProviderScope override로 교체하는 위젯 테스트용 인메모리 [MemberRepository].
 class FakeMemberRepository implements MemberRepository {
   final Map<String, Member> _store = {};
 

@@ -5,8 +5,8 @@ import 'package:exif/exif.dart';
 
 /// 저장 대상 이미지의 픽셀 크기와 EXIF 회전 정보.
 ///
-/// MVP.md 15장: 이미지 회전 정보를 올바르게 반영해야 하므로 원본을 변형하지
-/// 않는 대신 이 메타데이터를 [BodyPhoto]에 함께 저장해 표시 단계에서 활용한다.
+/// 원본을 변형하지 않고도 이미지 회전을 올바르게 표시할 수 있도록 이
+/// 메타데이터를 [BodyPhoto]에 함께 저장한다.
 class ImageMeta {
   final int width;
   final int height;
@@ -45,7 +45,7 @@ Future<ImageMeta> readImageMeta(String path) async {
 }
 
 /// EXIF DateTimeOriginal(없으면 DateTime)에서 촬영일을 추출한다.
-/// 갤러리 등록 화면에서 촬영일 기본값 제안에 사용한다(MVP.md 5장).
+/// 갤러리 등록 화면에서 촬영일 기본값 제안에 사용한다.
 Future<DateTime?> readExifShotDate(List<int> bytes) async {
   try {
     final tags = await readExifFromBytes(bytes);

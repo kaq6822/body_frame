@@ -7,8 +7,8 @@ import 'compare_grid_overlay.dart';
 
 /// 좌우 비교 화면과 비교 이미지 생성 화면이 공용으로 쓰는 사진 표시 영역.
 ///
-/// MVP.md 15장 '화면 구도 = 생성 이미지 구도 일치'를 지키기 위해, 실제
-/// 조작 가능한(interactive) 비교 화면과 캡처용(정적) 생성 화면 모두 동일한
+/// 화면 구도와 생성 이미지 구도를 일치시키기 위해 실제 조작 가능한
+/// 비교 화면과 캡처용(정적) 생성 화면 모두 동일한
 /// InteractiveViewer 렌더링 경로를 사용한다. [interactive]가 false이면
 /// 제스처만 막고 [controller]의 행렬은 그대로 적용해 동일한 픽셀 결과를
 /// 만든다.
@@ -62,7 +62,7 @@ class ComparePhotoPane extends StatelessWidget {
           if (dateLabel.isNotEmpty)
             Text(dateLabel, style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 4),
-          // MVP.md 15장: 원본 비율은 항상 BoxFit.contain으로 유지한다.
+          // 원본 비율은 항상 BoxFit.contain으로 유지한다.
           // 두 사진이 동일한 비교가 가능하도록 고정 비율(3:4) 프레임을 쓰되,
           // 가로/세로 중 더 좁은 쪽에 맞춰 줄여(letterbox) 오버플로를 피한다
           // (plain AspectRatio는 폭만 기준으로 커지므로 세로 공간이 좁은

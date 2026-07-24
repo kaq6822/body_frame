@@ -1,6 +1,6 @@
 import 'package:body_frame/core/models/models.dart';
 
-/// 촬영 방향별 보조 안내 문구. MVP.md 4.4: 카메라 높이/회원 위치/발 위치/
+/// 촬영 방향별 보조 안내 문구. 카메라 높이/회원 위치/발 위치/
 /// 촬영 거리를 반복 가능한 조건으로 안내한다.
 List<String> captureGuideMessages(BodyDirection direction) {
   const distance = '촬영 거리: 전신이 화면에 들어오도록 약 2~3m 거리를 유지하세요.';

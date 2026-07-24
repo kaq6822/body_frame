@@ -14,16 +14,14 @@ import '../../../core/services/photo_storage_service.dart';
 import '../models/backup_models.dart';
 import 'app_settings_service.dart';
 
-/// 전체/회원별 데이터 백업 생성과 복원을 담당한다. MVP.md 10장.
-///
-/// 복원은 2단계로 나눠 "실패 시 기존 데이터 무손상"(MVP.md 10.3)을 보장한다.
+/// 전체/회원별 데이터 백업 생성과 복원을 담당한다.
 ///
 /// 1) [prepareRestore]: zip을 임시 디렉터리에 풀어 검증하고 미리보기(회원/기록/사진 수,
 ///    중복 회원 여부)를 반환한다. 이 단계는 실제 DB나 사진 저장소를 전혀 건드리지
 ///    않으므로, 잘못된 백업 파일이어도 기존 데이터는 항상 그대로 유지된다.
 /// 2) [applyRestore]: 사용자가 모드(교체/추가)를 확인한 뒤에만 실제로 적용한다.
 ///    DB 행 변경은 단일 트랜잭션으로 처리해 중간 실패 시 sqflite가 자동으로
-///    롤백하고, 사진 파일 복사는 그 트랜잭션이 커밋된 뒤에만 수행한다.
+///    롤백한다. 사진 파일 복사는 커밋 뒤 수행하며 실패 개수를 결과로 보고한다.
 abstract class BackupService {
   /// [memberId]가 null이면 전체 백업, 아니면 해당 회원만 백업한다.
   Future<Uint8List> buildBackup({String? memberId});

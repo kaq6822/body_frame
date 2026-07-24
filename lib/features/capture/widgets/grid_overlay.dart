@@ -5,8 +5,8 @@ import 'grid_painter.dart';
 
 /// 카메라 미리보기 위에 겹치는 격자 오버레이.
 ///
-/// RULE.md 5: CustomPaint 등 커스텀 UI는 Semantics로 역할/상태를 제공해야
-/// 하므로, 격자 표시 여부를 label로 노출한다. 사용자 입력을 받지 않으므로
+/// CustomPaint의 상태를 알 수 있도록 격자 표시 여부를 Semantics label로
+/// 노출한다. 사용자 입력을 받지 않으므로
 /// [IgnorePointer]로 하위 제스처(셔터 등)를 가로채지 않게 한다.
 class GridOverlay extends StatelessWidget {
   final GridSettings settings;

@@ -9,8 +9,7 @@ import 'fakes/fake_member_repository.dart';
 import 'fakes/fake_photo_record_repository.dart';
 
 /// 회원 관리 핵심 흐름: 등록 → 목록 표시 → 검색 → 삭제.
-/// 리포지토리는 인메모리 Fake로 대체해 실제 DB/파일 I/O 없이 검증한다
-/// (ARCHITECTURE.md §8).
+/// 리포지토리는 인메모리 Fake로 대체해 실제 DB/파일 I/O 없이 검증한다.
 void main() {
   testWidgets('회원 등록 → 목록 표시 → 검색 → 삭제', (tester) async {
     final fakeMembers = FakeMemberRepository();

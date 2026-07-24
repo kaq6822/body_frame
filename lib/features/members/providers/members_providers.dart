@@ -4,7 +4,7 @@ import '../../../core/models/models.dart';
 import '../../../core/providers.dart';
 import '../../../core/repositories/member_repository.dart';
 
-/// 정렬 옵션 한국어 라벨. MVP.md 3.2.
+/// 정렬 옵션 한국어 라벨.
 extension MemberSortLabel on MemberSort {
   String get label {
     switch (this) {
@@ -18,7 +18,7 @@ extension MemberSortLabel on MemberSort {
   }
 }
 
-/// 회원 목록 검색어. MVP.md 3.2.
+/// 회원 목록 검색어.
 final memberSearchQueryProvider =
     StateProvider.autoDispose<String>((ref) => '');
 
@@ -27,7 +27,7 @@ final memberSortProvider =
     StateProvider.autoDispose<MemberSort>((ref) => MemberSort.recentShot);
 
 /// 검색어/정렬을 반영한 회원 목록. 진행(loading)/성공(data)/실패(error)로
-/// 귀결된다(ARCHITECTURE.md §7). 등록/수정/삭제 성공 시 이 provider를
+/// 귀결된다. 등록/수정/삭제 성공 시 이 provider를
 /// invalidate하여 목록을 새로고침한다.
 final membersListProvider =
     FutureProvider.autoDispose<List<MemberListItem>>((ref) async {
@@ -46,7 +46,7 @@ final memberDetailProvider =
   return ref.watch(memberRepositoryProvider).getById(memberId);
 });
 
-/// 회원의 촬영 기록 목록(최신 촬영일 먼저). MVP.md 6.2.
+/// 회원의 촬영 기록 목록(최신 촬영일 먼저).
 final memberRecordsProvider = FutureProvider.autoDispose
     .family<List<PhotoRecord>, String>((ref, memberId) async {
   return ref.watch(photoRecordRepositoryProvider).listByMember(memberId);

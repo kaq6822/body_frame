@@ -7,7 +7,6 @@ import 'app_logger.dart';
 
 /// 사진 파일 저장 서비스.
 ///
-/// MVP.md 9.1 / 19장 원칙:
 /// - 원본 사진은 앱 전용 저장소(문서 디렉터리 하위 photos/{memberId}/)에 저장.
 /// - 사용자가 명시적으로 내보내기 전까지 일반 갤러리에 노출하지 않는다.
 /// - 원본 이미지는 절대 자동 변형/크롭하지 않는다. 바이트를 그대로 복사한다.
@@ -85,8 +84,7 @@ class PhotoStorageServiceImpl implements PhotoStorageService {
     final ext = p.extension(sourcePath);
     final name = fileName ?? _uniqueName(ext);
     final dest = _nonClobberingPath(p.join(dir.path, name));
-    // MVP.md 9.2: 동일 파일명이 존재해도 덮어쓰지 않는다.
-    // MVP.md 15장: 바이트 무변형 복사.
+    // 동일 파일명이 존재해도 덮어쓰지 않고 바이트를 무변형 복사한다.
     await source.copy(dest);
     _logger.info('photo.save', context: {'memberId': memberId});
     return dest;

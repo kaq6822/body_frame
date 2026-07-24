@@ -17,12 +17,12 @@ import '../../core/models/models.dart';
 import '../../core/providers.dart';
 import '../../core/services/app_logger.dart';
 
-/// 11. 원본 사진 보기 화면. MVP.md 6.3.
+/// 원본 사진 보기 화면.
 ///
 /// 확대/이동(원본 비율 유지, BoxFit.contain 기반), 촬영 방향/촬영일/메모
 /// 수정, 사진 교체, 내보내기(gal), 공유(share_plus), 삭제(확인 절차)를
 /// 제공한다. 촬영일은 [PhotoRecord]에 속하므로 편집 시 같은 기록의 다른
-/// 사진에도 반영된다(MVP.md 6.1: 촬영일은 촬영 기록 단위).
+/// 사진에도 반영된다.
 class PhotoViewScreen extends ConsumerWidget {
   static const screenId = 'screen.records.photo';
 

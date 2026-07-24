@@ -11,8 +11,7 @@ export '../members/providers/members_providers.dart'
 
 /// compare feature 전용 조회용 provider 모음.
 ///
-/// core 리포지토리/서비스를 조합만 하며, `lib/core/providers.dart`는 수정하지
-/// 않는다(ARCHITECTURE.md §1). 테스트에서는 core provider들을
+/// core 리포지토리/서비스를 조합한다. 테스트에서는 core provider들을
 /// `ProviderScope(overrides:)`로 Fake로 교체하면 이 provider들도 함께
 /// 교체된 구현을 사용한다.
 

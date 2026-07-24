@@ -5,7 +5,7 @@ import '../../core/models/models.dart';
 /// 위젯에 의존하지 않으므로 단위 테스트로 직접 검증한다.
 
 /// [beforePhotos]와 [afterPhotos] 양쪽에 모두 존재하는 촬영 방향만
-/// [BodyDirection] 정의 순서대로 반환한다. MVP.md 7.1: 동일한 촬영 방향끼리
+/// [BodyDirection] 정의 순서대로 반환한다. 동일한 촬영 방향끼리
 /// 비교하는 것을 기본으로 한다.
 List<BodyDirection> commonDirections(
   List<BodyPhoto> beforePhotos,

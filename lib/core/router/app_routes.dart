@@ -1,6 +1,6 @@
-/// 라우트 이름/경로 상수. MVP.md 12장의 20개 화면.
+/// 라우트 이름/경로 상수.
 ///
-/// 워커는 화면 이동 시 `context.goNamed(AppRoutes.<name>, ...)`를 사용하고,
+/// 화면 이동 시 `context.goNamed(AppRoutes.<name>, ...)`를 사용하고,
 /// 경로 문자열을 하드코딩하지 않는다. 경로 파라미터 키는 [AppParams]에 정의한다.
 class AppRoutes {
   AppRoutes._();
@@ -70,7 +70,7 @@ class AppRoutes {
   static const privacyInfo = 'settings.privacy';
 }
 
-/// 경로 파라미터 키. MVP.md 19장: 안정적 uuid 식별자를 파라미터로 전달한다.
+/// 경로 파라미터 키. 안정적 UUID 식별자를 전달한다.
 class AppParams {
   AppParams._();
 

@@ -5,8 +5,8 @@ import 'package:body_frame/core/providers.dart';
 import 'package:body_frame/core/services/grid_settings_service.dart';
 import '../camera/capture_camera_controller.dart';
 
-/// id로 회원 정보를 조회한다. 촬영/갤러리 등록 화면에서 회원 이름을
-/// 상시 표시하기 위해 사용한다(잘못된 회원 등록 방지, MVP.md 4.1).
+/// id로 회원 정보를 조회한다. 잘못된 회원에게 등록되는 일을 막기 위해
+/// 촬영/갤러리 등록 화면에서 회원 이름을 상시 표시할 때 사용한다.
 final memberByIdProvider =
     FutureProvider.autoDispose.family<Member?, String>((ref, memberId) async {
   final repository = ref.watch(memberRepositoryProvider);
@@ -23,9 +23,8 @@ final captureCameraControllerFactoryProvider =
 
 /// 격자 설정 로드/저장/초기화 상태.
 ///
-/// [GridSettingsService]로 shared_preferences에 영속화한다(MVP.md 4.3:
-/// 앱을 종료해도 설정 유지). 화면은 이 provider만 watch하면 되고, 로드/저장
-/// 실패는 [AsyncValue.error]로 노출되어 4-상태 UI 패턴을 그대로 따를 수 있다.
+/// [GridSettingsService]로 shared_preferences에 영속화한다. 화면은 이
+/// provider만 watch하면 되고, 로드/저장 실패는 [AsyncValue.error]로 노출된다.
 class GridSettingsController extends StateNotifier<AsyncValue<GridSettings>> {
   final GridSettingsService _service;
 

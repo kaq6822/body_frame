@@ -2,7 +2,7 @@ import 'package:body_frame/core/models/models.dart';
 import 'package:body_frame/core/repositories/body_photo_repository.dart';
 
 /// 인메모리 [BodyPhotoRepository] Fake. 회원 화면 위젯 테스트에서 실제
-/// sqflite/파일 I/O 없이 사진 조회를 대체한다(ARCHITECTURE.md §8).
+/// sqflite/파일 I/O 없이 사진 조회를 대체한다.
 class FakeBodyPhotoRepository implements BodyPhotoRepository {
   final List<BodyPhoto> photos = [];
 

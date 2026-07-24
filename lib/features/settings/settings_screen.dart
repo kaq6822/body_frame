@@ -7,7 +7,7 @@ import '../../core/providers.dart';
 import '../../core/router/app_routes.dart';
 import 'providers/settings_providers.dart';
 
-/// 16. 앱 설정 화면. MVP.md 12장 / 14장.
+/// 앱 설정 화면.
 ///
 /// 스튜디오명 설정, 기본 격자 설정, 앱 잠금/백업·복원/저장 공간/개인정보
 /// 안내로 진입하는 홈 화면.

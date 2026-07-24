@@ -10,7 +10,7 @@ import '../../core/providers.dart';
 import '../../core/router/app_routes.dart';
 import '../../core/services/app_logger.dart';
 
-/// 10. 촬영 기록 상세 화면. MVP.md 6.1 / 6.2.
+/// 촬영 기록 상세 화면.
 ///
 /// 촬영일/등록일, 방향별 사진 그리드(정면·좌·우·후면·기타), 기록 메모
 /// 표시/수정, 촬영일 수정, 기록 삭제(확인 절차)를 제공한다.

@@ -1,7 +1,7 @@
-/// 백업 대상 범위. MVP.md 10.1(전체)/10.2(회원별).
+/// 백업 대상 범위.
 enum BackupScope { all, member }
 
-/// 복원 모드. MVP.md 10.3: 교체 또는 추가.
+/// 복원 모드(교체 또는 추가).
 enum RestoreMode { replace, append }
 
 /// 백업 zip 내부 `data.json` 스키마 버전.

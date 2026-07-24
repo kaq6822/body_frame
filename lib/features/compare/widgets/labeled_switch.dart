@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// 안정적인 Semantics.identifier + ValueKey를 갖춘 공용 스위치.
-/// RULE.md 1~2: 문구/위치에 의존하지 않는 [id]로 조작 요소를 특정한다.
+/// 문구와 위치에 의존하지 않는 Semantics.identifier + ValueKey를 갖춘 스위치.
 class LabeledSwitch extends StatelessWidget {
   final String id;
   final String title;

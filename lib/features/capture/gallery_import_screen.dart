@@ -15,7 +15,7 @@ import 'widgets/async_status_indicator.dart';
 import 'widgets/capture_member_banner.dart';
 import 'widgets/direction_selector.dart';
 
-/// 9. 갤러리 사진 등록 화면. MVP.md 5장.
+/// 갤러리 사진 등록 화면.
 ///
 /// 여러 사진을 한 번에 선택해 사진별로 방향을 개별 지정하고, EXIF 촬영일이
 /// 있으면 기본값으로 제안한다(사용자가 직접 수정 가능). 같은 촬영일의

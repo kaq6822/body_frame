@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'providers/settings_providers.dart';
 import 'services/storage_stats_service.dart';
 
-/// 19. 저장 공간 관리 화면. MVP.md 12장 / 17장 3순위.
+/// 저장 공간 관리 화면.
 ///
 /// 전체 저장 공간 사용량과 회원별 사진 용량·개수를 표시한다.
 class StorageScreen extends ConsumerWidget {

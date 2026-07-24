@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// 비동기 상태를 진행/성공/실패로 구분해 표시하는 공용 위젯.
 ///
-/// ARCHITECTURE.md §7: 상태 표시 위젯에 `screen.<x>.status` 식별자를 부여하고,
-/// 실패 시 재시도 액션과 에러 메시지를 노출한다. 대기(idle) 상태는 호출부가
+/// 상태 표시 위젯에 `screen.<x>.status` 식별자를 부여하고 실패 시 재시도
+/// 액션과 에러 메시지를 노출한다. 대기(idle) 상태는 호출부가
 /// [AsyncValue]를 만들기 전(예: 액션 실행 전)에 해당하므로 이 위젯 바깥에서
 /// 표현한다.
 class AsyncValueView<T> extends StatelessWidget {

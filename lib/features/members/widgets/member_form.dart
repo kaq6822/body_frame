@@ -10,12 +10,12 @@ import '../../../core/providers.dart';
 import '../../../core/services/app_logger.dart';
 import '../providers/members_providers.dart';
 
-/// 회원 등록/수정 공용 폼. MVP.md 3.1: 이름만 필수, 나머지는 선택 입력이다.
+/// 회원 등록/수정 공용 폼. 이름만 필수이고 나머지는 선택 입력이다.
 ///
 /// [existing]이 null이면 등록, 아니면 해당 회원 정보로 초기화된 수정 폼이다.
 /// 호출부(등록/수정 화면)가 각자의 `screen.members.add`/`screen.members.edit`
 /// Semantics.identifier를 유지하고, 이 위젯은 `member.*`/`members.save.button`
-/// 요소 식별자를 제공한다(RULE.md 1~4).
+/// 요소 식별자를 제공한다.
 class MemberFormBody extends ConsumerStatefulWidget {
   final Member? existing;
 

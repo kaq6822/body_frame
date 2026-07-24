@@ -1,9 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
-    <!-- 격자 카메라 촬영(MVP.md 4장)을 위한 카메라 권한. -->
+    <!-- 격자 카메라 촬영을 위한 카메라 권한. -->
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
-    <!-- 갤러리 사진 등록(MVP.md 5장)·기기로 내보내기(MVP.md 9.2장, gal 패키지)를 위한
+    <!-- 갤러리 사진 등록과 기기로 내보내기(gal 패키지)를 위한
          미디어 권한. API 33+는 READ_MEDIA_IMAGES로 세분화된 사진 읽기 권한을 요구하고,
          API 29(Android 10) 이하는 gal 패키지가 갤러리에 저장할 때 WRITE_EXTERNAL_STORAGE가
          필요하다(API 30+는 스코프드 스토리지로 불필요하므로 maxSdkVersion으로 범위를 제한한다). -->
@@ -11,11 +11,10 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29"
         tools:replace="android:maxSdkVersion"/>
-    <!-- 앱 잠금(MVP.md 11장)의 생체 인증을 위한 권한. -->
+    <!-- 앱 잠금의 생체 인증을 위한 권한. -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
     <!-- 민감한 체형 사진·회원 정보가 adb backup/자동 백업으로 유출되지 않도록
-         시스템 백업을 비활성화한다(MVP.md 2장·11장). 데이터 이전은 앱 자체
-         백업/복원 기능(MVP.md 10장)을 사용한다. -->
+         시스템 백업을 비활성화한다. 데이터 이전은 앱 자체 백업/복원을 사용한다. -->
     <application
         android:label="body_frame"
         android:name="${applicationName}"

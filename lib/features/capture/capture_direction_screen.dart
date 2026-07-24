@@ -9,10 +9,10 @@ import 'widgets/async_status_indicator.dart';
 import 'widgets/capture_member_banner.dart';
 import 'widgets/direction_selector.dart';
 
-/// 6. 촬영 방향 선택 화면. MVP.md 4.2.
+/// 촬영 방향 선택 화면.
 ///
 /// 정면/좌측면/우측면/후면/기타 중 하나를 선택하면 격자 카메라 화면으로
-/// 이동한다. MVP.md 4.1: 잘못된 회원 등록을 막기 위해 대상 회원 이름을
+/// 이동한다. 잘못된 회원 등록을 막기 위해 대상 회원 이름을
 /// 화면에 명확히 표시한다.
 class CaptureDirectionScreen extends ConsumerWidget {
   static const screenId = 'screen.capture.direction';

@@ -23,9 +23,9 @@ import '../../features/settings/settings_screen.dart';
 import '../../features/settings/storage_screen.dart';
 import 'app_routes.dart';
 
-/// 앱 라우터. MVP.md 12장의 20개 화면을 전부 정의한다.
+/// 앱 라우터.
 ///
-/// 경로 파라미터는 [AppParams] 키를 사용한다. 워커는 화면 진입 시
+/// 경로 파라미터는 [AppParams] 키를 사용한다. 화면 진입 시
 /// `context.goNamed(...)` / `context.pushNamed(...)`에 [AppRoutes] 이름을 쓴다.
 GoRouter createAppRouter({String initialLocation = '/'}) {
   return GoRouter(

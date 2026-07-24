@@ -10,7 +10,7 @@ import '../../core/router/app_routes.dart';
 import 'providers/members_providers.dart';
 import 'widgets/async_status.dart';
 
-/// 2. 회원 목록 화면. MVP.md 3.2.
+/// 회원 목록 화면.
 ///
 /// 이름 검색, 3종 정렬(최근 촬영순/이름순/등록일순), 새 회원 등록 버튼과
 /// 빈 목록 상태 UI를 제공한다.

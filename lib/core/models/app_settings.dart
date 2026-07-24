@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'grid_settings.dart';
 
-/// 앱 잠금 방식. MVP.md 11장.
+/// 앱 잠금 방식.
 enum LockMode {
   none,
   password,
@@ -32,7 +32,7 @@ enum LockMode {
   }
 }
 
-/// 비교 이미지 생성 시 포함 항목. MVP.md 8장.
+/// 비교 이미지 생성 시 포함 항목.
 class ExportImageOptions {
   final bool includeMemberName;
   final bool includeShotDate;
@@ -42,7 +42,7 @@ class ExportImageOptions {
   final bool includeWatermark;
 
   const ExportImageOptions({
-    // MVP.md 8장: 개인정보 보호를 위해 회원 이름은 기본 숨김.
+    // 개인정보 보호를 위해 회원 이름은 기본 숨김.
     this.includeMemberName = false,
     this.includeShotDate = true,
     this.includeMemo = false,
@@ -92,10 +92,10 @@ class ExportImageOptions {
   }
 }
 
-/// 앱 전역 설정. MVP.md 14장 '앱 설정'.
+/// 앱 전역 설정.
 ///
 /// shared_preferences에 JSON으로 영속화한다. 잠금 비밀번호/PIN 자체는
-/// 여기에 저장하지 않고 flutter_secure_storage에 보관한다(설정 워커 담당).
+/// 여기에 저장하지 않고 flutter_secure_storage에 보관한다.
 class AppSettings {
   /// 앱 잠금 방식.
   final LockMode lockMode;

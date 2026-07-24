@@ -1,9 +1,9 @@
 import 'body_direction.dart';
 import 'grid_settings.dart';
 
-/// 체형 사진. MVP.md 14장 '체형 사진'.
+/// 체형 사진.
 ///
-/// MVP.md 19장 원칙: 사진 파일 자체는 DB에 저장하지 않고 [filePath]로
+/// 사진 파일 자체는 DB에 저장하지 않고 [filePath]로
 /// 로컬 경로와 메타데이터만 관리한다. 원본은 절대 변형/크롭하지 않으며
 /// [width]/[height]/[orientation]으로 올바른 표시 정보를 유지한다.
 class BodyPhoto {
@@ -23,7 +23,7 @@ class BodyPhoto {
   /// 원본 이미지 픽셀 높이.
   final int height;
 
-  /// EXIF 기반 회전 정보(1~8). MVP.md 15장: 회전 정보를 올바르게 반영.
+  /// EXIF 기반 회전 정보(1~8). 표시할 때 올바르게 반영한다.
   final int orientation;
 
   /// 촬영 당시 사용한 격자 설정(재현용).

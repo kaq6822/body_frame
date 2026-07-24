@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/models/models.dart';
 
-/// 촬영 화면과 동일한 규칙(MVP.md 4.3/7.5)으로 그리는 정렬용 격자 오버레이.
+/// 촬영 화면과 동일한 규칙으로 그리는 정렬용 격자 오버레이.
 ///
 /// 두 사진 위에 동일한 좌표/크기로 표시되어야 하므로, 컨테이너 크기를
 /// 기준으로 한 상대 좌표(중앙 기준 대칭)만 사용한다. 확대/이동 값과는
@@ -10,8 +10,8 @@ import '../../../core/models/models.dart';
 class CompareGridOverlay extends StatelessWidget {
   final GridSettings settings;
 
-  /// 예: 'compare.before.grid.overlay'. AI 검사/테스트가 격자 상태를
-  /// 확인할 수 있도록 별도 식별자를 부여한다(RULE.md 7).
+  /// 예: 'compare.before.grid.overlay'. 검사와 테스트가 격자 상태를
+  /// 확인할 수 있도록 별도 식별자를 부여한다.
   final String semanticsIdentifier;
 
   const CompareGridOverlay({

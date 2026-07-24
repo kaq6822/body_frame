@@ -42,7 +42,6 @@ void main() {
     );
 
     // ComparePhotoPane은 Image.file의 errorBuilder로 디코딩 실패를 흡수하므로
-    // (RULE.md 10: 실제 기기/파일에 의존하지 않는 재현 가능한 테스트),
     // 존재하지 않는 경로를 써서 실제 이미지 디코딩 없이 화면 로직만 검증한다.
     photos = FakeBodyPhotoRepository();
     photos.photos['bp1'] = BodyPhoto(
@@ -92,7 +91,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey(CompareExportScreen.screenId)), findsOneWidget);
-    // 회원 이름은 기본적으로 숨김(MVP.md 8장).
+    // 개인정보 보호를 위해 회원 이름은 기본적으로 숨긴다.
     expect(find.textContaining('홍길동'), findsNothing);
 
     // 회원 이름 포함 토글 -> 미리보기에 반영된다.

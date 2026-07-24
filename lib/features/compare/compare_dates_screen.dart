@@ -18,7 +18,7 @@ class CompareQueryKeys {
 
 final _dateFormat = DateFormat('yyyy.MM.dd');
 
-/// 12. 비교 날짜 선택 화면. MVP.md 7.1.
+/// 비교 날짜 선택 화면.
 ///
 /// 같은 회원의 이전/이후 촬영일(=촬영 기록)을 고르고 위치를 교환할 수 있다.
 class CompareDatesScreen extends ConsumerStatefulWidget {
@@ -40,7 +40,7 @@ class _CompareDatesScreenState extends ConsumerState<CompareDatesScreen> {
 
   void _applyDefaults(List<PhotoRecord> records) {
     if (_defaultsApplied || records.length < 2) return;
-    // listByMember는 최신 촬영일이 먼저 온다(ARCHITECTURE.md §4).
+    // listByMember는 최신 촬영일이 먼저 온다.
     // 이후=가장 최근, 이전=그다음으로 최근인 기록을 기본값으로 제안한다.
     _afterRecordId = records.first.id;
     _beforeRecordId = records[1].id;

@@ -12,12 +12,12 @@ import '../../core/services/app_logger.dart';
 import 'providers/members_providers.dart';
 import 'widgets/async_status.dart';
 
-/// 4. 회원 상세 화면. MVP.md 3.3.
+/// 회원 상세 화면.
 ///
 /// 기본 정보/메모/촬영 기록 목록을 표시하고, 새 사진 촬영·갤러리 등록·전후
-/// 비교는 각 담당 워커가 구현한 기존 라우트로 이동만 시킨다(foundation.md §8).
+/// 비교는 해당 기능의 기존 라우트로 이동한다.
 /// 삭제는 '복구 불가' 경고 다이얼로그 확인 후 리포지토리의 연쇄 삭제를
-/// 호출한다(MVP.md 3.4).
+/// 호출한다.
 class MemberDetailScreen extends ConsumerStatefulWidget {
   static const screenId = 'screen.members.detail';
 

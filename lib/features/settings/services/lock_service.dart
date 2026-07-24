@@ -4,7 +4,7 @@ import 'package:local_auth/local_auth.dart';
 import '../../../core/services/app_logger.dart';
 import 'pin_hasher.dart';
 
-/// 앱 잠금(PIN·비밀번호·생체 인증) 서비스. MVP.md 11장.
+/// 앱 잠금(PIN·비밀번호·생체 인증) 서비스.
 ///
 /// PIN/비밀번호 원문은 저장하지 않고 [PinHasher]로 만든 salt+해시만
 /// flutter_secure_storage에 보관한다.

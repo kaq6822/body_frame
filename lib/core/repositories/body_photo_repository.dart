@@ -6,10 +6,10 @@ import '../models/body_photo.dart';
 import '../services/app_logger.dart';
 import '../services/photo_storage_service.dart';
 
-/// 체형 사진 CRUD. MVP.md 6.3 / 7장.
+/// 체형 사진 CRUD.
 ///
 /// 사진 삭제 시 DB 행과 저장소 파일을 함께 제거한다. 원본 파일은 절대
-/// 수정/덮어쓰지 않으며(MVP.md 15장) 메타데이터만 갱신한다.
+/// 수정하거나 덮어쓰지 않으며 메타데이터만 갱신한다.
 abstract class BodyPhotoRepository {
   Future<List<BodyPhoto>> listByRecord(String recordId);
 

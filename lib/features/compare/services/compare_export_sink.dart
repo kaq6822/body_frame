@@ -8,9 +8,9 @@ import 'package:share_plus/share_plus.dart';
 
 /// 생성된 비교 이미지를 기기에 저장하거나 외부로 공유하는 출구.
 ///
-/// MVP.md 9장: 기기 사진 보관함 저장(gal)과 OS 공유 시트(share_plus)를
-/// 감싸는 얇은 추상화. 위젯 테스트에서는 실제 플러그인 채널을 타지 않도록
-/// [CompareExportSink]를 인메모리 Fake로 교체할 수 있다(ARCHITECTURE.md §8).
+/// 기기 사진 보관함 저장(gal)과 OS 공유 시트(share_plus)를 감싸는 얇은
+/// 추상화. 위젯 테스트에서는 실제 플러그인 채널을 타지 않도록
+/// [CompareExportSink]를 인메모리 Fake로 교체할 수 있다.
 abstract class CompareExportSink {
   Future<void> saveToGallery(Uint8List bytes, {required String name});
 

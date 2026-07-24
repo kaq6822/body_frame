@@ -12,7 +12,7 @@ import 'providers/settings_providers.dart';
 
 enum _OpStatus { idle, busy, success, failure }
 
-/// 18. 백업 및 복원 화면. MVP.md 10장.
+/// 백업 및 복원 화면.
 ///
 /// 대기/진행/성공/실패 상태를 `backup.progress.status`에 표시하고, 데이터
 /// 손실 가능성이 있는 복원(특히 교체 모드)은 반드시 확인 절차를 거친다.

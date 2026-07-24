@@ -20,11 +20,11 @@ import 'widgets/labeled_switch.dart';
 
 final _dateFormat = DateFormat('yyyy.MM.dd');
 
-/// 15. 비교 이미지 저장 설정 화면. MVP.md 8장.
+/// 비교 이미지 저장 설정 화면.
 ///
 /// 전후 비교 화면(compareView)에서 `extra`로 전달받은 [CompareExportRequest]
 /// (확대/이동 값, 격자, 대상 사진 등)를 그대로 재현해 화면 구도와 생성
-/// 이미지 구도를 일치시킨다(MVP.md 15장). 포함 항목을 선택한 뒤 RepaintBoundary로
+/// 이미지 구도를 일치시킨다. 포함 항목을 선택한 뒤 RepaintBoundary로
 /// 캡처하고, gal/share_plus로 저장·공유한다.
 class CompareExportScreen extends ConsumerStatefulWidget {
   static const screenId = 'screen.compare.export';
@@ -283,8 +283,8 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
   }
 
   /// `extra`가 소실된 경우(프로세스 복원/딥링크) 쿼리 파라미터로 기본 구도의
-  /// 요청을 재구성한다. 확대/이동 상태까지는 복원하지 못하지만(전체 사진
-  /// 표시, MVP.md 15장 기본값) 화면 자체는 계속 사용할 수 있다.
+  /// 요청을 재구성한다. 확대/이동 상태까지는 복원하지 못하지만 전체 사진을
+  /// 표시하는 기본 구도로 화면 자체는 계속 사용할 수 있다.
   Widget _buildFallbackFromQuery(BodyDirection direction, String beforeId,
       String afterId) {
     final bundleAsync = ref.watch(compareViewBundleProvider((

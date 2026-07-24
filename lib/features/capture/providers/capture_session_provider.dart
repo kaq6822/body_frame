@@ -5,9 +5,8 @@ import 'package:body_frame/core/models/models.dart';
 /// 촬영 방향 선택 → 격자 카메라 → 촬영 결과 확인 화면 사이에서 공유하는
 /// 임시 촬영 세션 상태.
 ///
-/// core/router는 화면 간 쿼리 파라미터 전달을 지원하지 않으므로(라우터는
-/// core 소유, 읽기 전용) capture 워커 소유의 Riverpod 상태로 방향/촬영 결과/
-/// 촬영일/메모를 화면 사이에서 넘긴다. `.family`로 회원별로 분리하고
+/// 화면 간 임시 촬영 데이터는 쿼리 파라미터 대신 Riverpod 상태로
+/// 전달한다. `.family`로 회원별로 분리하고
 /// `.autoDispose`로 촬영 흐름을 완전히 벗어나면 초기화되게 한다.
 class CaptureSessionState {
   final BodyDirection direction;

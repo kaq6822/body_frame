@@ -3,10 +3,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/router/app_routes.dart';
 
-/// 1. 앱 시작 화면. MVP.md 12장.
+/// 앱 시작 화면.
 ///
-/// 로그인/회원가입 없이(MVP.md 2장) 곧바로 회원 목록으로 진입한다.
-/// 설정 워커가 앱 잠금 게이트를 여기에 추가할 수 있다.
+/// 로그인이나 회원가입 없이 곧바로 회원 목록으로 진입한다.
 class AppStartScreen extends StatelessWidget {
   static const screenId = 'screen.app.start';
 

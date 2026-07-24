@@ -7,9 +7,8 @@ import 'package:body_frame/core/repositories/photo_record_repository.dart';
 import 'package:body_frame/core/services/grid_settings_service.dart';
 import 'package:body_frame/features/compare/services/compare_export_sink.dart';
 
-/// compare 워커 테스트 전용 인메모리 Fake 모음.
+/// compare 테스트 전용 인메모리 Fake 모음.
 ///
-/// ARCHITECTURE.md §8: 리포지토리/서비스는 추상 인터페이스이므로
 /// `ProviderScope(overrides:)`에서 이 Fake들로 교체해 실제 DB/플러그인
 /// 채널 없이도 화면을 검증할 수 있다.
 class FakeMemberRepository implements MemberRepository {

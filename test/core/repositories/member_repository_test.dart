@@ -9,7 +9,7 @@ import 'package:body_frame/core/services/photo_storage_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-/// 워커 참고용: 인메모리 sqflite(FFI) + 임시 저장소로 리포지토리를 테스트하는 패턴.
+/// 인메모리 sqflite(FFI) + 임시 저장소로 리포지토리를 테스트하는 패턴.
 void main() {
   late AppDatabase db;
   late Directory tempRoot;

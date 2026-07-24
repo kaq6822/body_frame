@@ -17,11 +17,11 @@ import 'widgets/async_status_indicator.dart';
 import 'widgets/capture_member_banner.dart';
 import 'widgets/direction_selector.dart';
 
-/// 8. 촬영 결과 확인 화면. MVP.md 4.5.
+/// 촬영 결과 확인 화면.
 ///
 /// 미리보기(원본 비율, BoxFit.contain)/확대/다시 촬영/방향 변경/촬영일·메모
-/// 입력/저장을 제공한다. 저장 전 회원 이름과 촬영 방향을 다시 표시한다
-/// (MVP.md 4.1). 저장은 같은 촬영일의 [PhotoRecord]가 있으면 재사용하고,
+/// 입력/저장을 제공한다. 저장 전 회원 이름과 촬영 방향을 다시 표시한다.
+/// 저장은 같은 촬영일의 [PhotoRecord]가 있으면 재사용하고,
 /// 없으면 새로 만든다.
 class CaptureReviewScreen extends ConsumerStatefulWidget {
   static const screenId = 'screen.capture.review';

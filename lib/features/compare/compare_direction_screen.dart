@@ -12,7 +12,7 @@ import 'widgets/compare_missing_context.dart';
 
 final _dateFormat = DateFormat('yyyy.MM.dd');
 
-/// 13. 비교 방향 선택 화면. MVP.md 7.1.
+/// 비교 방향 선택 화면.
 ///
 /// 이전/이후 촬영 기록에 공통으로 존재하는 방향만 선택 가능하게 하고
 /// (동일 방향끼리 비교가 기본), 선택 시 해당 방향의 사진 id를 확정해
