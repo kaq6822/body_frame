@@ -38,5 +38,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('screen.members.list')), findsOneWidget);
+
+    // 회원 목록에서 앱 설정 화면으로 진입할 수 있어야 한다.
+    await tester.tap(find.byKey(const ValueKey('members.settings.button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('screen.settings.home')), findsOneWidget);
   });
 }

@@ -29,7 +29,9 @@ class _MembersListScreenState extends ConsumerState<MembersListScreen> {
   @override
   void initState() {
     super.initState();
-    _searchCtrl = TextEditingController(text: ref.read(memberSearchQueryProvider));
+    _searchCtrl = TextEditingController(
+      text: ref.read(memberSearchQueryProvider),
+    );
   }
 
   @override
@@ -81,6 +83,17 @@ class _MembersListScreenState extends ConsumerState<MembersListScreen> {
                       ),
                     )
                     .toList(),
+              ),
+            ),
+            Semantics(
+              identifier: 'members.settings.button',
+              button: true,
+              label: '앱 설정',
+              child: IconButton(
+                key: const ValueKey('members.settings.button'),
+                tooltip: '앱 설정',
+                icon: const Icon(Icons.settings_outlined),
+                onPressed: () => context.pushNamed(AppRoutes.settings),
               ),
             ),
           ],
@@ -198,8 +211,9 @@ class _MemberTile extends StatelessWidget {
       child: ListTile(
         key: ValueKey('members.item.$index'),
         leading: CircleAvatar(
-          backgroundImage:
-              member.avatarPath != null ? FileImage(File(member.avatarPath!)) : null,
+          backgroundImage: member.avatarPath != null
+              ? FileImage(File(member.avatarPath!))
+              : null,
           child: member.avatarPath == null ? const Icon(Icons.person) : null,
         ),
         title: Text(member.name),
