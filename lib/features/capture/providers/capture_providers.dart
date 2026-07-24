@@ -1,0 +1,65 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'package:body_frame/core/models/models.dart';
+import 'package:body_frame/core/providers.dart';
+import 'package:body_frame/core/services/grid_settings_service.dart';
+import '../camera/capture_camera_controller.dart';
+
+/// id로 회원 정보를 조회한다. 촬영/갤러리 등록 화면에서 회원 이름을
+/// 상시 표시하기 위해 사용한다(잘못된 회원 등록 방지, MVP.md 4.1).
+final memberByIdProvider =
+    FutureProvider.autoDispose.family<Member?, String>((ref, memberId) async {
+  final repository = ref.watch(memberRepositoryProvider);
+  return repository.getById(memberId);
+});
+
+/// 실제 카메라 컨트롤러 생성 팩토리. 테스트에서
+/// `captureCameraControllerFactoryProvider.overrideWithValue(() => Fake...())`로
+/// 교체해 실기기 카메라 없이 위젯을 검증한다.
+final captureCameraControllerFactoryProvider =
+    Provider<CaptureCameraController Function()>(
+  (ref) => DeviceCaptureCameraController.new,
+);
+
+/// 격자 설정 로드/저장/초기화 상태.
+///
+/// [GridSettingsService]로 shared_preferences에 영속화한다(MVP.md 4.3:
+/// 앱을 종료해도 설정 유지). 화면은 이 provider만 watch하면 되고, 로드/저장
+/// 실패는 [AsyncValue.error]로 노출되어 4-상태 UI 패턴을 그대로 따를 수 있다.
+class GridSettingsController extends StateNotifier<AsyncValue<GridSettings>> {
+  final GridSettingsService _service;
+
+  GridSettingsController(this._service) : super(const AsyncValue.loading()) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    state = const AsyncValue.loading();
+    try {
+      final settings = await _service.load();
+      state = AsyncValue.data(settings);
+    } catch (error, stackTrace) {
+      state = AsyncValue.error(error, stackTrace);
+    }
+  }
+
+  /// 로드 실패 시 재시도.
+  Future<void> retry() => _load();
+
+  Future<void> update(GridSettings Function(GridSettings current) updater) async {
+    final current = state.value ?? GridSettings.defaults;
+    final next = updater(current);
+    state = AsyncValue.data(next);
+    await _service.save(next);
+  }
+
+  Future<void> reset() async {
+    await _service.reset();
+    state = const AsyncValue.data(GridSettings.defaults);
+  }
+}
+
+final gridSettingsControllerProvider = StateNotifierProvider.autoDispose<
+    GridSettingsController, AsyncValue<GridSettings>>(
+  (ref) => GridSettingsController(ref.watch(gridSettingsServiceProvider)),
+);
