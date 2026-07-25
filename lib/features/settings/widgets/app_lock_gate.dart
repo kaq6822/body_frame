@@ -52,9 +52,9 @@ class _AppLockGateState extends ConsumerState<AppLockGate>
 
     if (backgroundStates.contains(state)) {
       _backgroundedAt = DateTime.now();
-      if (lockEnabled) {
-        setState(() => _hiddenInBackground = true);
-      }
+      // 잠금을 사용하지 않더라도 최근 앱 미리보기에는 민감한 사진과 회원
+      // 정보가 노출되지 않도록 항상 보호 화면으로 덮는다.
+      setState(() => _hiddenInBackground = true);
       return;
     }
 
@@ -91,9 +91,10 @@ class _AppLockGateState extends ConsumerState<AppLockGate>
     return settingsAsync.when(
       data: (settings) {
         _checkColdStart(settings);
+        final contentCovered = _hiddenInBackground || _locked;
         return Stack(
           children: [
-            widget.child,
+            ExcludeSemantics(excluding: contentCovered, child: widget.child),
             if (_hiddenInBackground) const _BackgroundCoverOverlay(),
             if (_locked)
               _LockScreen(
@@ -107,11 +108,21 @@ class _AppLockGateState extends ConsumerState<AppLockGate>
       // 잠금을 설정한 사용자의 콜드 스타트에서 민감한 화면이 잠금 화면보다
       // 먼저 렌더링되는 노출 창을 막는다.
       loading: () => Stack(
-        children: [widget.child, const _BackgroundCoverOverlay()],
+        children: [
+          ExcludeSemantics(child: widget.child),
+          const _BackgroundCoverOverlay(),
+        ],
       ),
-      // 설정 저장소가 손상된 예외 상황에서는 앱이 영구히 잠기는 것을
-      // 방지하기 위해 콘텐츠를 보여준다.
-      error: (e, st) => widget.child,
+      // 설정 저장소 접근 자체가 실패하면 잠금 사용 여부를 확인할 수 없으므로
+      // 민감한 본문을 노출하지 않고 재시도 가능한 보호 화면을 표시한다.
+      error: (e, st) => Stack(
+        children: [
+          ExcludeSemantics(child: widget.child),
+          _SettingsFailureOverlay(
+            onRetry: () => ref.invalidate(appSettingsControllerProvider),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -123,12 +134,49 @@ class _BackgroundCoverOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     return Positioned.fill(
       child: Semantics(
+        key: const ValueKey('screen.lock.backgroundCover'),
         identifier: 'screen.lock.backgroundCover',
         container: true,
         label: '화면 보호 중',
         child: Material(
           color: Theme.of(context).scaffoldBackgroundColor,
           child: const Center(child: Icon(Icons.lock, size: 48)),
+        ),
+      ),
+    );
+  }
+}
+
+class _SettingsFailureOverlay extends StatelessWidget {
+  final VoidCallback onRetry;
+
+  const _SettingsFailureOverlay({required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: Semantics(
+        identifier: 'screen.lock.settingsError',
+        container: true,
+        label: '잠금 설정을 불러오지 못함',
+        child: Material(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.lock, size: 48),
+                const SizedBox(height: 16),
+                const Text('잠금 설정을 불러오지 못했습니다'),
+                const SizedBox(height: 8),
+                FilledButton(
+                  key: const ValueKey('lock.settings.retry.button'),
+                  onPressed: onRetry,
+                  child: const Text('다시 시도'),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -148,30 +196,24 @@ class _LockScreen extends ConsumerStatefulWidget {
 class _LockScreenState extends ConsumerState<_LockScreen> {
   static const screenId = 'screen.lock.gate';
 
-  /// 연속 실패 이 횟수마다 일시적으로 입력을 제한한다(무차별 대입 완화).
-  static const int _maxAttemptsBeforeLockout = 5;
-  static const Duration _lockoutDuration = Duration(seconds: 30);
-
   final _secretController = TextEditingController();
   String? _error;
   bool _busy = false;
-  int _failedAttempts = 0;
   DateTime? _lockedUntil;
   Timer? _lockoutTicker;
 
   bool get _isLockedOut =>
       _lockedUntil != null && DateTime.now().isBefore(_lockedUntil!);
 
-  int get _lockoutRemainingSeconds => _isLockedOut
-      ? _lockedUntil!.difference(DateTime.now()).inSeconds + 1
-      : 0;
+  int get _lockoutRemainingSeconds =>
+      _isLockedOut ? _lockedUntil!.difference(DateTime.now()).inSeconds + 1 : 0;
 
-  bool get _biometricOnly =>
-      widget.settings.lockMode == LockMode.biometric;
+  bool get _biometricOnly => widget.settings.lockMode == LockMode.biometric;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadThrottle());
     if (widget.settings.biometricEnabled || _biometricOnly) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _tryBiometric());
     }
@@ -184,8 +226,17 @@ class _LockScreenState extends ConsumerState<_LockScreen> {
     super.dispose();
   }
 
-  void _startLockout() {
-    _lockedUntil = DateTime.now().add(_lockoutDuration);
+  Future<void> _loadThrottle() async {
+    final state = await ref.read(lockServiceProvider).loadThrottleState();
+    if (!mounted) return;
+    _lockedUntil = state.lockedUntil;
+    if (state.isLockedOut) {
+      _startLockoutTicker();
+      setState(() {});
+    }
+  }
+
+  void _startLockoutTicker() {
     _lockoutTicker?.cancel();
     // 남은 제한 시간 표시를 1초마다 갱신하고, 제한이 끝나면 자동 해제한다.
     _lockoutTicker = Timer.periodic(const Duration(seconds: 1), (t) {
@@ -195,7 +246,10 @@ class _LockScreenState extends ConsumerState<_LockScreen> {
       }
       if (!_isLockedOut) {
         t.cancel();
-        setState(() => _error = null);
+        setState(() {
+          _lockedUntil = null;
+          _error = null;
+        });
       } else {
         setState(() {});
       }
@@ -214,13 +268,14 @@ class _LockScreenState extends ConsumerState<_LockScreen> {
     if (!mounted) return;
     setState(() => _busy = false);
     if (ok) {
-      _failedAttempts = 0;
       _secretController.clear();
       widget.onUnlocked();
     } else {
-      _failedAttempts += 1;
-      if (_failedAttempts % _maxAttemptsBeforeLockout == 0) {
-        _startLockout();
+      final throttle = await ref.read(lockServiceProvider).loadThrottleState();
+      if (!mounted) return;
+      if (throttle.isLockedOut) {
+        _lockedUntil = throttle.lockedUntil;
+        _startLockoutTicker();
         setState(() {});
       } else {
         setState(() => _error = '일치하지 않습니다. 다시 시도해 주세요.');
@@ -268,8 +323,12 @@ class _LockScreenState extends ConsumerState<_LockScreen> {
                           controller: _secretController,
                           enabled: !_isLockedOut,
                           obscureText: true,
-                          keyboardType: TextInputType.number,
-                          maxLength: 16,
+                          keyboardType: isPassword
+                              ? TextInputType.visiblePassword
+                              : TextInputType.number,
+                          autocorrect: false,
+                          enableSuggestions: false,
+                          maxLength: isPassword ? 128 : 12,
                           textAlign: TextAlign.center,
                           decoration: InputDecoration(
                             labelText: label,
@@ -298,20 +357,21 @@ class _LockScreenState extends ConsumerState<_LockScreen> {
                       const SizedBox(height: 16),
                       ElevatedButton(
                         key: const ValueKey('lock.gate.submit.button'),
-                        onPressed:
-                            (_busy || _isLockedOut) ? null : _submitSecret,
+                        onPressed: (_busy || _isLockedOut)
+                            ? null
+                            : _submitSecret,
                         child: _busy
                             ? const SizedBox(
                                 width: 16,
                                 height: 16,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
                             : const Text('확인'),
                       ),
                     ],
-                    if (widget.settings.biometricEnabled ||
-                        _biometricOnly) ...[
+                    if (widget.settings.biometricEnabled || _biometricOnly) ...[
                       const SizedBox(height: 8),
                       TextButton.icon(
                         key: const ValueKey('lock.gate.biometric.button'),

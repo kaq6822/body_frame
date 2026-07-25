@@ -15,7 +15,10 @@ import '../services/storage_stats_service.dart';
 /// 서비스(설정 영속화·잠금·백업·저장 공간 통계)만 정의한다.
 
 final appSettingsServiceProvider = Provider<AppSettingsService>((ref) {
-  return AppSettingsServiceImpl(logger: ref.watch(appLoggerProvider));
+  return AppSettingsServiceImpl(
+    logger: ref.watch(appLoggerProvider),
+    storage: ref.watch(photoStorageServiceProvider),
+  );
 });
 
 final lockServiceProvider = Provider<LockService>((ref) {
@@ -27,12 +30,27 @@ final backupServiceProvider = Provider<BackupService>((ref) {
     database: ref.watch(appDatabaseProvider),
     storage: ref.watch(photoStorageServiceProvider),
     settingsService: ref.watch(appSettingsServiceProvider),
+    gridSettingsService: ref.watch(gridSettingsServiceProvider),
     logger: ref.watch(appLoggerProvider),
   );
 });
 
+/// 라우터와 설정 상태를 만들기 전에 중단된 전체 복원을 조정하는 부트스트랩 경계.
+///
+/// 함수 provider로 분리해 앱 루트 테스트가 플랫폼 저장소 없이 시작 순서를
+/// 결정론적으로 검증할 수 있게 한다.
+final restoreStartupReconcilerProvider = Provider<Future<void> Function()>((
+  ref,
+) {
+  final service = ref.watch(backupServiceProvider);
+  return service.cleanupStaleRestoreDirectories;
+});
+
 final storageStatsServiceProvider = Provider<StorageStatsService>((ref) {
-  return StorageStatsServiceImpl(database: ref.watch(appDatabaseProvider));
+  return StorageStatsServiceImpl(
+    database: ref.watch(appDatabaseProvider),
+    storage: ref.watch(photoStorageServiceProvider),
+  );
 });
 
 /// 앱 설정(AppSettings) 상태. 화면들이 공유하는 단일 소스.
@@ -47,15 +65,15 @@ class AppSettingsController extends AsyncNotifier<AppSettings> {
   ) async {
     final current = state.valueOrNull ?? AppSettings.defaults;
     final next = updater(current);
-    state = AsyncValue.data(next);
     await ref.read(appSettingsServiceProvider).save(next);
+    state = AsyncValue.data(next);
   }
 }
 
 final appSettingsControllerProvider =
     AsyncNotifierProvider<AppSettingsController, AppSettings>(
-  AppSettingsController.new,
-);
+      AppSettingsController.new,
+    );
 
 /// 저장 공간 사용량(screen.settings.storage).
 final storageUsageProvider = FutureProvider.autoDispose((ref) {

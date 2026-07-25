@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import 'package:uuid/uuid.dart';
 
 import 'package:body_frame/core/models/models.dart';
 import 'package:body_frame/core/providers.dart';
+import 'package:body_frame/core/services/app_image_picker.dart';
 import 'package:body_frame/core/services/app_logger.dart';
 import 'providers/capture_providers.dart';
 import 'utils/image_meta.dart';
@@ -28,7 +30,8 @@ class GalleryImportScreen extends ConsumerStatefulWidget {
   const GalleryImportScreen({super.key, required this.memberId});
 
   @override
-  ConsumerState<GalleryImportScreen> createState() => _GalleryImportScreenState();
+  ConsumerState<GalleryImportScreen> createState() =>
+      _GalleryImportScreenState();
 }
 
 class _GalleryPickItem {
@@ -45,12 +48,71 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
   AsyncStatus _pickStatus = AsyncStatus.idle;
   AsyncStatus _saveStatus = AsyncStatus.idle;
   String? _errorMessage;
+  bool _recoveringLostImages = false;
+  bool _lostRecoveryScheduled = false;
+
+  ImagePickerRequestContext get _pickerContext =>
+      ImagePickerRequestContext.galleryImport(widget.memberId);
 
   DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
   String _dateKey(DateTime d) => '${d.year}-${d.month}-${d.day}';
 
   bool get _allDirectionsAssigned =>
       _items.isNotEmpty && _items.every((item) => item.direction != null);
+
+  @override
+  void initState() {
+    super.initState();
+    ref.listenManual<RecoveredImagePickerSelection?>(
+      appImagePickerCoordinatorProvider,
+      (previous, next) {
+        if (next?.context == _pickerContext) {
+          _scheduleLostImageRecovery();
+        }
+      },
+      fireImmediately: true,
+    );
+  }
+
+  void _scheduleLostImageRecovery() {
+    if (_lostRecoveryScheduled) return;
+    _lostRecoveryScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _lostRecoveryScheduled = false;
+      if (mounted) unawaited(_recoverLostImages());
+    });
+  }
+
+  Future<void> _recoverLostImages() async {
+    if (!mounted || _recoveringLostImages) return;
+    final coordinator = ref.read(appImagePickerCoordinatorProvider.notifier);
+    final recovered = coordinator.recoveredFor(_pickerContext);
+    if (recovered == null) return;
+    _recoveringLostImages = true;
+    setState(() {
+      _pickStatus = AsyncStatus.busy;
+      _errorMessage = null;
+    });
+    final logger = ref.read(appLoggerProvider);
+    try {
+      await _replacePickedItems(recovered.files);
+      if (!mounted) return;
+      await coordinator.acknowledgeRecovered(_pickerContext);
+      logger.info(
+        'gallery.pick.recovered',
+        context: {'count': recovered.files.length},
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _pickStatus = AsyncStatus.failure;
+        _errorMessage = '이전 사진 선택 결과를 복구하지 못했습니다.';
+      });
+      logger.phase('gallery.pick.recovery', LogPhase.failure);
+    } finally {
+      _recoveringLostImages = false;
+    }
+  }
 
   Future<void> _pickImages() async {
     setState(() {
@@ -59,28 +121,11 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
     });
     final logger = ref.read(appLoggerProvider);
     try {
-      final picker = ImagePicker();
-      final files = await picker.pickMultiImage();
-      final items = <_GalleryPickItem>[];
-      for (final file in files) {
-        var shotDate = _dateOnly(DateTime.now());
-        try {
-          final bytes = await file.readAsBytes();
-          final exifDate = await readExifShotDate(bytes);
-          if (exifDate != null) shotDate = exifDate;
-        } catch (_) {
-          // EXIF가 없거나 파싱에 실패하면 오늘 날짜를 기본값으로 유지한다.
-        }
-        items.add(_GalleryPickItem(file: file, shotDate: shotDate));
-      }
-      if (!mounted) return;
-      setState(() {
-        _items
-          ..clear()
-          ..addAll(items);
-        _pickStatus = AsyncStatus.idle;
-      });
-      logger.info('gallery.pick', context: {'count': items.length});
+      final files = await ref
+          .read(appImagePickerCoordinatorProvider.notifier)
+          .pickMultiImage(context: _pickerContext);
+      await _replacePickedItems(files);
+      logger.info('gallery.pick', context: {'count': files.length});
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -89,6 +134,28 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
       });
       logger.phase('gallery.pick', LogPhase.failure);
     }
+  }
+
+  Future<void> _replacePickedItems(List<XFile> files) async {
+    final items = <_GalleryPickItem>[];
+    for (final file in files) {
+      var shotDate = _dateOnly(DateTime.now());
+      try {
+        final bytes = await file.readAsBytes();
+        final exifDate = await readExifShotDate(bytes);
+        if (exifDate != null) shotDate = exifDate;
+      } catch (_) {
+        // EXIF가 없거나 파싱에 실패하면 오늘 날짜를 기본값으로 유지한다.
+      }
+      items.add(_GalleryPickItem(file: file, shotDate: shotDate));
+    }
+    if (!mounted) return;
+    setState(() {
+      _items
+        ..clear()
+        ..addAll(items);
+      _pickStatus = AsyncStatus.idle;
+    });
   }
 
   Future<void> _pickDateFor(int index) async {
@@ -115,16 +182,23 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
       _errorMessage = null;
     });
     final logger = ref.read(appLoggerProvider);
-    logger.phase('gallery.import', LogPhase.start, context: {'memberId': widget.memberId});
+    logger.phase(
+      'gallery.import',
+      LogPhase.start,
+      context: {'memberId': widget.memberId},
+    );
+    final storage = ref.read(photoStorageServiceProvider);
+    final records = ref.read(photoRecordRepositoryProvider);
+    final ingest = ref.read(photoIngestRepositoryProvider);
+    final preparedPaths = <String>[];
+    var databaseCommitted = false;
     try {
-      final storage = ref.read(photoStorageServiceProvider);
-      final records = ref.read(photoRecordRepositoryProvider);
-      final photos = ref.read(bodyPhotoRepositoryProvider);
-
       final existingRecords = await records.listByMember(widget.memberId);
       final byDate = <String, PhotoRecord>{
         for (final r in existingRecords) _dateKey(_dateOnly(r.shotAt)): r,
       };
+      final newRecords = <PhotoRecord>[];
+      final preparedPhotos = <BodyPhoto>[];
 
       final savedCount = _items.length;
       for (final item in _items) {
@@ -142,17 +216,18 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
             createdAt: now,
             updatedAt: now,
           );
-          await records.insert(record);
+          newRecords.add(record);
           byDate[key] = record;
         }
         final savedPath = await storage.saveOriginal(
           memberId: widget.memberId,
           sourcePath: item.file.path,
         );
-        try {
-          final meta = await readImageMeta(savedPath);
-          final memo = item.memo.trim();
-          await photos.insert(BodyPhoto(
+        preparedPaths.add(savedPath);
+        final meta = await readImageMeta(savedPath);
+        final memo = item.memo.trim();
+        preparedPhotos.add(
+          BodyPhoto(
             id: const Uuid().v4(),
             recordId: record.id,
             filePath: savedPath,
@@ -162,24 +237,44 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
             orientation: meta.orientation,
             memo: memo.isEmpty ? null : memo,
             createdAt: now,
-          ));
-        } catch (_) {
-          // 원본은 이미 저장소에 복사됐지만 DB 행 생성에 실패했다. 고아 파일이
-          // 남지 않도록 복사본을 정리한다(best effort, 실패해도 무시).
-          await storage.deleteFile(savedPath);
-          rethrow;
-        }
+          ),
+        );
       }
+      await ingest.insertPrepared(
+        memberId: widget.memberId,
+        newRecords: newRecords,
+        photos: preparedPhotos,
+      );
+      databaseCommitted = true;
 
-      logger.phase('gallery.import', LogPhase.success,
-          context: {'memberId': widget.memberId, 'count': savedCount});
+      logger.phase(
+        'gallery.import',
+        LogPhase.success,
+        context: {'memberId': widget.memberId, 'count': savedCount},
+      );
       if (!mounted) return;
       setState(() {
         _saveStatus = AsyncStatus.success;
         _items.clear();
       });
     } catch (_) {
-      logger.phase('gallery.import', LogPhase.failure, context: {'memberId': widget.memberId});
+      // DB transaction 전까지는 모든 파일이 미참조 준비 상태다. 실패하면
+      // 준비 파일만 제거하며, transaction이 commit된 뒤의 UI 오류로 원본을
+      // 삭제하지 않는다.
+      if (!databaseCommitted) {
+        for (final path in preparedPaths.reversed) {
+          try {
+            await storage.deleteFile(path);
+          } catch (_) {
+            logger.warn('gallery.import.fileRollback.failure');
+          }
+        }
+      }
+      logger.phase(
+        'gallery.import',
+        LogPhase.failure,
+        context: {'memberId': widget.memberId},
+      );
       if (!mounted) return;
       setState(() {
         _saveStatus = AsyncStatus.failure;
@@ -213,7 +308,8 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
               statusId: 'screen.capture.import.status',
               status: AsyncStatus.failure,
               failureMessage: '회원 정보를 불러오지 못했습니다.',
-              onRetry: () => ref.invalidate(memberByIdProvider(widget.memberId)),
+              onRetry: () =>
+                  ref.invalidate(memberByIdProvider(widget.memberId)),
             ),
           ),
         ),
@@ -236,7 +332,9 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
                 label: '갤러리에서 사진 선택',
                 child: OutlinedButton.icon(
                   key: const ValueKey('capture.import.pick.button'),
-                  onPressed: _pickStatus == AsyncStatus.busy ? null : _pickImages,
+                  onPressed: _pickStatus == AsyncStatus.busy
+                      ? null
+                      : _pickImages,
                   icon: const Icon(Icons.photo_library_outlined),
                   label: const Text('사진 선택'),
                 ),
@@ -292,10 +390,13 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
                   identifier: 'capture.import.save.button',
                   button: true,
                   label: '일괄 저장',
-                  enabled: _allDirectionsAssigned && _saveStatus != AsyncStatus.busy,
+                  enabled:
+                      _allDirectionsAssigned && _saveStatus != AsyncStatus.busy,
                   child: FilledButton(
                     key: const ValueKey('capture.import.save.button'),
-                    onPressed: (_allDirectionsAssigned && _saveStatus != AsyncStatus.busy)
+                    onPressed:
+                        (_allDirectionsAssigned &&
+                            _saveStatus != AsyncStatus.busy)
                         ? _saveAll
                         : null,
                     child: const Text('일괄 저장'),
@@ -337,14 +438,7 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: DirectionSelector(
-                    idPrefix: 'capture.import.item.$index.direction',
-                    selected: item.direction,
-                    onSelected: (direction) => setState(() => item.direction = direction),
-                  ),
-                ),
+                const Spacer(),
                 Semantics(
                   identifier: 'capture.import.item.$index.remove.button',
                   button: true,
@@ -356,6 +450,13 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 8),
+            DirectionSelector(
+              idPrefix: 'capture.import.item.$index.direction',
+              selected: item.direction,
+              onSelected: (direction) =>
+                  setState(() => item.direction = direction),
             ),
             const SizedBox(height: 8),
             Row(

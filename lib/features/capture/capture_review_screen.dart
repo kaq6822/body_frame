@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import 'package:body_frame/core/models/models.dart';
 import 'package:body_frame/core/providers.dart';
 import 'package:body_frame/core/router/app_routes.dart';
 import 'package:body_frame/core/services/app_logger.dart';
+import 'package:body_frame/core/services/photo_storage_service.dart';
 import 'providers/capture_providers.dart';
 import 'providers/capture_session_provider.dart';
 import 'utils/image_meta.dart';
@@ -31,13 +33,15 @@ class CaptureReviewScreen extends ConsumerStatefulWidget {
   const CaptureReviewScreen({super.key, required this.memberId});
 
   @override
-  ConsumerState<CaptureReviewScreen> createState() => _CaptureReviewScreenState();
+  ConsumerState<CaptureReviewScreen> createState() =>
+      _CaptureReviewScreenState();
 }
 
 class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
   final _memoController = TextEditingController();
   AsyncStatus _saveStatus = AsyncStatus.idle;
   String? _saveError;
+  Future<void>? _sourceCleanupFuture;
 
   @override
   void initState() {
@@ -63,13 +67,60 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
       lastDate: DateTime.now().add(const Duration(days: 1)),
     );
     if (picked != null) {
-      ref.read(captureSessionProvider(widget.memberId).notifier).setShotDate(picked);
+      ref
+          .read(captureSessionProvider(widget.memberId).notifier)
+          .setShotDate(picked);
     }
   }
 
   void _retake() {
-    ref.read(captureSessionProvider(widget.memberId).notifier).clearCapturedImage();
+    unawaited(_cleanupCapturedSourceOnce());
     context.pop();
+  }
+
+  Future<void> _cleanupCapturedSourceOnce({bool resetSession = false}) {
+    final pending = _sourceCleanupFuture;
+    if (pending != null) return pending;
+
+    final session = ref.read(captureSessionProvider(widget.memberId));
+    final path = session.capturedImagePath;
+    final notifier = ref.read(captureSessionProvider(widget.memberId).notifier);
+    if (resetSession) {
+      notifier.reset();
+    } else {
+      notifier.clearCapturedImage();
+    }
+    final storage = ref.read(photoStorageServiceProvider);
+    final logger = ref.read(appLoggerProvider);
+    final cleanup = path == null
+        ? Future<void>.value()
+        : _deleteTemporaryCaptureBestEffort(path, storage, logger);
+    _sourceCleanupFuture = cleanup;
+    return cleanup;
+  }
+
+  Future<void> _deleteTemporaryCaptureBestEffort(
+    String path,
+    PhotoStorageService storage,
+    AppLogger logger,
+  ) async {
+    try {
+      // 관리 저장소 안의 파일이면 원본이므로 절대 정리하지 않는다.
+      final stored = await storage.toStoredPath(path);
+      if (stored.startsWith('${PhotoStorageServiceImpl.rootDirName}/')) {
+        return;
+      }
+    } catch (_) {
+      // 카메라가 반환하는 cache/tmp 경로는 변환에 실패하는 것이 정상이다.
+    }
+    try {
+      final source = File(path);
+      if (await source.exists()) {
+        await source.delete();
+      }
+    } catch (_) {
+      logger.warn('capture.source.cleanup.failure');
+    }
   }
 
   Future<void> _save(CaptureSessionState session) async {
@@ -80,71 +131,73 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
       _saveError = null;
     });
     final logger = ref.read(appLoggerProvider);
-    logger.phase('capture.save', LogPhase.start, context: {'memberId': widget.memberId});
+    final storage = ref.read(photoStorageServiceProvider);
+    String? preparedPath;
+    var databaseCommitted = false;
+    logger.phase(
+      'capture.save',
+      LogPhase.start,
+      context: {'memberId': widget.memberId},
+    );
     try {
-      final storage = ref.read(photoStorageServiceProvider);
-      final savedPath = await storage.saveOriginal(
+      final records = ref.read(photoRecordRepositoryProvider);
+      preparedPath = await storage.saveOriginal(
         memberId: widget.memberId,
         sourcePath: path,
       );
-      try {
-        final meta = await readImageMeta(savedPath);
+      final meta = await readImageMeta(preparedPath);
 
-        final records = ref.read(photoRecordRepositoryProvider);
-        final existing = await records.listByMember(widget.memberId);
-        final shotDate = DateTime(
-          session.shotDate.year,
-          session.shotDate.month,
-          session.shotDate.day,
-        );
-        final now = DateTime.now();
-        PhotoRecord? matched;
-        for (final record in existing) {
-          if (_isSameDate(record.shotAt, shotDate)) {
-            matched = record;
-            break;
-          }
+      final existing = await records.listByMember(widget.memberId);
+      final shotDate = DateTime(
+        session.shotDate.year,
+        session.shotDate.month,
+        session.shotDate.day,
+      );
+      final now = DateTime.now();
+      PhotoRecord? matched;
+      for (final record in existing) {
+        if (_isSameDate(record.shotAt, shotDate)) {
+          matched = record;
+          break;
         }
-        final record = matched ??
-            PhotoRecord(
-              id: const Uuid().v4(),
-              memberId: widget.memberId,
-              shotAt: shotDate,
-              createdAt: now,
-              updatedAt: now,
-            );
-        if (matched == null) {
-          await records.insert(record);
-        }
-
-        final memo = _memoController.text.trim();
-        final photo = BodyPhoto(
-          id: const Uuid().v4(),
-          recordId: record.id,
-          filePath: savedPath,
-          direction: session.direction,
-          width: meta.width,
-          height: meta.height,
-          orientation: meta.orientation,
-          gridSettings: session.gridSettingsAtCapture ?? GridSettings.defaults,
-          memo: memo.isEmpty ? null : memo,
-          createdAt: now,
-        );
-        await ref.read(bodyPhotoRepositoryProvider).insert(photo);
-      } catch (_) {
-        // 원본은 이미 저장소에 복사됐지만 DB 반영에 실패했다. 고아 파일이 남지
-        // 않도록 복사본을 정리한다(best effort). 정리 자체가 실패해도 원래
-        // 예외를 가리지 않도록 별도로 삼킨다.
-        try {
-          await storage.deleteFile(savedPath);
-        } catch (_) {
-          // 정리 실패는 무시하고 원래 저장 실패를 그대로 알린다.
-        }
-        rethrow;
       }
+      final record =
+          matched ??
+          PhotoRecord(
+            id: const Uuid().v4(),
+            memberId: widget.memberId,
+            shotAt: shotDate,
+            createdAt: now,
+            updatedAt: now,
+          );
+      final memo = _memoController.text.trim();
+      final photo = BodyPhoto(
+        id: const Uuid().v4(),
+        recordId: record.id,
+        filePath: preparedPath,
+        direction: session.direction,
+        width: meta.width,
+        height: meta.height,
+        orientation: meta.orientation,
+        gridSettings: session.gridSettingsAtCapture ?? GridSettings.defaults,
+        memo: memo.isEmpty ? null : memo,
+        createdAt: now,
+      );
+      await ref
+          .read(photoIngestRepositoryProvider)
+          .insertPrepared(
+            memberId: widget.memberId,
+            newRecords: matched == null ? [record] : const [],
+            photos: [photo],
+          );
+      databaseCommitted = true;
 
-      logger.phase('capture.save', LogPhase.success, context: {'memberId': widget.memberId});
-      ref.read(captureSessionProvider(widget.memberId).notifier).reset();
+      logger.phase(
+        'capture.save',
+        LogPhase.success,
+        context: {'memberId': widget.memberId},
+      );
+      unawaited(_cleanupCapturedSourceOnce(resetSession: true));
       if (!mounted) return;
       setState(() => _saveStatus = AsyncStatus.success);
       context.goNamed(
@@ -152,7 +205,18 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
         pathParameters: {AppParams.memberId: widget.memberId},
       );
     } catch (e) {
-      logger.phase('capture.save', LogPhase.failure, context: {'memberId': widget.memberId});
+      if (!databaseCommitted && preparedPath != null) {
+        try {
+          await storage.deleteFile(preparedPath);
+        } catch (_) {
+          logger.warn('capture.preparedFile.cleanup.failure');
+        }
+      }
+      logger.phase(
+        'capture.save',
+        LogPhase.failure,
+        context: {'memberId': widget.memberId},
+      );
       if (!mounted) return;
       setState(() {
         _saveStatus = AsyncStatus.failure;
@@ -166,33 +230,42 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
     final session = ref.watch(captureSessionProvider(widget.memberId));
     final memberAsync = ref.watch(memberByIdProvider(widget.memberId));
 
-    return Semantics(
-      identifier: CaptureReviewScreen.screenId,
-      container: true,
-      label: '촬영 결과 확인',
-      child: Scaffold(
-        key: const ValueKey(CaptureReviewScreen.screenId),
-        appBar: AppBar(title: const Text('촬영 결과 확인')),
-        body: session.capturedImagePath == null
-            ? const Center(child: Text('확인할 촬영 결과가 없습니다.'))
-            : memberAsync.when(
-                data: (member) => _buildBody(session, member?.name ?? ''),
-                loading: () => const Center(
-                  child: AsyncStatusIndicator(
-                    statusId: 'screen.capture.review.status',
-                    status: AsyncStatus.busy,
-                    busyLabel: '회원 정보를 불러오는 중입니다.',
+    return PopScope(
+      canPop: _saveStatus != AsyncStatus.busy,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) {
+          unawaited(_cleanupCapturedSourceOnce());
+        }
+      },
+      child: Semantics(
+        identifier: CaptureReviewScreen.screenId,
+        container: true,
+        label: '촬영 결과 확인',
+        child: Scaffold(
+          key: const ValueKey(CaptureReviewScreen.screenId),
+          appBar: AppBar(title: const Text('촬영 결과 확인')),
+          body: session.capturedImagePath == null
+              ? const Center(child: Text('확인할 촬영 결과가 없습니다.'))
+              : memberAsync.when(
+                  data: (member) => _buildBody(session, member?.name ?? ''),
+                  loading: () => const Center(
+                    child: AsyncStatusIndicator(
+                      statusId: 'screen.capture.review.status',
+                      status: AsyncStatus.busy,
+                      busyLabel: '회원 정보를 불러오는 중입니다.',
+                    ),
+                  ),
+                  error: (error, stackTrace) => Center(
+                    child: AsyncStatusIndicator(
+                      statusId: 'screen.capture.review.status',
+                      status: AsyncStatus.failure,
+                      failureMessage: '회원 정보를 불러오지 못했습니다.',
+                      onRetry: () =>
+                          ref.invalidate(memberByIdProvider(widget.memberId)),
+                    ),
                   ),
                 ),
-                error: (error, stackTrace) => Center(
-                  child: AsyncStatusIndicator(
-                    statusId: 'screen.capture.review.status',
-                    status: AsyncStatus.failure,
-                    failureMessage: '회원 정보를 불러오지 못했습니다.',
-                    onRetry: () => ref.invalidate(memberByIdProvider(widget.memberId)),
-                  ),
-                ),
-              ),
+        ),
       ),
     );
   }
@@ -206,7 +279,10 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CaptureMemberBanner(memberName: memberName, direction: session.direction),
+          CaptureMemberBanner(
+            memberName: memberName,
+            direction: session.direction,
+          ),
           const SizedBox(height: 12),
           Semantics(
             identifier: 'capture.review.photo.image',
@@ -294,7 +370,10 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('저장 전 확인', style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text(
+                  '저장 전 확인',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(height: 4),
                 Text('회원: $memberName'),
                 Text('촬영 방향: ${session.direction.label}'),
@@ -321,7 +400,9 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
               enabled: _saveStatus != AsyncStatus.busy,
               child: FilledButton(
                 key: const ValueKey('capture.save.button'),
-                onPressed: _saveStatus == AsyncStatus.busy ? null : () => _save(session),
+                onPressed: _saveStatus == AsyncStatus.busy
+                    ? null
+                    : () => _save(session),
                 child: const Text('저장'),
               ),
             ),

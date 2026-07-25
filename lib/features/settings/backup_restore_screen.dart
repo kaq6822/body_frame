@@ -9,8 +9,11 @@ import 'package:share_plus/share_plus.dart';
 
 import 'models/backup_models.dart';
 import 'providers/settings_providers.dart';
+import 'services/backup_archive_cipher.dart';
 
 enum _OpStatus { idle, busy, success, failure }
+
+typedef RestoreBackupFilePicker = Future<XFile?> Function();
 
 /// 백업 및 복원 화면.
 ///
@@ -19,10 +22,14 @@ enum _OpStatus { idle, busy, success, failure }
 class BackupRestoreScreen extends ConsumerStatefulWidget {
   static const screenId = 'screen.settings.backup';
 
-  const BackupRestoreScreen({super.key});
+  /// 플랫폼 파일 선택 경계를 테스트에서 대체할 수 있게 한다.
+  final RestoreBackupFilePicker? restoreFilePicker;
+
+  const BackupRestoreScreen({super.key, this.restoreFilePicker});
 
   @override
-  ConsumerState<BackupRestoreScreen> createState() => _BackupRestoreScreenState();
+  ConsumerState<BackupRestoreScreen> createState() =>
+      _BackupRestoreScreenState();
 }
 
 class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
@@ -39,7 +46,7 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
 
   @override
   void dispose() {
-    // 평문 개인정보가 담긴 임시 백업 zip을 화면 이탈 시 정리한다.
+    // 민감 정보 백업 임시 파일을 화면 이탈 시 정리한다.
     final path = _lastBackupFilePath;
     if (path != null) {
       File(path).delete().ignore();
@@ -47,7 +54,7 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
     super.dispose();
   }
 
-  /// 이전 실행/화면에서 남은 임시 백업 zip을 정리한다(민감 정보 잔존 방지).
+  /// 이전 실행/화면에서 남은 임시 백업을 정리한다(민감 정보 잔존 방지).
   Future<void> _cleanupStaleTempBackups() async {
     try {
       final dir = await getTemporaryDirectory();
@@ -72,21 +79,50 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
 
   Future<String> _writeToTempFile(List<int> bytes) async {
     final dir = await getTemporaryDirectory();
-    final fileName = 'body_frame_backup_${DateTime.now().millisecondsSinceEpoch}.zip';
+    final fileName =
+        'body_frame_backup_${DateTime.now().millisecondsSinceEpoch}.'
+        '$encryptedBackupFileExtension';
     final file = File(p.join(dir.path, fileName));
-    await file.writeAsBytes(bytes, flush: true);
-    return file.path;
+    try {
+      await file.writeAsBytes(bytes, flush: true);
+      return file.path;
+    } catch (_) {
+      if (await file.exists()) await file.delete();
+      rethrow;
+    }
+  }
+
+  void _adoptBackupFile(String path) {
+    if (!mounted) {
+      File(path).delete().ignore();
+      return;
+    }
+    final oldPath = _lastBackupFilePath;
+    setState(() => _lastBackupFilePath = path);
+    if (oldPath != null && oldPath != path) {
+      File(oldPath).delete().ignore();
+    }
   }
 
   Future<void> _createFullBackup() async {
+    final password = await _showCreatePasswordDialog();
+    if (!mounted) return;
+    if (password == null) {
+      _setStatus(_OpStatus.idle, '백업이 취소되었습니다');
+      return;
+    }
     _setStatus(_OpStatus.busy, '전체 백업 생성 중...');
     try {
-      final bytes = await ref.read(backupServiceProvider).buildBackup();
+      final bytes = await ref
+          .read(backupServiceProvider)
+          .buildBackup(password: password);
       final path = await _writeToTempFile(bytes);
-      setState(() => _lastBackupFilePath = path);
+      _adoptBackupFile(path);
       _setStatus(_OpStatus.success, '전체 백업이 생성되었습니다 (${bytes.length}바이트)');
-    } catch (e) {
-      _setStatus(_OpStatus.failure, '백업 생성에 실패했습니다: $e');
+    } on WeakBackupPasswordException {
+      _setStatus(_OpStatus.failure, '공백이 아닌 12자 이상의 비밀번호를 입력해 주세요');
+    } catch (_) {
+      _setStatus(_OpStatus.failure, '암호화 백업을 생성하지 못했습니다');
     }
   }
 
@@ -96,14 +132,24 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
       _setStatus(_OpStatus.failure, '백업할 회원을 선택해 주세요');
       return;
     }
+    final password = await _showCreatePasswordDialog();
+    if (!mounted) return;
+    if (password == null) {
+      _setStatus(_OpStatus.idle, '백업이 취소되었습니다');
+      return;
+    }
     _setStatus(_OpStatus.busy, '회원별 백업 생성 중...');
     try {
-      final bytes = await ref.read(backupServiceProvider).buildBackup(memberId: memberId);
+      final bytes = await ref
+          .read(backupServiceProvider)
+          .buildBackup(memberId: memberId, password: password);
       final path = await _writeToTempFile(bytes);
-      setState(() => _lastBackupFilePath = path);
+      _adoptBackupFile(path);
       _setStatus(_OpStatus.success, '회원별 백업이 생성되었습니다 (${bytes.length}바이트)');
-    } catch (e) {
-      _setStatus(_OpStatus.failure, '백업 생성에 실패했습니다: $e');
+    } on WeakBackupPasswordException {
+      _setStatus(_OpStatus.failure, '공백이 아닌 12자 이상의 비밀번호를 입력해 주세요');
+    } catch (_) {
+      _setStatus(_OpStatus.failure, '암호화 백업을 생성하지 못했습니다');
     }
   }
 
@@ -112,12 +158,19 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
     if (path == null) return;
     final location = await getSaveLocation(
       suggestedName: p.basename(path),
-      acceptedTypeGroups: const [XTypeGroup(label: 'zip', extensions: ['zip'])],
+      acceptedTypeGroups: const [
+        XTypeGroup(
+          label: 'Body Frame backup',
+          extensions: [encryptedBackupFileExtension],
+        ),
+      ],
     );
     if (location == null) return;
     await File(path).copy(location.path);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('저장했습니다')));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('저장했습니다')));
   }
 
   Future<void> _shareBackup() async {
@@ -125,29 +178,216 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
     if (path == null) return;
     await Share.shareXFiles(
       [XFile(path)],
-      text: '체형 변화 기록 백업 파일에는 회원 정보와 사진이 포함되어 있습니다. 안전하게 보관해 주세요.',
+      text:
+          '비밀번호로 암호화된 체형 변화 기록 백업입니다. '
+          '비밀번호는 파일과 별도 경로로 안전하게 전달해 주세요.',
     );
   }
 
   Future<void> _pickAndPrepareRestore() async {
-    final file = await openFile(
-      acceptedTypeGroups: const [XTypeGroup(label: 'zip', extensions: ['zip'])],
-    );
+    final injectedPicker = widget.restoreFilePicker;
+    final file = injectedPicker == null
+        ? await openFile(
+            acceptedTypeGroups: const [
+              XTypeGroup(
+                label: 'Body Frame backup',
+                extensions: [encryptedBackupFileExtension, 'zip'],
+              ),
+            ],
+          )
+        : await injectedPicker();
     if (file == null) return;
 
     _setStatus(_OpStatus.busy, '백업 파일 검증 중...');
     try {
+      final service = ref.read(backupServiceProvider);
+      final limits = service.restoreInputLimits;
+      final fileLength = await file.length();
+      if (fileLength <= 0) {
+        _setStatus(_OpStatus.failure, '백업 파일이 비어 있거나 올바르지 않습니다');
+        return;
+      }
+      final extension = p.extension(file.name).toLowerCase();
+      final maximumFileBytes = switch (extension) {
+        '.zip' => limits.maximumLegacyZipBytes,
+        '.$encryptedBackupFileExtension' =>
+          limits.maximumEncryptedContainerBytes,
+        _ => limits.maximumFileBytes,
+      };
+      if (fileLength > maximumFileBytes) {
+        _setStatus(_OpStatus.failure, '백업 파일이 허용 크기를 초과했습니다');
+        return;
+      }
       final bytes = await file.readAsBytes();
-      final preview = await ref.read(backupServiceProvider).prepareRestore(bytes);
+      if (bytes.length > maximumFileBytes) {
+        _setStatus(_OpStatus.failure, '백업 파일이 허용 크기를 초과했습니다');
+        return;
+      }
+      String? password;
+      if (service.isEncryptedBackup(bytes)) {
+        password = await _showRestorePasswordDialog();
+        if (password == null) {
+          _setStatus(_OpStatus.idle, '복원이 취소되었습니다');
+          return;
+        }
+      }
+      final preview = await service.prepareRestore(bytes, password: password);
       _setStatus(
         _OpStatus.idle,
         '검증 완료: 회원 ${preview.memberCount}명 / 사진 ${preview.photoCount}장',
       );
       if (!mounted) return;
       await _showRestoreDialog(preview);
-    } catch (e) {
-      _setStatus(_OpStatus.failure, '백업 파일이 올바르지 않습니다: $e');
+    } on BackupAuthenticationException {
+      _setStatus(_OpStatus.failure, '비밀번호가 틀렸거나 백업 파일이 변조되었습니다');
+    } on BackupPasswordRequiredException {
+      _setStatus(_OpStatus.failure, '백업 비밀번호를 입력해 주세요');
+    } catch (_) {
+      _setStatus(_OpStatus.failure, '백업 파일이 올바르지 않거나 손상되었습니다');
     }
+  }
+
+  Future<String?> _showCreatePasswordDialog() async {
+    var password = '';
+    var confirmation = '';
+    String? errorText;
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) => AlertDialog(
+            title: const Text('백업 비밀번호 설정'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('12자 이상의 비밀번호를 설정하세요. 분실하면 백업을 복원할 수 없습니다.'),
+                const SizedBox(height: 12),
+                TextField(
+                  key: const ValueKey('backup.password.create.field'),
+                  obscureText: true,
+                  enableSuggestions: false,
+                  autocorrect: false,
+                  autofillHints: const [AutofillHints.newPassword],
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(labelText: '비밀번호'),
+                  onChanged: (value) => password = value,
+                ),
+                TextField(
+                  key: const ValueKey('backup.password.confirm.field'),
+                  obscureText: true,
+                  enableSuggestions: false,
+                  autocorrect: false,
+                  autofillHints: const [AutofillHints.newPassword],
+                  textInputAction: TextInputAction.done,
+                  decoration: InputDecoration(
+                    labelText: '비밀번호 확인',
+                    errorText: errorText,
+                  ),
+                  onChanged: (value) => confirmation = value,
+                  onSubmitted: (_) => _submitCreatePassword(
+                    dialogContext,
+                    setDialogState,
+                    password,
+                    confirmation,
+                    (value) => errorText = value,
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('취소'),
+              ),
+              FilledButton(
+                key: const ValueKey('backup.password.create.confirm'),
+                onPressed: () => _submitCreatePassword(
+                  dialogContext,
+                  setDialogState,
+                  password,
+                  confirmation,
+                  (value) => errorText = value,
+                ),
+                child: const Text('암호화 백업 생성'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _submitCreatePassword(
+    BuildContext dialogContext,
+    StateSetter setDialogState,
+    String password,
+    String confirmation,
+    ValueChanged<String?> setError,
+  ) {
+    if (password != confirmation) {
+      setDialogState(() => setError('비밀번호가 일치하지 않습니다'));
+      return;
+    }
+    try {
+      const BackupPasswordPolicy().validateForEncryption(password);
+    } on WeakBackupPasswordException {
+      setDialogState(() => setError('공백이 아닌 12자 이상의 비밀번호를 입력하세요'));
+      return;
+    }
+    Navigator.of(dialogContext).pop(password);
+  }
+
+  Future<String?> _showRestorePasswordDialog() async {
+    var password = '';
+    String? errorText;
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('백업 비밀번호 입력'),
+          content: TextField(
+            key: const ValueKey('backup.password.restore.field'),
+            autofocus: true,
+            obscureText: true,
+            enableSuggestions: false,
+            autocorrect: false,
+            autofillHints: const [AutofillHints.password],
+            textInputAction: TextInputAction.done,
+            decoration: InputDecoration(
+              labelText: '비밀번호',
+              errorText: errorText,
+            ),
+            onChanged: (value) => password = value,
+            onSubmitted: (_) {
+              if (password.isEmpty) {
+                setDialogState(() => errorText = '비밀번호를 입력하세요');
+              } else {
+                Navigator.of(dialogContext).pop(password);
+              }
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              key: const ValueKey('backup.password.restore.confirm'),
+              onPressed: () {
+                if (password.isEmpty) {
+                  setDialogState(() => errorText = '비밀번호를 입력하세요');
+                } else {
+                  Navigator.of(dialogContext).pop(password);
+                }
+              },
+              child: const Text('복호화'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _showRestoreDialog(RestorePreview preview) async {
@@ -177,16 +417,21 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
                   const Divider(height: 24),
                   _SelectableRestoreModeTile(
                     keyValue: 'backup.restore.mode.append.radio',
-                    label: '추가 (기존 데이터 유지, 중복은 새 항목으로 추가)',
+                    label: preview.scope == BackupScope.member
+                        ? '추가 (기존 회원은 유지하고 새 항목으로 가져오기)'
+                        : '추가 (기존 데이터와 기기 설정 유지)',
                     selected: mode == RestoreMode.append,
-                    onTap: () => setDialogState(() => mode = RestoreMode.append),
+                    onTap: () =>
+                        setDialogState(() => mode = RestoreMode.append),
                   ),
-                  _SelectableRestoreModeTile(
-                    keyValue: 'backup.restore.mode.replace.radio',
-                    label: '교체 (기존 데이터를 모두 삭제하고 백업으로 대체)',
-                    selected: mode == RestoreMode.replace,
-                    onTap: () => setDialogState(() => mode = RestoreMode.replace),
-                  ),
+                  if (preview.scope == BackupScope.all)
+                    _SelectableRestoreModeTile(
+                      keyValue: 'backup.restore.mode.replace.radio',
+                      label: '교체 (기존 데이터를 모두 삭제하고 백업으로 대체)',
+                      selected: mode == RestoreMode.replace,
+                      onTap: () =>
+                          setDialogState(() => mode = RestoreMode.replace),
+                    ),
                 ],
               ),
               actions: [
@@ -253,10 +498,13 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
   Future<void> _applyRestore(RestorePreview preview, RestoreMode mode) async {
     _setStatus(_OpStatus.busy, '복원 적용 중...');
     try {
-      final outcome = await ref.read(backupServiceProvider).applyRestore(preview, mode: mode);
+      final outcome = await ref
+          .read(backupServiceProvider)
+          .applyRestore(preview, mode: mode);
       if (outcome.success) {
         ref.invalidate(backupMemberListProvider);
         ref.invalidate(storageUsageProvider);
+        ref.invalidate(appSettingsControllerProvider);
         _setStatus(
           outcome.error == null ? _OpStatus.success : _OpStatus.failure,
           outcome.error ??
@@ -265,8 +513,8 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
       } else {
         _setStatus(_OpStatus.failure, outcome.error ?? '복원에 실패했습니다');
       }
-    } catch (e) {
-      _setStatus(_OpStatus.failure, '복원 중 오류가 발생했습니다: $e');
+    } catch (_) {
+      _setStatus(_OpStatus.failure, '복원 적용에 실패했습니다');
     }
   }
 
@@ -297,8 +545,8 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '백업 파일에는 회원 정보와 체형 사진이 포함됩니다. 안전한 곳에 보관하고 '
-                      '타인에게 전달하지 않도록 주의하세요.',
+                      '새 백업은 비밀번호로 인증 암호화됩니다. 비밀번호를 분실하면 복원할 수 '
+                      '없으므로 파일과 분리해 안전하게 보관하세요. 기존 ZIP 백업은 복원만 지원합니다.',
                     ),
                   ),
                 ],
@@ -321,10 +569,12 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
                 hint: const Text('회원 선택'),
                 value: _selectedMemberId,
                 items: members
-                    .map((m) => DropdownMenuItem(
-                          value: m.member.id,
-                          child: Text(m.member.name),
-                        ))
+                    .map(
+                      (m) => DropdownMenuItem(
+                        value: m.member.id,
+                        child: Text(m.member.name),
+                      ),
+                    )
                     .toList(),
                 onChanged: (v) => setState(() => _selectedMemberId = v),
               ),
@@ -366,11 +616,13 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
             const SizedBox(height: 8),
             OutlinedButton(
               key: const ValueKey('backup.restore.button'),
-              onPressed: _status == _OpStatus.busy ? null : _pickAndPrepareRestore,
+              onPressed: _status == _OpStatus.busy
+                  ? null
+                  : _pickAndPrepareRestore,
               child: const Text('백업 파일에서 복원'),
             ),
             const SizedBox(height: 16),
-            _StatusRow(status: _status, message: _statusMessage, onRetry: _createFullBackup),
+            _StatusRow(status: _status, message: _statusMessage),
           ],
         ),
       ),
@@ -381,9 +633,8 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
 class _StatusRow extends StatelessWidget {
   final _OpStatus status;
   final String message;
-  final VoidCallback onRetry;
 
-  const _StatusRow({required this.status, required this.message, required this.onRetry});
+  const _StatusRow({required this.status, required this.message});
 
   @override
   Widget build(BuildContext context) {
@@ -419,13 +670,9 @@ class _StatusRow extends StatelessWidget {
           else
             Icon(icon, color: color, size: 18),
           const SizedBox(width: 8),
-          Expanded(child: Text(message, style: TextStyle(color: color))),
-          if (status == _OpStatus.failure)
-            TextButton(
-              key: const ValueKey('backup.progress.retry.button'),
-              onPressed: onRetry,
-              child: const Text('재시도'),
-            ),
+          Expanded(
+            child: Text(message, style: TextStyle(color: color)),
+          ),
         ],
       ),
     );

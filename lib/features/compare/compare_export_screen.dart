@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -11,14 +13,18 @@ import '../../core/models/models.dart';
 import '../../core/providers.dart';
 import '../../core/router/app_routes.dart';
 import '../../core/services/app_logger.dart';
+import '../settings/providers/settings_providers.dart';
 import 'compare_export_models.dart';
 import 'compare_providers.dart';
+import 'widgets/compare_layered_pane.dart';
 import 'services/compare_export_sink.dart';
 import 'widgets/compare_missing_context.dart';
 import 'widgets/compare_photo_pane.dart';
 import 'widgets/labeled_switch.dart';
 
 final _dateFormat = DateFormat('yyyy.MM.dd');
+
+enum _DefaultsSaveStatus { idle, saving, success, failure }
 
 /// 비교 이미지 저장 설정 화면.
 ///
@@ -40,6 +46,7 @@ class CompareExportScreen extends ConsumerStatefulWidget {
 
 class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
   final GlobalKey _boundaryKey = GlobalKey();
+  final TextEditingController _studioNameController = TextEditingController();
 
   CompareExportRequest? _request;
   TransformationController? _previewBeforeCtrl;
@@ -47,10 +54,14 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
 
   ExportImageOptions _options = ExportImageOptions.defaults;
   String _studioName = '';
+  String? _studioLogoPath;
+  bool _settingsInitialized = false;
 
   CompareExportStatus _status = CompareExportStatus.idle;
   Uint8List? _resultBytes;
   Object? _error;
+  int _generationToken = 0;
+  _DefaultsSaveStatus _defaultsSaveStatus = _DefaultsSaveStatus.idle;
 
   @override
   void didChangeDependencies() {
@@ -59,18 +70,99 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
       final extra = GoRouterState.of(context).extra;
       if (extra is CompareExportRequest) {
         _request = extra;
-        _previewBeforeCtrl = TransformationController(extra.beforeMatrix.clone());
+        _previewBeforeCtrl = TransformationController(
+          extra.beforeMatrix.clone(),
+        );
         _previewAfterCtrl = TransformationController(extra.afterMatrix.clone());
-        _options = _options.copyWith(includeGrid: extra.showGrid);
+        if (_settingsInitialized && extra.showGrid) {
+          _options = _options.copyWith(includeGrid: true);
+        }
       }
     }
   }
 
   @override
   void dispose() {
+    _studioNameController.dispose();
     _previewBeforeCtrl?.dispose();
     _previewAfterCtrl?.dispose();
     super.dispose();
+  }
+
+  void _initializeSettings(AppSettings settings) {
+    if (_settingsInitialized) return;
+    _options = settings.defaultExportOptions;
+    if (_request?.showGrid ?? false) {
+      _options = _options.copyWith(includeGrid: true);
+    }
+    _studioName = settings.studioName ?? '';
+    _studioNameController.text = _studioName;
+    _settingsInitialized = true;
+    unawaited(_resolveStudioLogo(settings.studioLogoPath));
+  }
+
+  Future<void> _resolveStudioLogo(String? storedPath) async {
+    if (storedPath == null || storedPath.trim().isEmpty) return;
+    try {
+      final resolved = await ref
+          .read(photoStorageServiceProvider)
+          .resolvePath(storedPath);
+      if (!await File(resolved).exists() || !mounted) return;
+      _updateComposition(() => _studioLogoPath = resolved);
+    } on Object {
+      // 로고 저장 UI가 아직 없으므로 형식을 보장할 수 없는 legacy/외부
+      // 경로는 내보내기 전체를 실패시키지 않고 로고만 제외한다.
+    }
+  }
+
+  void _updateComposition(
+    VoidCallback update, {
+    bool exportOptionsChanged = false,
+  }) {
+    setState(() {
+      update();
+      _generationToken++;
+      _resultBytes = null;
+      _status = CompareExportStatus.idle;
+      _error = null;
+      if (exportOptionsChanged) {
+        _defaultsSaveStatus = _DefaultsSaveStatus.idle;
+      }
+    });
+  }
+
+  String _defaultsSaveStatusLabel() {
+    switch (_defaultsSaveStatus) {
+      case _DefaultsSaveStatus.idle:
+        return '현재 포함 옵션을 다음 내보내기의 기본값으로 저장할 수 있습니다.';
+      case _DefaultsSaveStatus.saving:
+        return '기본 내보내기 옵션을 저장하는 중입니다.';
+      case _DefaultsSaveStatus.success:
+        return '기본 내보내기 옵션으로 저장했습니다.';
+      case _DefaultsSaveStatus.failure:
+        return '기본값 저장에 실패했습니다. 다시 시도해 주세요.';
+    }
+  }
+
+  Future<void> _saveOptionsAsDefaults() async {
+    if (_defaultsSaveStatus == _DefaultsSaveStatus.saving) return;
+    setState(() => _defaultsSaveStatus = _DefaultsSaveStatus.saving);
+    final logger = ref.read(appLoggerProvider);
+    logger.phase('compare.export.defaults.save', LogPhase.start);
+    try {
+      await ref
+          .read(appSettingsControllerProvider.notifier)
+          .updateSettings(
+            (settings) => settings.copyWith(defaultExportOptions: _options),
+          );
+      logger.phase('compare.export.defaults.save', LogPhase.success);
+      if (!mounted) return;
+      setState(() => _defaultsSaveStatus = _DefaultsSaveStatus.success);
+    } catch (error) {
+      logger.phase('compare.export.defaults.save', LogPhase.failure);
+      if (!mounted) return;
+      setState(() => _defaultsSaveStatus = _DefaultsSaveStatus.failure);
+    }
   }
 
   String _fileName(CompareExportRequest req) {
@@ -96,8 +188,10 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
     final req = _request;
     if (req == null) return;
     final logger = ref.read(appLoggerProvider);
+    final generationToken = ++_generationToken;
     setState(() {
       _status = CompareExportStatus.generating;
+      _resultBytes = null;
       _error = null;
     });
     logger.phase('compare.export.generate', LogPhase.start);
@@ -114,15 +208,18 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
         throw StateError('이미지 인코딩에 실패했습니다.');
       }
       final bytes = byteData.buffer.asUint8List();
-      if (!mounted) return;
+      if (!mounted || generationToken != _generationToken) return;
       setState(() {
         _resultBytes = bytes;
         _status = CompareExportStatus.success;
       });
-      logger.phase('compare.export.generate', LogPhase.success,
-          context: {'bytes': bytes.length});
+      logger.phase(
+        'compare.export.generate',
+        LogPhase.success,
+        context: {'bytes': bytes.length},
+      );
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || generationToken != _generationToken) return;
       setState(() {
         _status = CompareExportStatus.failure;
         _error = e;
@@ -146,7 +243,9 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
     } catch (e) {
       logger.phase('compare.export.save', LogPhase.failure);
       if (!mounted) return;
-      messenger.showSnackBar(const SnackBar(content: Text('저장에 실패했습니다. 다시 시도해 주세요.')));
+      messenger.showSnackBar(
+        const SnackBar(content: Text('저장에 실패했습니다. 다시 시도해 주세요.')),
+      );
     }
   }
 
@@ -158,36 +257,128 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
     final logger = ref.read(appLoggerProvider);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await sink.share(bytes, name: _fileName(req), text: '체형 변화 비교 이미지');
+      final renderBox = context.findRenderObject() as RenderBox?;
+      final shareOrigin = renderBox == null || !renderBox.hasSize
+          ? const Rect.fromLTWH(0, 0, 1, 1)
+          : renderBox.localToGlobal(Offset.zero) & renderBox.size;
+      await sink.share(
+        bytes,
+        name: _fileName(req),
+        text: '체형 변화 비교 이미지',
+        sharePositionOrigin: shareOrigin,
+      );
       logger.phase('compare.export.share', LogPhase.success);
     } catch (e) {
       logger.phase('compare.export.share', LogPhase.failure);
       if (!mounted) return;
-      messenger.showSnackBar(const SnackBar(content: Text('공유에 실패했습니다. 다시 시도해 주세요.')));
+      messenger.showSnackBar(
+        const SnackBar(content: Text('공유에 실패했습니다. 다시 시도해 주세요.')),
+      );
     }
   }
 
   bool _hasMemo(CompareExportRequest req) {
-    return (req.beforeRecord.memo?.isNotEmpty ?? false) ||
-        (req.afterRecord.memo?.isNotEmpty ?? false) ||
-        (req.beforePhoto.memo?.isNotEmpty ?? false) ||
-        (req.afterPhoto.memo?.isNotEmpty ?? false);
+    return _memoText(req).isNotEmpty;
   }
 
   String _memoText(CompareExportRequest req) {
     final parts = <String>[];
-    if (req.beforeRecord.memo?.isNotEmpty ?? false) {
-      parts.add('이전: ${req.beforeRecord.memo}');
+
+    void addMemo(String label, String? memo) {
+      final value = memo?.trim();
+      if (value != null && value.isNotEmpty) {
+        parts.add('$label: $value');
+      }
     }
-    if (req.afterRecord.memo?.isNotEmpty ?? false) {
-      parts.add('이후: ${req.afterRecord.memo}');
-    }
+
+    addMemo('이전 기록', req.beforeRecord.memo);
+    addMemo('이전 사진', req.beforePhoto.memo);
+    addMemo('이후 기록', req.afterRecord.memo);
+    addMemo('이후 사진', req.afterPhoto.memo);
     return parts.join('\n');
+  }
+
+  File? _studioLogoFile() {
+    final path = _studioLogoPath?.trim();
+    if (path == null || path.isEmpty) return null;
+    try {
+      final file = File(path);
+      return file.existsSync() ? file : null;
+    } on FileSystemException {
+      return null;
+    }
+  }
+
+  Widget _buildComparisonMedia(
+    CompareExportRequest req,
+    TransformationController beforeCtrl,
+    TransformationController afterCtrl,
+  ) {
+    final beforeDate = _options.includeShotDate
+        ? _dateFormat.format(req.beforeRecord.shotAt)
+        : '';
+    final afterDate = _options.includeShotDate
+        ? _dateFormat.format(req.afterRecord.shotAt)
+        : '';
+
+    if (req.mode != CompareMode.sideBySide) {
+      return CompareLayeredPane(
+        mode: req.mode,
+        beforePhoto: req.beforePhoto,
+        afterPhoto: req.afterPhoto,
+        beforeDateLabel: beforeDate,
+        afterDateLabel: afterDate,
+        beforeController: beforeCtrl,
+        afterController: afterCtrl,
+        interactive: false,
+        gridSettings: req.grid,
+        showGrid: _options.includeGrid,
+        overlayOpacity: req.overlayOpacity,
+        sliderPosition: req.sliderPosition,
+        identifierPrefix: 'compare.export.${req.mode.key}',
+        fixedPhotoSize: req.panePhotoSize ?? const Size(300, 400),
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: ComparePhotoPane(
+            label: '이전',
+            dateLabel: beforeDate,
+            photo: req.beforePhoto,
+            controller: beforeCtrl,
+            interactive: false,
+            gridSettings: req.grid,
+            showGrid: _options.includeGrid,
+            paneIdentifier: 'compare.export.before',
+            fixedPhotoSize: req.panePhotoSize,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: ComparePhotoPane(
+            label: '이후',
+            dateLabel: afterDate,
+            photo: req.afterPhoto,
+            controller: afterCtrl,
+            interactive: false,
+            gridSettings: req.grid,
+            showGrid: _options.includeGrid,
+            paneIdentifier: 'compare.export.after',
+            fixedPhotoSize: req.panePhotoSize,
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildComposition(CompareExportRequest req) {
     final beforeCtrl = _previewBeforeCtrl!;
     final afterCtrl = _previewAfterCtrl!;
+    final studioName = _studioName.trim();
+    final studioLogo = _studioLogoFile();
     return RepaintBoundary(
       key: _boundaryKey,
       child: Semantics(
@@ -203,64 +394,56 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  '${req.direction.label} 비교',
+                  '${req.direction.label} · ${req.mode.label}',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 8),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: ComparePhotoPane(
-                        label: '이전',
-                        dateLabel: _options.includeShotDate
-                            ? _dateFormat.format(req.beforeRecord.shotAt)
-                            : '',
-                        photo: req.beforePhoto,
-                        controller: beforeCtrl,
-                        interactive: false,
-                        gridSettings: req.grid,
-                        showGrid: _options.includeGrid,
-                        paneIdentifier: 'compare.export.before',
-                        fixedPhotoSize: req.panePhotoSize,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: ComparePhotoPane(
-                        label: '이후',
-                        dateLabel: _options.includeShotDate
-                            ? _dateFormat.format(req.afterRecord.shotAt)
-                            : '',
-                        photo: req.afterPhoto,
-                        controller: afterCtrl,
-                        interactive: false,
-                        gridSettings: req.grid,
-                        showGrid: _options.includeGrid,
-                        paneIdentifier: 'compare.export.after',
-                        fixedPhotoSize: req.panePhotoSize,
-                      ),
-                    ),
-                  ],
-                ),
+                _buildComparisonMedia(req, beforeCtrl, afterCtrl),
                 if (_options.includeMemberName &&
                     (req.member?.name.isNotEmpty ?? false))
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
-                    child: Text('회원: ${req.member!.name}',
-                        textAlign: TextAlign.center),
+                    child: Text(
+                      '회원: ${req.member!.name}',
+                      textAlign: TextAlign.center,
+                    ),
                   ),
                 if (_options.includeMemo && _hasMemo(req))
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(_memoText(req), textAlign: TextAlign.center),
                   ),
-                if (_options.includeStudioName && _studioName.trim().isNotEmpty)
+                if (_options.includeStudioName &&
+                    (studioName.isNotEmpty || studioLogo != null))
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
-                    child:
-                        Text(_studioName.trim(), textAlign: TextAlign.center),
+                    child: Wrap(
+                      alignment: WrapAlignment.center,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        if (studioLogo != null)
+                          Semantics(
+                            identifier: 'compare.export.studioLogo.image',
+                            label: '스튜디오 로고',
+                            image: true,
+                            child: Image.file(
+                              studioLogo,
+                              key: const ValueKey(
+                                'compare.export.studioLogo.image',
+                              ),
+                              width: 48,
+                              height: 48,
+                              fit: BoxFit.contain,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  const SizedBox.shrink(),
+                            ),
+                          ),
+                        if (studioName.isNotEmpty) Text(studioName),
+                      ],
+                    ),
                   ),
                 if (_options.includeWatermark)
                   Padding(
@@ -268,10 +451,9 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
                     child: Text(
                       'body_frame',
                       textAlign: TextAlign.center,
-                      style: Theme.of(context)
-                          .textTheme
-                          .labelSmall
-                          ?.copyWith(color: Colors.grey),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.labelSmall?.copyWith(color: Colors.grey),
                     ),
                   ),
               ],
@@ -285,13 +467,18 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
   /// `extra`가 소실된 경우(프로세스 복원/딥링크) 쿼리 파라미터로 기본 구도의
   /// 요청을 재구성한다. 확대/이동 상태까지는 복원하지 못하지만 전체 사진을
   /// 표시하는 기본 구도로 화면 자체는 계속 사용할 수 있다.
-  Widget _buildFallbackFromQuery(BodyDirection direction, String beforeId,
-      String afterId) {
-    final bundleAsync = ref.watch(compareViewBundleProvider((
-      memberId: widget.memberId,
-      beforePhotoId: beforeId,
-      afterPhotoId: afterId,
-    )));
+  Widget _buildFallbackFromQuery(
+    BodyDirection direction,
+    String beforeId,
+    String afterId,
+  ) {
+    final bundleAsync = ref.watch(
+      compareViewBundleProvider((
+        memberId: widget.memberId,
+        beforePhotoId: beforeId,
+        afterPhotoId: afterId,
+      )),
+    );
     return bundleAsync.when(
       loading: () => const Center(
         key: ValueKey('screen.compare.export.status'),
@@ -332,9 +519,24 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final settingsAsync = ref.watch(appSettingsControllerProvider);
+    if (!_settingsInitialized) {
+      final settings = settingsAsync.valueOrNull;
+      if (settings != null) {
+        _initializeSettings(settings);
+      } else if (settingsAsync.hasError) {
+        _initializeSettings(AppSettings.defaults);
+      }
+    }
+
     final req = _request;
     Widget body;
-    if (req != null) {
+    if (!_settingsInitialized) {
+      body = const Center(
+        key: ValueKey('screen.compare.export.status'),
+        child: CircularProgressIndicator(),
+      );
+    } else if (req != null) {
       body = _buildContent(req);
     } else {
       final query = GoRouterState.of(context).uri.queryParameters;
@@ -381,36 +583,46 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
             title: '회원 이름 포함',
             subtitle: '개인정보 보호를 위해 기본값은 숨김입니다.',
             value: _options.includeMemberName,
-            onChanged: (v) =>
-                setState(() => _options = _options.copyWith(includeMemberName: v)),
+            onChanged: (v) => _updateComposition(
+              () => _options = _options.copyWith(includeMemberName: v),
+              exportOptionsChanged: true,
+            ),
           ),
           LabeledSwitch(
             id: 'compare.export.date.toggle',
             title: '촬영일 포함',
             value: _options.includeShotDate,
-            onChanged: (v) =>
-                setState(() => _options = _options.copyWith(includeShotDate: v)),
+            onChanged: (v) => _updateComposition(
+              () => _options = _options.copyWith(includeShotDate: v),
+              exportOptionsChanged: true,
+            ),
           ),
           LabeledSwitch(
             id: 'compare.export.memo.toggle',
             title: '메모 포함',
             value: _options.includeMemo,
-            onChanged: (v) =>
-                setState(() => _options = _options.copyWith(includeMemo: v)),
+            onChanged: (v) => _updateComposition(
+              () => _options = _options.copyWith(includeMemo: v),
+              exportOptionsChanged: true,
+            ),
           ),
           LabeledSwitch(
             id: 'compare.export.grid.toggle',
             title: '격자 포함',
             value: _options.includeGrid,
-            onChanged: (v) =>
-                setState(() => _options = _options.copyWith(includeGrid: v)),
+            onChanged: (v) => _updateComposition(
+              () => _options = _options.copyWith(includeGrid: v),
+              exportOptionsChanged: true,
+            ),
           ),
           LabeledSwitch(
             id: 'compare.export.studio.toggle',
             title: '스튜디오명 포함',
             value: _options.includeStudioName,
-            onChanged: (v) => setState(
-                () => _options = _options.copyWith(includeStudioName: v)),
+            onChanged: (v) => _updateComposition(
+              () => _options = _options.copyWith(includeStudioName: v),
+              exportOptionsChanged: true,
+            ),
           ),
           if (_options.includeStudioName)
             Padding(
@@ -420,8 +632,9 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
                 label: '스튜디오명 입력',
                 child: TextField(
                   key: const ValueKey('compare.export.studio.field'),
+                  controller: _studioNameController,
                   decoration: const InputDecoration(labelText: '스튜디오명(선택)'),
-                  onChanged: (v) => setState(() => _studioName = v),
+                  onChanged: (v) => _updateComposition(() => _studioName = v),
                 ),
               ),
             ),
@@ -429,8 +642,41 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
             id: 'compare.export.watermark.toggle',
             title: '앱 워터마크 포함',
             value: _options.includeWatermark,
-            onChanged: (v) =>
-                setState(() => _options = _options.copyWith(includeWatermark: v)),
+            onChanged: (v) => _updateComposition(
+              () => _options = _options.copyWith(includeWatermark: v),
+              exportOptionsChanged: true,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Semantics(
+            identifier: 'compare.export.defaults.save.button',
+            label: '현재 포함 옵션을 기본값으로 저장',
+            enabled: _defaultsSaveStatus != _DefaultsSaveStatus.saving,
+            child: OutlinedButton.icon(
+              key: const ValueKey('compare.export.defaults.save.button'),
+              onPressed: _defaultsSaveStatus == _DefaultsSaveStatus.saving
+                  ? null
+                  : _saveOptionsAsDefaults,
+              icon: _defaultsSaveStatus == _DefaultsSaveStatus.saving
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.save_outlined),
+              label: const Text('현재 옵션을 기본값으로 저장'),
+            ),
+          ),
+          Semantics(
+            identifier: 'compare.export.defaults.save.status',
+            label: '기본 내보내기 옵션 저장 상태',
+            value: _defaultsSaveStatusLabel(),
+            child: Text(
+              _defaultsSaveStatusLabel(),
+              key: const ValueKey('compare.export.defaults.save.status'),
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
           ),
           const SizedBox(height: 16),
           Semantics(
@@ -450,8 +696,9 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
             enabled: _status != CompareExportStatus.generating,
             child: ElevatedButton(
               key: const ValueKey('compare.export.generate.button'),
-              onPressed:
-                  _status == CompareExportStatus.generating ? null : _generate,
+              onPressed: _status == CompareExportStatus.generating
+                  ? null
+                  : _generate,
               child: _status == CompareExportStatus.generating
                   ? const SizedBox(
                       width: 20,

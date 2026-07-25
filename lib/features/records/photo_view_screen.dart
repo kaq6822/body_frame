@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -5,17 +6,18 @@ import 'dart:ui' as ui;
 import 'package:exif/exif.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:gal/gal.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../core/models/models.dart';
 import '../../core/providers.dart';
+import '../../core/services/app_image_picker.dart';
 import '../../core/services/app_logger.dart';
+import '../../core/widgets/grid_painter.dart';
+import 'services/grid_photo_composer.dart';
+import 'services/photo_export_sink.dart';
 
 /// 원본 사진 보기 화면.
 ///
@@ -39,7 +41,12 @@ class PhotoViewScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(_photoDetailProvider(photoId));
+    final detailKey = (
+      memberId: memberId,
+      recordId: recordId,
+      photoId: photoId,
+    );
+    final async = ref.watch(_photoDetailProvider(detailKey));
 
     return Semantics(
       identifier: screenId,
@@ -49,7 +56,7 @@ class PhotoViewScreen extends ConsumerWidget {
         key: const ValueKey(screenId),
         appBar: AppBar(title: const Text('원본 사진 보기')),
         body: async.when(
-          data: (data) => _PhotoViewBody(memberId: memberId, data: data),
+          data: (data) => _PhotoViewBody(detailKey: detailKey, data: data),
           loading: () => const _PaneStatus(
             key: ValueKey('screen.records.photo.status'),
             state: _OpState.running,
@@ -58,7 +65,7 @@ class PhotoViewScreen extends ConsumerWidget {
             key: const ValueKey('screen.records.photo.status'),
             state: _OpState.failure,
             message: '사진 정보를 불러오지 못했습니다.',
-            onRetry: () => ref.invalidate(_photoDetailProvider(photoId)),
+            onRetry: () => ref.invalidate(_photoDetailProvider(detailKey)),
           ),
         ),
       ),
@@ -83,22 +90,22 @@ class PhotoNotFoundException implements Exception {
   String toString() => '사진을 찾을 수 없습니다: $photoId';
 }
 
-final _photoDetailProvider =
-    FutureProvider.autoDispose.family<_PhotoDetailData, String>(
-  (ref, photoId) async {
-    final photoRepo = ref.watch(bodyPhotoRepositoryProvider);
-    final recordRepo = ref.watch(photoRecordRepositoryProvider);
-    final photo = await photoRepo.getById(photoId);
-    if (photo == null) {
-      throw PhotoNotFoundException(photoId);
-    }
-    final record = await recordRepo.getById(photo.recordId);
-    if (record == null) {
-      throw RecordNotFoundException(photo.recordId);
-    }
-    return _PhotoDetailData(photo: photo, record: record);
-  },
-);
+typedef _PhotoDetailKey = ({String memberId, String recordId, String photoId});
+
+final _photoDetailProvider = FutureProvider.autoDispose
+    .family<_PhotoDetailData, _PhotoDetailKey>((ref, key) async {
+      final photoRepo = ref.watch(bodyPhotoRepositoryProvider);
+      final recordRepo = ref.watch(photoRecordRepositoryProvider);
+      final photo = await photoRepo.getById(key.photoId);
+      if (photo == null || photo.recordId != key.recordId) {
+        throw PhotoNotFoundException(key.photoId);
+      }
+      final record = await recordRepo.getById(key.recordId);
+      if (record == null || record.memberId != key.memberId) {
+        throw RecordNotFoundException(key.recordId);
+      }
+      return _PhotoDetailData(photo: photo, record: record);
+    });
 
 /// [recordId]에 해당하는 촬영 기록을 찾을 수 없을 때 던진다.
 class RecordNotFoundException implements Exception {
@@ -110,13 +117,17 @@ class RecordNotFoundException implements Exception {
   String toString() => '촬영 기록을 찾을 수 없습니다: $recordId';
 }
 
+class PhotoReplacementOwnershipException implements Exception {
+  const PhotoReplacementOwnershipException();
+}
+
 enum _OpState { idle, running, success, failure }
 
 class _PhotoViewBody extends ConsumerStatefulWidget {
-  final String memberId;
+  final _PhotoDetailKey detailKey;
   final _PhotoDetailData data;
 
-  const _PhotoViewBody({required this.memberId, required this.data});
+  const _PhotoViewBody({required this.detailKey, required this.data});
 
   @override
   ConsumerState<_PhotoViewBody> createState() => _PhotoViewBodyState();
@@ -133,15 +144,44 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
   _OpState _exportState = _OpState.idle;
   _OpState _shareState = _OpState.idle;
   _OpState _deleteState = _OpState.idle;
+  bool _includeGridOnExport = false;
+  XFile? _pendingReplacement;
+  bool _recoveringLostReplacement = false;
+  bool _lostReplacementRecoveryScheduled = false;
 
   /// 이 화면에서 데이터가 실제로 바뀌었는지(뒤로 나갈 때 상위 화면에 알림).
   bool _hasChanges = false;
+
+  ImagePickerRequestContext get _pickerContext =>
+      ImagePickerRequestContext.photoReplacement(
+        memberId: widget.detailKey.memberId,
+        recordId: widget.detailKey.recordId,
+        photoId: widget.detailKey.photoId,
+      );
 
   @override
   void initState() {
     super.initState();
     _memoController = TextEditingController(text: widget.data.photo.memo ?? '');
     _direction = widget.data.photo.direction;
+    ref.listenManual<RecoveredImagePickerSelection?>(
+      appImagePickerCoordinatorProvider,
+      (previous, next) {
+        if (next?.context == _pickerContext) {
+          _scheduleLostReplacementRecovery();
+        }
+      },
+      fireImmediately: true,
+    );
+  }
+
+  void _scheduleLostReplacementRecovery() {
+    if (_lostReplacementRecoveryScheduled) return;
+    _lostReplacementRecoveryScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _lostReplacementRecoveryScheduled = false;
+      if (mounted) unawaited(_recoverLostReplacement());
+    });
   }
 
   @override
@@ -151,7 +191,7 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
   }
 
   void _invalidate() {
-    ref.invalidate(_photoDetailProvider(widget.data.photo.id));
+    ref.invalidate(_photoDetailProvider(widget.detailKey));
   }
 
   Future<void> _saveMemo() async {
@@ -167,13 +207,21 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
               : _memoController.text.trim(),
         ),
       );
-      logger.phase('photo.memo.save', LogPhase.success, context: {'id': photo.id});
+      logger.phase(
+        'photo.memo.save',
+        LogPhase.success,
+        context: {'id': photo.id},
+      );
       if (!mounted) return;
       _hasChanges = true;
       setState(() => _memoState = _OpState.success);
       _invalidate();
     } catch (err) {
-      logger.phase('photo.memo.save', LogPhase.failure, context: {'id': photo.id});
+      logger.phase(
+        'photo.memo.save',
+        LogPhase.failure,
+        context: {'id': photo.id},
+      );
       if (!mounted) return;
       setState(() => _memoState = _OpState.failure);
     }
@@ -191,13 +239,21 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
     try {
       final repo = ref.read(bodyPhotoRepositoryProvider);
       await repo.update(photo.copyWith(direction: newDirection));
-      logger.phase('photo.direction.save', LogPhase.success, context: {'id': photo.id});
+      logger.phase(
+        'photo.direction.save',
+        LogPhase.success,
+        context: {'id': photo.id},
+      );
       if (!mounted) return;
       _hasChanges = true;
       setState(() => _directionState = _OpState.success);
       _invalidate();
     } catch (err) {
-      logger.phase('photo.direction.save', LogPhase.failure, context: {'id': photo.id});
+      logger.phase(
+        'photo.direction.save',
+        LogPhase.failure,
+        context: {'id': photo.id},
+      );
       if (!mounted) return;
       setState(() {
         _direction = previous;
@@ -223,60 +279,152 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
       await repo.update(
         record.copyWith(shotAt: picked, updatedAt: DateTime.now()),
       );
-      logger.phase('record.date.save', LogPhase.success, context: {'id': record.id});
+      logger.phase(
+        'record.date.save',
+        LogPhase.success,
+        context: {'id': record.id},
+      );
       if (!mounted) return;
       _hasChanges = true;
       setState(() => _dateState = _OpState.success);
       _invalidate();
     } catch (err) {
-      logger.phase('record.date.save', LogPhase.failure, context: {'id': record.id});
+      logger.phase(
+        'record.date.save',
+        LogPhase.failure,
+        context: {'id': record.id},
+      );
       if (!mounted) return;
       setState(() => _dateState = _OpState.failure);
     }
   }
 
   Future<void> _replacePhoto() async {
-    final picker = ImagePicker();
     final XFile? picked;
     try {
-      picked = await picker.pickImage(source: ImageSource.gallery);
+      picked = await ref
+          .read(appImagePickerCoordinatorProvider.notifier)
+          .pickImage(context: _pickerContext, source: ImageSource.gallery);
     } catch (err) {
       setState(() => _replaceState = _OpState.failure);
       return;
     }
     if (picked == null) return;
+    _stageReplacement(picked);
+  }
 
+  Future<void> _recoverLostReplacement() async {
+    if (!mounted || _recoveringLostReplacement) return;
+    final coordinator = ref.read(appImagePickerCoordinatorProvider.notifier);
+    final recovered = coordinator.recoveredFor(_pickerContext);
+    if (recovered == null) return;
+    _recoveringLostReplacement = true;
+    try {
+      final picked = recovered.lastFile;
+      if (picked == null) {
+        throw StateError('복구할 교체 사진이 없습니다.');
+      }
+      if (!mounted) return;
+      _stageReplacement(picked);
+      await coordinator.acknowledgeRecovered(_pickerContext);
+    } catch (err) {
+      if (mounted) setState(() => _replaceState = _OpState.failure);
+    } finally {
+      _recoveringLostReplacement = false;
+    }
+  }
+
+  void _stageReplacement(XFile picked) {
+    if (!mounted) return;
+    setState(() {
+      _pendingReplacement = picked;
+      _replaceState = _OpState.idle;
+    });
+  }
+
+  void _cancelPendingReplacement() {
+    setState(() {
+      _pendingReplacement = null;
+      _replaceState = _OpState.idle;
+    });
+  }
+
+  Future<void> _confirmPendingReplacement() async {
+    final picked = _pendingReplacement;
+    if (picked == null) return;
+    await _replaceWithPicked(picked);
+  }
+
+  Future<void> _replaceWithPicked(XFile picked) async {
+    if (!mounted) return;
     setState(() => _replaceState = _OpState.running);
-    final photo = widget.data.photo;
+    final originalPhoto = widget.data.photo;
     final logger = ref.read(appLoggerProvider);
-    logger.phase('photo.replace', LogPhase.start, context: {'id': photo.id});
+    logger.phase(
+      'photo.replace',
+      LogPhase.start,
+      context: {'id': originalPhoto.id},
+    );
+    String? newlySavedPath;
     try {
       final bytes = await picked.readAsBytes();
       final size = await _decodeImageSize(bytes);
       final orientation = await _readOrientation(bytes);
       final storage = ref.read(photoStorageServiceProvider);
       final newPath = await storage.saveOriginal(
-        memberId: widget.memberId,
+        memberId: widget.detailKey.memberId,
         sourcePath: picked.path,
       );
+      newlySavedPath = newPath;
       final repo = ref.read(bodyPhotoRepositoryProvider);
+      final latestPhoto = await repo.getById(widget.detailKey.photoId);
+      final latestRecord = await ref
+          .read(photoRecordRepositoryProvider)
+          .getById(widget.detailKey.recordId);
+      if (latestPhoto == null ||
+          latestPhoto.recordId != widget.detailKey.recordId ||
+          latestRecord == null ||
+          latestRecord.memberId != widget.detailKey.memberId) {
+        throw const PhotoReplacementOwnershipException();
+      }
       await repo.update(
-        photo.copyWith(
+        latestPhoto.copyWith(
           filePath: newPath,
           width: size.$1,
           height: size.$2,
           orientation: orientation,
         ),
       );
-      // 메타 갱신에 성공한 뒤에만 이전 원본 파일을 정리한다.
-      await storage.deleteFile(photo.filePath);
-      logger.phase('photo.replace', LogPhase.success, context: {'id': photo.id});
+      logger.phase(
+        'photo.replace',
+        LogPhase.success,
+        context: {'id': originalPhoto.id},
+      );
       if (!mounted) return;
       _hasChanges = true;
-      setState(() => _replaceState = _OpState.success);
+      setState(() {
+        _pendingReplacement = null;
+        _replaceState = _OpState.success;
+      });
       _invalidate();
     } catch (err) {
-      logger.phase('photo.replace', LogPhase.failure, context: {'id': photo.id});
+      if (newlySavedPath != null) {
+        try {
+          await ref
+              .read(photoStorageServiceProvider)
+              .deleteFile(newlySavedPath);
+        } catch (_) {
+          logger.warn(
+            'photo.replace.cleanup.failure',
+            context: {'id': originalPhoto.id},
+          );
+        }
+      }
+      logger.phase(
+        'photo.replace',
+        LogPhase.failure,
+        context: {'id': originalPhoto.id},
+      );
       if (!mounted) return;
       setState(() => _replaceState = _OpState.failure);
     }
@@ -285,32 +433,39 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
   Future<void> _export() async {
     setState(() => _exportState = _OpState.running);
     final photo = widget.data.photo;
+    final includeGrid = _includeGridOnExport;
     final logger = ref.read(appLoggerProvider);
-    logger.phase('photo.export', LogPhase.start, context: {'id': photo.id});
+    logger.phase(
+      'photo.export',
+      LogPhase.start,
+      context: {'id': photo.id, 'grid': includeGrid},
+    );
     try {
-      final hasAccess = await Gal.hasAccess() || await Gal.requestAccess();
-      if (!hasAccess) {
-        throw Exception('사진 보관함 접근 권한이 거부되었습니다.');
+      final sink = ref.read(photoExportSinkProvider);
+      final name =
+          'body_frame_${photo.id}_${DateTime.now().microsecondsSinceEpoch}';
+      if (includeGrid) {
+        final sourceBytes = await File(photo.filePath).readAsBytes();
+        final png = await ref
+            .read(gridPhotoComposerProvider)
+            .compose(sourceBytes, photo.gridSettings);
+        await sink.savePng(png, name: '${name}_grid');
+      } else {
+        await sink.saveOriginalFile(photo.filePath, name: name);
       }
-      final source = File(photo.filePath);
-      final ext = p.extension(photo.filePath);
-      // 사진 보관함에 원본 파일명이 그대로 남으면 다음 내보내기 때 덮어써질
-      // 수 있으므로, 타임스탬프가 포함된 임시 사본 이름으로 내보낸다.
-      final tempName = 'body_frame_${DateTime.now().microsecondsSinceEpoch}$ext';
-      final tempPath = p.join((await getTemporaryDirectory()).path, tempName);
-      final tempFile = await source.copy(tempPath);
-      try {
-        await Gal.putImage(tempFile.path, album: 'BodyFrame');
-      } finally {
-        if (await tempFile.exists()) {
-          await tempFile.delete();
-        }
-      }
-      logger.phase('photo.export', LogPhase.success, context: {'id': photo.id});
+      logger.phase(
+        'photo.export',
+        LogPhase.success,
+        context: {'id': photo.id, 'grid': includeGrid},
+      );
       if (!mounted) return;
       setState(() => _exportState = _OpState.success);
     } catch (err) {
-      logger.phase('photo.export', LogPhase.failure, context: {'id': photo.id});
+      logger.phase(
+        'photo.export',
+        LogPhase.failure,
+        context: {'id': photo.id, 'grid': includeGrid},
+      );
       if (!mounted) return;
       setState(() => _exportState = _OpState.failure);
     }
@@ -403,25 +558,48 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 clipBehavior: Clip.antiAlias,
-                child: Semantics(
-                  identifier: 'records.viewer.image',
-                  label: '${photo.direction.label} 원본 사진, 확대 및 이동 가능',
-                  child: PhotoView.customChild(
-                    key: const ValueKey('records.viewer.image'),
-                    backgroundDecoration: const BoxDecoration(color: Colors.transparent),
-                    minScale: PhotoViewComputedScale.contained,
-                    maxScale: PhotoViewComputedScale.covered * 3,
-                    initialScale: PhotoViewComputedScale.contained,
-                    // Flutter의 Image.file은 JPEG EXIF orientation을 디코딩
-                    // 단계에서 자동 반영하므로 수동 회전(RotatedBox)을 더하면
-                    // 이중 회전이 된다. orientation 값은 메타데이터로만 보존한다.
-                    child: Image.file(
-                      File(photo.filePath),
-                      fit: BoxFit.contain,
-                      errorBuilder: (context, error, stack) =>
-                          const Center(child: Icon(Icons.broken_image_outlined)),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Semantics(
+                      identifier: 'records.viewer.image',
+                      label: '${photo.direction.label} 원본 사진, 확대 및 이동 가능',
+                      child: PhotoView.customChild(
+                        key: const ValueKey('records.viewer.image'),
+                        backgroundDecoration: const BoxDecoration(
+                          color: Colors.transparent,
+                        ),
+                        minScale: PhotoViewComputedScale.contained,
+                        maxScale: PhotoViewComputedScale.covered * 3,
+                        initialScale: PhotoViewComputedScale.contained,
+                        // Flutter의 Image.file은 JPEG EXIF orientation을 디코딩
+                        // 단계에서 자동 반영하므로 수동 회전(RotatedBox)을 더하면
+                        // 이중 회전이 된다. orientation 값은 메타데이터로만 보존한다.
+                        child: Image.file(
+                          File(photo.filePath),
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stack) => const Center(
+                            child: Icon(Icons.broken_image_outlined),
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
+                    if (_includeGridOnExport)
+                      Semantics(
+                        identifier: 'records.viewer.export.grid.preview',
+                        label: '내보내기에 합성할 격자 미리보기',
+                        child: IgnorePointer(
+                          child: CustomPaint(
+                            key: const ValueKey(
+                              'records.viewer.export.grid.preview',
+                            ),
+                            painter: GridPainter(
+                              photo.gridSettings.copyWith(visible: true),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ),
@@ -439,18 +617,24 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
                       for (final d in BodyDirection.values)
                         DropdownMenuItem(value: d, child: Text(d.label)),
                     ],
-                    onChanged:
-                        _directionState == _OpState.running ? null : _changeDirection,
+                    onChanged: _directionState == _OpState.running
+                        ? null
+                        : _changeDirection,
                   ),
                 ),
                 const SizedBox(width: 8),
-                _InlineStatus(id: 'records.viewer.direction.status', state: _directionState),
+                _InlineStatus(
+                  id: 'records.viewer.direction.status',
+                  state: _directionState,
+                ),
               ],
             ),
             Row(
               children: [
                 Expanded(
-                  child: Text('촬영일: ${DateFormat('yyyy-MM-dd').format(record.shotAt)}'),
+                  child: Text(
+                    '촬영일: ${DateFormat('yyyy-MM-dd').format(record.shotAt)}',
+                  ),
                 ),
                 Semantics(
                   identifier: 'records.viewer.date.edit.button',
@@ -462,7 +646,10 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
                     icon: const Icon(Icons.edit_calendar_outlined),
                   ),
                 ),
-                _InlineStatus(id: 'records.viewer.date.status', state: _dateState),
+                _InlineStatus(
+                  id: 'records.viewer.date.status',
+                  state: _dateState,
+                ),
               ],
             ),
             const SizedBox(height: 16),
@@ -491,14 +678,133 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
                   label: '사진 메모 저장',
                   child: ElevatedButton(
                     key: const ValueKey('records.viewer.memo.save.button'),
-                    onPressed: _memoState == _OpState.running ? null : _saveMemo,
+                    onPressed: _memoState == _OpState.running
+                        ? null
+                        : _saveMemo,
                     child: const Text('메모 저장'),
                   ),
                 ),
                 const SizedBox(width: 12),
-                _InlineStatus(id: 'records.viewer.memo.status', state: _memoState),
+                _InlineStatus(
+                  id: 'records.viewer.memo.status',
+                  state: _memoState,
+                ),
               ],
             ),
+            Semantics(
+              identifier: 'records.viewer.export.grid.toggle',
+              label: '내보내기에 격자 합성',
+              value: _includeGridOnExport ? '켜짐' : '꺼짐',
+              child: SwitchListTile(
+                key: const ValueKey('records.viewer.export.grid.toggle'),
+                contentPadding: EdgeInsets.zero,
+                title: const Text('내보내기에 격자 합성'),
+                subtitle: const Text('원본은 변경하지 않고 격자가 포함된 새 PNG를 만듭니다.'),
+                value: _includeGridOnExport,
+                onChanged: _exportState == _OpState.running
+                    ? null
+                    : (value) => setState(() {
+                        _includeGridOnExport = value;
+                        _exportState = _OpState.idle;
+                      }),
+              ),
+            ),
+            if (_pendingReplacement != null) ...[
+              const SizedBox(height: 8),
+              Semantics(
+                identifier: 'records.viewer.replace.pending.card',
+                container: true,
+                label: '교체할 사진 미리보기와 적용 확인',
+                child: Card(
+                  key: const ValueKey('records.viewer.replace.pending.card'),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: Semantics(
+                            identifier: 'records.viewer.replace.pending.image',
+                            image: true,
+                            label: '교체할 사진 미리보기',
+                            child: Image.file(
+                              File(_pendingReplacement!.path),
+                              key: const ValueKey(
+                                'records.viewer.replace.pending.image',
+                              ),
+                              width: 88,
+                              height: 88,
+                              fit: BoxFit.contain,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  const SizedBox(
+                                    width: 88,
+                                    height: 88,
+                                    child: Icon(Icons.broken_image_outlined),
+                                  ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                '이 사진으로 교체할까요?',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              const SizedBox(height: 4),
+                              const Text('적용하기 전까지 기존 원본은 변경되지 않습니다.'),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 8,
+                                children: [
+                                  Semantics(
+                                    identifier:
+                                        'records.viewer.replace.cancel.button',
+                                    button: true,
+                                    enabled: _replaceState != _OpState.running,
+                                    label: '사진 교체 취소',
+                                    child: TextButton(
+                                      key: const ValueKey(
+                                        'records.viewer.replace.cancel.button',
+                                      ),
+                                      onPressed:
+                                          _replaceState == _OpState.running
+                                          ? null
+                                          : _cancelPendingReplacement,
+                                      child: const Text('취소'),
+                                    ),
+                                  ),
+                                  Semantics(
+                                    identifier:
+                                        'records.viewer.replace.confirm.button',
+                                    button: true,
+                                    enabled: _replaceState != _OpState.running,
+                                    label: '사진 교체 적용',
+                                    child: FilledButton(
+                                      key: const ValueKey(
+                                        'records.viewer.replace.confirm.button',
+                                      ),
+                                      onPressed:
+                                          _replaceState == _OpState.running
+                                          ? null
+                                          : _confirmPendingReplacement,
+                                      child: const Text('교체 적용'),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
             const Divider(height: 32),
             Wrap(
               spacing: 12,
@@ -513,7 +819,7 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
                 ),
                 _ActionButton(
                   id: 'records.viewer.export.button',
-                  label: '내보내기',
+                  label: _includeGridOnExport ? '격자 합성 내보내기' : '내보내기',
                   icon: Icons.save_alt_outlined,
                   state: _exportState,
                   onPressed: _export,
@@ -565,7 +871,12 @@ class _PaneStatus extends StatelessWidget {
   final String? message;
   final VoidCallback? onRetry;
 
-  const _PaneStatus({super.key, required this.state, this.message, this.onRetry});
+  const _PaneStatus({
+    super.key,
+    required this.state,
+    this.message,
+    this.onRetry,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -616,11 +927,19 @@ class _InlineStatus extends StatelessWidget {
         label = '진행 중';
         break;
       case _OpState.success:
-        child = Icon(Icons.check_circle, size: 16, color: Theme.of(context).colorScheme.primary);
+        child = Icon(
+          Icons.check_circle,
+          size: 16,
+          color: Theme.of(context).colorScheme.primary,
+        );
         label = '완료';
         break;
       case _OpState.failure:
-        child = Icon(Icons.error, size: 16, color: Theme.of(context).colorScheme.error);
+        child = Icon(
+          Icons.error,
+          size: 16,
+          color: Theme.of(context).colorScheme.error,
+        );
         label = '실패';
         break;
     }
@@ -670,7 +989,10 @@ class _ActionButton extends StatelessWidget {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : Icon(icon, color: color),
-            label: Text(label, style: color != null ? TextStyle(color: color) : null),
+            label: Text(
+              label,
+              style: color != null ? TextStyle(color: color) : null,
+            ),
           ),
         ),
         _InlineStatus(id: '$id.status', state: state),

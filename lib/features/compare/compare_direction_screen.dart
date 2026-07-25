@@ -38,6 +38,9 @@ class _CompareDirectionScreenState
     final query = GoRouterState.of(context).uri.queryParameters;
     final beforeRecordId = query[CompareQueryKeys.beforeRecordId];
     final afterRecordId = query[CompareQueryKeys.afterRecordId];
+    final hasMissingRecord = beforeRecordId == null || afterRecordId == null;
+    final hasSameRecord =
+        beforeRecordId != null && beforeRecordId == afterRecordId;
 
     return Semantics(
       identifier: CompareDirectionScreen.screenId,
@@ -46,9 +49,12 @@ class _CompareDirectionScreenState
       child: Scaffold(
         key: const ValueKey(CompareDirectionScreen.screenId),
         appBar: AppBar(title: const Text('비교 방향 선택')),
-        body: (beforeRecordId == null || afterRecordId == null)
+        body: (hasMissingRecord || hasSameRecord)
             ? CompareMissingContext(
                 memberId: widget.memberId,
+                message: hasSameRecord
+                    ? '이전과 이후에는 서로 다른 촬영 기록을 선택해 주세요.'
+                    : '비교 날짜 선택 화면에서 다시 진입해 주세요.',
                 backButtonId: 'compare.direction.backToDates.button',
               )
             : _DirectionBody(
@@ -127,12 +133,14 @@ class _DirectionBody extends ConsumerWidget {
       );
     }
 
-    final effectiveSelection =
-        available.contains(selected) ? selected : available.first;
+    final effectiveSelection = available.contains(selected)
+        ? selected
+        : available.first;
     if (effectiveSelection != selected) {
       // 최초 진입 시 사용 가능한 첫 방향을 기본 선택으로 제안한다.
-      WidgetsBinding.instance
-          .addPostFrameCallback((_) => onSelect(effectiveSelection!));
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => onSelect(effectiveSelection!),
+      );
     }
 
     return Padding(
@@ -162,7 +170,9 @@ class _DirectionBody extends ConsumerWidget {
                   selected: isSelected,
                   enabled: isAvailable,
                   child: ChoiceChip(
-                    key: ValueKey('compare.direction.selector.${direction.key}'),
+                    key: ValueKey(
+                      'compare.direction.selector.${direction.key}',
+                    ),
                     label: Text(direction.label),
                     selected: isSelected,
                     onSelected: isAvailable ? (_) => onSelect(direction) : null,
@@ -180,10 +190,14 @@ class _DirectionBody extends ConsumerWidget {
               onPressed: effectiveSelection == null
                   ? null
                   : () {
-                      final beforePhoto =
-                          photoForDirection(beforePhotos, effectiveSelection);
-                      final afterPhoto =
-                          photoForDirection(afterPhotos, effectiveSelection);
+                      final beforePhoto = photoForDirection(
+                        beforePhotos,
+                        effectiveSelection,
+                      );
+                      final afterPhoto = photoForDirection(
+                        afterPhotos,
+                        effectiveSelection,
+                      );
                       if (beforePhoto == null || afterPhoto == null) return;
                       context.pushNamed(
                         AppRoutes.compareView,

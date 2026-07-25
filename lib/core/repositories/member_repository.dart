@@ -1,4 +1,5 @@
 import 'package:sqflite/sqflite.dart';
+import 'package:path/path.dart' as p;
 
 import '../database/app_database.dart';
 import '../models/member.dart';
@@ -63,15 +64,16 @@ class MemberRepositoryImpl implements MemberRepository {
     required AppDatabase database,
     required PhotoStorageService storage,
     AppLogger? logger,
-  })  : _db = database,
-        _storage = storage,
-        _logger = logger ?? AppLogger.instance;
+  }) : _db = database,
+       _storage = storage,
+       _logger = logger ?? AppLogger.instance;
 
   @override
   Future<List<MemberListItem>> list({
     String? query,
     MemberSort sort = MemberSort.recentShot,
   }) async {
+    await _storage.reconcilePendingQuarantines();
     final db = await _db.database;
     final where = <String>[];
     final args = <Object?>[];
@@ -89,7 +91,8 @@ class MemberRepositoryImpl implements MemberRepository {
       MemberSort.registeredAt => 'm.created_at DESC',
     };
 
-    final sql = '''
+    final sql =
+        '''
       SELECT m.*,
              COUNT(r.id) AS record_count,
              MAX(r.shot_at) AS last_shot_at
@@ -101,20 +104,23 @@ class MemberRepositoryImpl implements MemberRepository {
     ''';
 
     final rows = await db.rawQuery(sql, args);
-    return rows.map((row) {
-      final lastShot = row['last_shot_at'] as int?;
-      return MemberListItem(
-        member: Member.fromMap(row),
-        recordCount: (row['record_count'] as int?) ?? 0,
-        lastShotAt: lastShot == null
-            ? null
-            : DateTime.fromMillisecondsSinceEpoch(lastShot),
-      );
-    }).toList();
+    return Future.wait(
+      rows.map((row) async {
+        final lastShot = row['last_shot_at'] as int?;
+        return MemberListItem(
+          member: await _memberFromRow(row),
+          recordCount: (row['record_count'] as int?) ?? 0,
+          lastShotAt: lastShot == null
+              ? null
+              : DateTime.fromMillisecondsSinceEpoch(lastShot),
+        );
+      }),
+    );
   }
 
   @override
   Future<Member?> getById(String id) async {
+    await _storage.reconcilePendingQuarantines();
     final db = await _db.database;
     final rows = await db.query(
       AppDatabase.tableMembers,
@@ -123,44 +129,127 @@ class MemberRepositoryImpl implements MemberRepository {
       limit: 1,
     );
     if (rows.isEmpty) return null;
-    return Member.fromMap(rows.first);
+    return _memberFromRow(rows.first);
   }
 
   @override
   Future<void> insert(Member member) async {
+    await _storage.reconcilePendingQuarantines();
     final db = await _db.database;
     await db.insert(
       AppDatabase.tableMembers,
-      member.toMap(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
+      await _storedMemberMap(member),
+      conflictAlgorithm: ConflictAlgorithm.abort,
     );
-    _logger.phase('member.insert', LogPhase.success, context: {'id': member.id});
+    _logger.phase(
+      'member.insert',
+      LogPhase.success,
+      context: {'id': member.id},
+    );
   }
 
   @override
   Future<void> update(Member member) async {
+    await _storage.reconcilePendingQuarantines();
     final db = await _db.database;
-    await db.update(
+    final existingRows = await db.query(
       AppDatabase.tableMembers,
-      member.toMap(),
+      columns: ['avatar_path'],
       where: 'id = ?',
       whereArgs: [member.id],
+      limit: 1,
     );
-    _logger.phase('member.update', LogPhase.success, context: {'id': member.id});
+    if (existingRows.isEmpty) {
+      throw StateError('수정할 회원을 찾을 수 없습니다.');
+    }
+
+    final map = await _storedMemberMap(member);
+    final oldAvatar = existingRows.single['avatar_path'] as String?;
+    final newAvatar = map['avatar_path'] as String?;
+    StorageQuarantine? quarantine;
+    if (oldAvatar != null && oldAvatar.isNotEmpty && oldAvatar != newAvatar) {
+      quarantine = await _storage.quarantineFile(oldAvatar);
+    }
+    try {
+      final updated = await db.update(
+        AppDatabase.tableMembers,
+        map,
+        where: 'id = ?',
+        whereArgs: [member.id],
+      );
+      if (updated != 1) {
+        throw StateError('회원 수정 결과가 올바르지 않습니다.');
+      }
+    } catch (_) {
+      if (quarantine != null) {
+        await _storage.restoreQuarantine(quarantine);
+      }
+      rethrow;
+    }
+    await _discardBestEffort(quarantine);
+    _logger.phase(
+      'member.update',
+      LogPhase.success,
+      context: {'id': member.id},
+    );
   }
 
   @override
   Future<void> delete(String id) async {
+    await _storage.reconcilePendingQuarantines();
     _logger.phase('member.delete', LogPhase.start, context: {'id': id});
     final db = await _db.database;
-    // 외래 키 ON DELETE CASCADE로 photo_records/body_photos 행이 함께 삭제된다.
-    // 파일은 DB 밖이므로 회원 저장소 디렉터리를 명시적으로 정리한다.
-    await db.delete(
-      AppDatabase.tableMembers,
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-    await _storage.deleteMemberDir(id);
+    final quarantine = await _storage.quarantineMemberDir(id);
+    try {
+      await db.transaction((txn) async {
+        // 외래 키 ON DELETE CASCADE로 기록/사진 행도 같은 트랜잭션에서 삭제.
+        await txn.delete(
+          AppDatabase.tableMembers,
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+      });
+    } catch (_) {
+      if (quarantine != null) {
+        await _storage.restoreQuarantine(quarantine);
+      }
+      rethrow;
+    }
+    await _discardBestEffort(quarantine);
     _logger.phase('member.delete', LogPhase.success, context: {'id': id});
+  }
+
+  Future<Member> _memberFromRow(Map<String, Object?> row) async {
+    final map = Map<String, dynamic>.from(row);
+    final storedAvatar = map['avatar_path'] as String?;
+    if (storedAvatar != null && storedAvatar.isNotEmpty) {
+      map['avatar_path'] = await _storage.resolvePath(storedAvatar);
+    }
+    return Member.fromMap(map);
+  }
+
+  Future<Map<String, dynamic>> _storedMemberMap(Member member) async {
+    final map = member.toMap();
+    final avatar = member.avatarPath;
+    if (avatar != null && avatar.isNotEmpty) {
+      final storedPath = await _storage.toStoredPath(avatar);
+      final segments = p.posix.split(storedPath);
+      if (segments.length < 3 ||
+          segments[0] != PhotoStorageServiceImpl.rootDirName ||
+          segments[1] != member.id) {
+        throw StateError('대표 사진이 회원의 저장소에 있지 않습니다.');
+      }
+      map['avatar_path'] = storedPath;
+    }
+    return map;
+  }
+
+  Future<void> _discardBestEffort(StorageQuarantine? quarantine) async {
+    if (quarantine == null) return;
+    try {
+      await _storage.discardQuarantine(quarantine);
+    } catch (_) {
+      _logger.warn('storage.quarantine.cleanup.failure');
+    }
   }
 }

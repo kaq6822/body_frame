@@ -12,7 +12,9 @@ class BodyPhoto {
   /// 소속 촬영 기록 식별자.
   final String recordId;
 
-  /// 앱 전용 저장소 내 원본 이미지 로컬 파일 경로.
+  /// 실행 중 해석된 앱 전용 저장소 내 원본 이미지 절대경로.
+  ///
+  /// 영속화할 때는 리포지토리가 앱 저장소 기준 상대경로로 변환한다.
   final String filePath;
 
   final BodyDirection direction;
@@ -99,8 +101,7 @@ class BodyPhoto {
       orientation: (map['orientation'] as int?) ?? 1,
       gridSettings: GridSettings.fromJson(map['grid_settings'] as String?),
       memo: map['memo'] as String?,
-      createdAt:
-          DateTime.fromMillisecondsSinceEpoch(map['created_at'] as int),
+      createdAt: DateTime.fromMillisecondsSinceEpoch(map['created_at'] as int),
     );
   }
 

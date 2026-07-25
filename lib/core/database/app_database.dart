@@ -9,16 +9,17 @@ import '../services/app_logger.dart';
 /// sqflite 데이터베이스 관리자.
 ///
 /// 스키마 정의와 마이그레이션을 담당한다. 사진 파일 자체는 저장하지 않고
-/// body_photos.file_path에 로컬 경로만 저장한다.
+/// body_photos.file_path에는 앱 저장소 기준 상대경로만 저장한다.
 ///
 /// 테스트에서는 [AppDatabase.forTesting]으로 인메모리 DB를 주입한다.
 class AppDatabase {
   static const String dbName = 'body_frame.db';
-  static const int schemaVersion = 1;
+  static const int schemaVersion = 3;
 
   static const String tableMembers = 'members';
   static const String tablePhotoRecords = 'photo_records';
   static const String tableBodyPhotos = 'body_photos';
+  static const String tableRestoreOperations = 'restore_operations';
 
   final AppLogger _logger;
 
@@ -28,8 +29,8 @@ class AppDatabase {
   Database? _db;
 
   AppDatabase({AppLogger? logger, String? path})
-      : _logger = logger ?? AppLogger.instance,
-        _overridePath = path;
+    : _logger = logger ?? AppLogger.instance,
+      _overridePath = path;
 
   /// 인메모리 DB를 사용하는 테스트 전용 인스턴스.
   factory AppDatabase.forTesting({AppLogger? logger}) {
@@ -112,21 +113,51 @@ class AppDatabase {
     ''');
 
     batch.execute(
-        'CREATE INDEX idx_records_member ON $tablePhotoRecords (member_id)');
+      'CREATE INDEX idx_records_member ON $tablePhotoRecords (member_id)',
+    );
     batch.execute(
-        'CREATE INDEX idx_records_shot_at ON $tablePhotoRecords (shot_at)');
+      'CREATE INDEX idx_records_shot_at ON $tablePhotoRecords (shot_at)',
+    );
     batch.execute(
-        'CREATE INDEX idx_photos_record ON $tableBodyPhotos (record_id)');
+      'CREATE INDEX idx_photos_record ON $tableBodyPhotos (record_id)',
+    );
+    batch.execute('''
+      CREATE TABLE $tableRestoreOperations (
+        id TEXT PRIMARY KEY
+      )
+    ''');
 
     await batch.commit(noResult: true);
   }
 
   /// 마이그레이션 훅. 스키마 버전이 오르면 여기에 단계별 변경을 추가한다.
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    _logger.info('database.upgrade',
-        context: {'from': oldVersion, 'to': newVersion});
-    // v1이 최초 버전. 이후 버전은 아래에 순차적으로 누적한다.
-    // 예: if (oldVersion < 2) { await db.execute('ALTER TABLE ...'); }
+    _logger.info(
+      'database.upgrade',
+      context: {'from': oldVersion, 'to': newVersion},
+    );
+    // v1은 사진·아바타의 앱 컨테이너 절대경로를 저장했다. 컨테이너 경로는
+    // 업데이트/복원 시 바뀔 수 있으므로 `photos/` 이하 상대경로만 보존한다.
+    if (oldVersion < 2) {
+      await db.execute('''
+        UPDATE $tableBodyPhotos
+        SET file_path = substr(file_path, instr(file_path, '/photos/') + 1)
+        WHERE instr(file_path, '/photos/') > 0
+      ''');
+      await db.execute('''
+        UPDATE $tableMembers
+        SET avatar_path = substr(avatar_path, instr(avatar_path, '/photos/') + 1)
+        WHERE avatar_path IS NOT NULL
+          AND instr(avatar_path, '/photos/') > 0
+      ''');
+    }
+    if (oldVersion < 3) {
+      await db.execute('''
+        CREATE TABLE $tableRestoreOperations (
+          id TEXT PRIMARY KEY
+        )
+      ''');
+    }
   }
 
   Future<void> close() async {

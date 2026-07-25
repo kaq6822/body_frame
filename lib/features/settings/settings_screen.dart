@@ -1,10 +1,15 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../core/models/models.dart';
 import '../../core/providers.dart';
 import '../../core/router/app_routes.dart';
+import '../../core/services/app_image_picker.dart';
 import 'providers/settings_providers.dart';
 
 /// 앱 설정 화면.
@@ -53,13 +58,64 @@ class _SettingsBody extends ConsumerStatefulWidget {
 }
 
 class _SettingsBodyState extends ConsumerState<_SettingsBody> {
+  static const _studioAssetOwner = 'studio-assets';
+
   late final TextEditingController _studioNameController;
+  bool _logoBusy = false;
+  bool _recoveringLostLogo = false;
+  bool _lostLogoRecoveryScheduled = false;
+
+  ImagePickerRequestContext get _logoPickerContext =>
+      ImagePickerRequestContext.studioLogo();
 
   @override
   void initState() {
     super.initState();
-    _studioNameController =
-        TextEditingController(text: widget.settings.studioName ?? '');
+    _studioNameController = TextEditingController(
+      text: widget.settings.studioName ?? '',
+    );
+    ref.listenManual<RecoveredImagePickerSelection?>(
+      appImagePickerCoordinatorProvider,
+      (previous, next) {
+        if (next?.context == _logoPickerContext) {
+          _scheduleLostLogoRecovery();
+        }
+      },
+      fireImmediately: true,
+    );
+    if (ref.read(appImagePickerCoordinatorProvider)?.context ==
+        _logoPickerContext) {
+      _scheduleLostLogoRecovery();
+    }
+  }
+
+  void _scheduleLostLogoRecovery() {
+    if (_lostLogoRecoveryScheduled) return;
+    _lostLogoRecoveryScheduled = true;
+    Future<void>.microtask(() {
+      _lostLogoRecoveryScheduled = false;
+      if (mounted) unawaited(_recoverLostLogo());
+    });
+  }
+
+  Future<void> _recoverLostLogo() async {
+    if (!mounted || _recoveringLostLogo || _logoBusy) return;
+    final coordinator = ref.read(appImagePickerCoordinatorProvider.notifier);
+    final recovered = coordinator.recoveredFor(_logoPickerContext);
+    if (recovered == null) return;
+    _recoveringLostLogo = true;
+    try {
+      final picked = recovered.lastFile;
+      if (picked == null) {
+        throw StateError('복구할 스튜디오 로고가 없습니다.');
+      }
+      final saved = await _storeStudioLogo(picked);
+      if (saved) {
+        await coordinator.acknowledgeRecovered(_logoPickerContext);
+      }
+    } finally {
+      _recoveringLostLogo = false;
+    }
   }
 
   @override
@@ -70,13 +126,120 @@ class _SettingsBodyState extends ConsumerState<_SettingsBody> {
 
   Future<void> _saveStudioName() async {
     final value = _studioNameController.text.trim();
-    await ref.read(appSettingsControllerProvider.notifier).updateSettings(
-          (s) => s.copyWith(studioName: value.isEmpty ? '' : value),
+    await ref
+        .read(appSettingsControllerProvider.notifier)
+        .updateSettings(
+          (s) => value.isEmpty
+              ? s.copyWith(clearStudioName: true)
+              : s.copyWith(studioName: value),
         );
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('스튜디오명을 저장했습니다')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('스튜디오명을 저장했습니다')));
+  }
+
+  Future<void> _pickStudioLogo() async {
+    if (_logoBusy) return;
+    try {
+      final picked = await ref
+          .read(appImagePickerCoordinatorProvider.notifier)
+          .pickImage(context: _logoPickerContext, source: ImageSource.gallery);
+      if (picked == null || !mounted) return;
+      await _storeStudioLogo(picked);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('스튜디오 로고를 불러오지 못했습니다')));
+    }
+  }
+
+  Future<bool> _storeStudioLogo(XFile picked) async {
+    if (_logoBusy) return false;
+    setState(() => _logoBusy = true);
+    final storage = ref.read(photoStorageServiceProvider);
+    String? newPath;
+    var settingsSaved = false;
+    try {
+      newPath = await storage.saveOriginal(
+        memberId: _studioAssetOwner,
+        sourcePath: picked.path,
+      );
+      final storedPath = await storage.toStoredPath(newPath);
+      final oldPath = widget.settings.studioLogoPath;
+      await ref
+          .read(appSettingsControllerProvider.notifier)
+          .updateSettings(
+            (settings) => settings.copyWith(studioLogoPath: storedPath),
+          );
+      settingsSaved = true;
+      if (oldPath != null && oldPath != storedPath) {
+        try {
+          await storage.deleteFile(oldPath);
+        } catch (_) {
+          ref
+              .read(appLoggerProvider)
+              .warn('settings.studioLogo.oldCleanup.failure');
+        }
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('스튜디오 로고를 저장했습니다')));
+      }
+      return true;
+    } catch (_) {
+      if (!settingsSaved && newPath != null) {
+        try {
+          await storage.deleteFile(newPath);
+        } catch (_) {
+          // 새 파일 정리 실패는 원래 저장 오류를 가리지 않는다.
+        }
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('스튜디오 로고를 저장하지 못했습니다')));
+      }
+      return false;
+    } finally {
+      if (mounted) setState(() => _logoBusy = false);
+    }
+  }
+
+  Future<void> _clearStudioLogo() async {
+    if (_logoBusy) return;
+    final oldPath = widget.settings.studioLogoPath;
+    if (oldPath == null) return;
+    setState(() => _logoBusy = true);
+    try {
+      await ref
+          .read(appSettingsControllerProvider.notifier)
+          .updateSettings(
+            (settings) => settings.copyWith(clearStudioLogoPath: true),
+          );
+      try {
+        await ref.read(photoStorageServiceProvider).deleteFile(oldPath);
+      } catch (_) {
+        ref.read(appLoggerProvider).warn('settings.studioLogo.cleanup.failure');
+      }
+    } finally {
+      if (mounted) setState(() => _logoBusy = false);
+    }
+  }
+
+  Future<String?> _resolvedLogoPath() async {
+    final stored = widget.settings.studioLogoPath;
+    if (stored == null || stored.isEmpty) return null;
+    try {
+      final path = await ref
+          .read(photoStorageServiceProvider)
+          .resolvePath(stored);
+      return await File(path).exists() ? path : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _showDefaultGridDialog() async {
@@ -198,6 +361,63 @@ class _SettingsBodyState extends ConsumerState<_SettingsBody> {
               onPressed: _saveStudioName,
               icon: const Icon(Icons.check),
               tooltip: '저장',
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        const Text('스튜디오 로고', style: TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Semantics(
+              identifier: 'settings.studioLogo.preview',
+              label: '저장된 스튜디오 로고',
+              child: Container(
+                key: const ValueKey('settings.studioLogo.preview'),
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: FutureBuilder<String?>(
+                  future: _resolvedLogoPath(),
+                  builder: (context, snapshot) {
+                    final path = snapshot.data;
+                    return path == null
+                        ? const Icon(Icons.business_outlined)
+                        : ClipRRect(
+                            borderRadius: BorderRadius.circular(7),
+                            child: Image.file(File(path), fit: BoxFit.contain),
+                          );
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Wrap(
+                spacing: 8,
+                children: [
+                  OutlinedButton(
+                    key: const ValueKey('settings.studioLogo.pick.button'),
+                    onPressed: _logoBusy ? null : _pickStudioLogo,
+                    child: Text(
+                      widget.settings.studioLogoPath == null
+                          ? '로고 선택'
+                          : '로고 교체',
+                    ),
+                  ),
+                  if (widget.settings.studioLogoPath != null)
+                    TextButton(
+                      key: const ValueKey('settings.studioLogo.clear.button'),
+                      onPressed: _logoBusy ? null : _clearStudioLogo,
+                      child: const Text('삭제'),
+                    ),
+                ],
+              ),
             ),
           ],
         ),

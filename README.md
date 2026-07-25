@@ -18,5 +18,8 @@ flutter analyze
 flutter test
 ```
 
+스토어 제출 후보 빌드는 [실기기 스모크 테스트](docs/device-smoke-checklist.md)도
+확인합니다.
+
 개발 제약은 [AGENTS.md](AGENTS.md), 아직 남은 구현 범위는
 [ROADMAP.md](ROADMAP.md)를 참고합니다.

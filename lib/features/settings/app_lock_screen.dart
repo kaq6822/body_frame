@@ -39,7 +39,8 @@ class AppLockScreen extends ConsumerWidget {
                 const SizedBox(height: 8),
                 ElevatedButton(
                   key: const ValueKey('lock.retry.button'),
-                  onPressed: () => ref.invalidate(appSettingsControllerProvider),
+                  onPressed: () =>
+                      ref.invalidate(appSettingsControllerProvider),
                   child: const Text('다시 시도'),
                 ),
               ],
@@ -72,6 +73,7 @@ class _AppLockBodyState extends ConsumerState<_AppLockBody> {
   bool? _hasSecret;
   bool _biometricAvailable = false;
   bool _busy = false;
+  LockMode? _pendingSecretMode;
   String? _statusMessage;
   bool _statusIsError = false;
 
@@ -101,7 +103,9 @@ class _AppLockBodyState extends ConsumerState<_AppLockBody> {
   }
 
   Future<void> _checkBiometricAvailability() async {
-    final available = await ref.read(lockServiceProvider).isBiometricAvailable();
+    final available = await ref
+        .read(lockServiceProvider)
+        .isBiometricAvailable();
     if (!mounted) return;
     setState(() => _biometricAvailable = available);
   }
@@ -115,9 +119,12 @@ class _AppLockBodyState extends ConsumerState<_AppLockBody> {
 
   Future<void> _selectMode(LockMode mode) async {
     if (mode == LockMode.none) {
+      setState(() => _pendingSecretMode = null);
       await ref
           .read(appSettingsControllerProvider.notifier)
-          .updateSettings((s) => s.copyWith(lockMode: LockMode.none, biometricEnabled: false));
+          .updateSettings(
+            (s) => s.copyWith(lockMode: LockMode.none, biometricEnabled: false),
+          );
       _setStatus('잠금을 사용하지 않습니다');
       return;
     }
@@ -126,28 +133,43 @@ class _AppLockBodyState extends ConsumerState<_AppLockBody> {
         _setStatus('이 기기에서 생체 인증을 사용할 수 없습니다', isError: true);
         return;
       }
+      setState(() => _pendingSecretMode = null);
       await ref
           .read(appSettingsControllerProvider.notifier)
-          .updateSettings((s) => s.copyWith(lockMode: LockMode.biometric, biometricEnabled: true));
+          .updateSettings(
+            (s) => s.copyWith(
+              lockMode: LockMode.biometric,
+              biometricEnabled: true,
+            ),
+          );
       _setStatus('생체 인증 잠금을 사용합니다');
       return;
     }
     // password/pin: 아직 비밀이 없으면 설정 폼을 통해 완료해야 실제로 적용된다.
     if (_hasSecret == true) {
+      setState(() => _pendingSecretMode = null);
       await ref
           .read(appSettingsControllerProvider.notifier)
           .updateSettings((s) => s.copyWith(lockMode: mode));
       _setStatus('${mode.label} 잠금을 사용합니다');
     } else {
-      setState(() {}); // 아래 PIN 설정 폼이 보이도록 리렌더만 유도.
+      // 아직 비밀값이 없을 때 설정을 먼저 저장하면 다음 앱 시작에서
+      // 해제 수단 없는 잠금 화면이 나타날 수 있다. 입력이 완료될 때까지
+      // 화면 안에서만 선택 상태를 유지한다.
+      setState(() {
+        _pendingSecretMode = mode;
+        _statusMessage = '${mode.label}을 입력해 설정을 완료해 주세요';
+        _statusIsError = false;
+      });
     }
   }
 
   Future<void> _submitNewSecret(LockMode mode) async {
     final next = _newSecretController.text;
     final confirm = _confirmSecretController.text;
-    if (next.length < 4) {
-      _setStatus('4자 이상 입력해 주세요', isError: true);
+    final validationMessage = _validateNewSecret(mode, next);
+    if (validationMessage != null) {
+      _setStatus(validationMessage, isError: true);
       return;
     }
     if (next != confirm) {
@@ -163,7 +185,10 @@ class _AppLockBodyState extends ConsumerState<_AppLockBody> {
     _confirmSecretController.clear();
     _currentSecretController.clear();
     if (!mounted) return;
-    setState(() => _busy = false);
+    setState(() {
+      _busy = false;
+      _pendingSecretMode = null;
+    });
     await _refreshSecretState();
     _setStatus('${mode.label}이 설정되었습니다');
   }
@@ -177,8 +202,13 @@ class _AppLockBodyState extends ConsumerState<_AppLockBody> {
       _setStatus('현재 값이 일치하지 않습니다', isError: true);
       return;
     }
-    if (next.length < 4 || next != confirm) {
-      _setStatus('새 값을 4자 이상 정확히 입력해 주세요', isError: true);
+    final validationMessage = _validateNewSecret(mode, next);
+    if (validationMessage != null) {
+      _setStatus(validationMessage, isError: true);
+      return;
+    }
+    if (next != confirm) {
+      _setStatus('입력한 값이 서로 일치하지 않습니다', isError: true);
       return;
     }
     setState(() => _busy = true);
@@ -196,7 +226,9 @@ class _AppLockBodyState extends ConsumerState<_AppLockBody> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('잠금 해제'),
-        content: const Text('설정된 PIN/비밀번호를 삭제하고 앱 잠금을 사용하지 않도록 변경합니다. 계속하시겠습니까?'),
+        content: const Text(
+          '설정된 PIN/비밀번호를 삭제하고 앱 잠금을 사용하지 않도록 변경합니다. 계속하시겠습니까?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -212,10 +244,14 @@ class _AppLockBodyState extends ConsumerState<_AppLockBody> {
     );
     if (confirmed != true) return;
 
-    await ref.read(lockServiceProvider).clearSecret();
     await ref
         .read(appSettingsControllerProvider.notifier)
-        .updateSettings((s) => s.copyWith(lockMode: LockMode.none, biometricEnabled: false));
+        .updateSettings(
+          (s) => s.copyWith(lockMode: LockMode.none, biometricEnabled: false),
+        );
+    // 설정 저장이 실패했는데 비밀값만 사라져 다음 실행에서 잠금을 풀 수
+    // 없는 상태가 되지 않도록 잠금 모드를 먼저 해제한다.
+    await ref.read(lockServiceProvider).clearSecret();
     await _refreshSecretState();
     _setStatus('잠금이 해제되었습니다');
   }
@@ -230,12 +266,26 @@ class _AppLockBodyState extends ConsumerState<_AppLockBody> {
         .updateSettings((s) => s.copyWith(biometricEnabled: value));
   }
 
+  String? _validateNewSecret(LockMode mode, String value) {
+    if (mode == LockMode.pin) {
+      if (!RegExp(r'^\d{4,12}$').hasMatch(value)) {
+        return 'PIN은 숫자 4~12자리로 입력해 주세요';
+      }
+      return null;
+    }
+    if (value.length < 8 || value.length > 128) {
+      return '비밀번호는 8~128자로 입력해 주세요';
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final settings = widget.settings;
+    final selectedMode = _pendingSecretMode ?? settings.lockMode;
     final needsSecretSetup =
-        (settings.lockMode == LockMode.pin || settings.lockMode == LockMode.password) &&
-            _hasSecret == false;
+        (selectedMode == LockMode.pin || selectedMode == LockMode.password) &&
+        _hasSecret == false;
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -244,19 +294,19 @@ class _AppLockBodyState extends ConsumerState<_AppLockBody> {
         _SelectableModeTile(
           keyValue: 'lock.mode.none.radio',
           label: LockMode.none.label,
-          selected: settings.lockMode == LockMode.none,
+          selected: selectedMode == LockMode.none,
           onTap: () => _selectMode(LockMode.none),
         ),
         _SelectableModeTile(
           keyValue: 'lock.mode.pin.radio',
           label: LockMode.pin.label,
-          selected: settings.lockMode == LockMode.pin,
+          selected: selectedMode == LockMode.pin,
           onTap: () => _selectMode(LockMode.pin),
         ),
         _SelectableModeTile(
           keyValue: 'lock.mode.password.radio',
           label: LockMode.password.label,
-          selected: settings.lockMode == LockMode.password,
+          selected: selectedMode == LockMode.password,
           onTap: () => _selectMode(LockMode.password),
         ),
         _SelectableModeTile(
@@ -264,15 +314,18 @@ class _AppLockBodyState extends ConsumerState<_AppLockBody> {
           label: _biometricAvailable
               ? LockMode.biometric.label
               : '${LockMode.biometric.label} (기기 미지원)',
-          selected: settings.lockMode == LockMode.biometric,
-          onTap: _biometricAvailable ? () => _selectMode(LockMode.biometric) : null,
+          selected: selectedMode == LockMode.biometric,
+          onTap: _biometricAvailable
+              ? () => _selectMode(LockMode.biometric)
+              : null,
         ),
         const Divider(height: 24),
-        if (settings.lockMode == LockMode.pin || settings.lockMode == LockMode.password) ...[
+        if (selectedMode == LockMode.pin ||
+            selectedMode == LockMode.password) ...[
           Text(
             needsSecretSetup
-                ? '${settings.lockMode.label} 설정'
-                : '${settings.lockMode.label} 변경',
+                ? '${selectedMode.label} 설정'
+                : '${selectedMode.label} 변경',
             style: const TextStyle(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
@@ -281,21 +334,39 @@ class _AppLockBodyState extends ConsumerState<_AppLockBody> {
               key: const ValueKey('lock.pin.current.field'),
               controller: _currentSecretController,
               obscureText: true,
-              keyboardType: TextInputType.number,
+              keyboardType: selectedMode == LockMode.pin
+                  ? TextInputType.number
+                  : TextInputType.visiblePassword,
+              autocorrect: false,
+              enableSuggestions: false,
               decoration: const InputDecoration(labelText: '현재 값'),
             ),
           TextField(
             key: const ValueKey('lock.pin.field'),
             controller: _newSecretController,
             obscureText: true,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(labelText: '새 값(4자 이상)'),
+            keyboardType: selectedMode == LockMode.pin
+                ? TextInputType.number
+                : TextInputType.visiblePassword,
+            autocorrect: false,
+            enableSuggestions: false,
+            maxLength: selectedMode == LockMode.pin ? 12 : 128,
+            decoration: InputDecoration(
+              labelText: selectedMode == LockMode.pin
+                  ? '새 PIN(숫자 4~12자리)'
+                  : '새 비밀번호(8자 이상)',
+            ),
           ),
           TextField(
             key: const ValueKey('lock.pin.confirm.field'),
             controller: _confirmSecretController,
             obscureText: true,
-            keyboardType: TextInputType.number,
+            keyboardType: selectedMode == LockMode.pin
+                ? TextInputType.number
+                : TextInputType.visiblePassword,
+            autocorrect: false,
+            enableSuggestions: false,
+            maxLength: selectedMode == LockMode.pin ? 12 : 128,
             decoration: const InputDecoration(labelText: '새 값 확인'),
           ),
           const SizedBox(height: 8),
@@ -304,11 +375,14 @@ class _AppLockBodyState extends ConsumerState<_AppLockBody> {
             onPressed: _busy
                 ? null
                 : () => needsSecretSetup
-                    ? _submitNewSecret(settings.lockMode)
-                    : _changeSecret(settings.lockMode),
+                      ? _submitNewSecret(selectedMode)
+                      : _changeSecret(selectedMode),
             child: _busy
                 ? const SizedBox(
-                    width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
                 : Text(needsSecretSetup ? '설정' : '변경'),
           ),
           if (_hasSecret == true) ...[
@@ -324,7 +398,9 @@ class _AppLockBodyState extends ConsumerState<_AppLockBody> {
         SwitchListTile(
           key: const ValueKey('lock.biometric.toggle'),
           title: const Text('생체 인증 사용'),
-          subtitle: Text(_biometricAvailable ? '지문/얼굴 인식으로 잠금을 해제합니다' : '이 기기에서 사용할 수 없습니다'),
+          subtitle: Text(
+            _biometricAvailable ? '지문/얼굴 인식으로 잠금을 해제합니다' : '이 기기에서 사용할 수 없습니다',
+          ),
           value: settings.biometricEnabled,
           onChanged: _biometricAvailable ? _toggleBiometric : null,
         ),
@@ -334,7 +410,10 @@ class _AppLockBodyState extends ConsumerState<_AppLockBody> {
           key: const ValueKey('lock.autoLock.dropdown'),
           value: settings.autoLockSeconds,
           items: _autoLockOptions
-              .map((s) => DropdownMenuItem(value: s, child: Text(_autoLockLabel(s))))
+              .map(
+                (s) =>
+                    DropdownMenuItem(value: s, child: Text(_autoLockLabel(s))),
+              )
               .toList(),
           onChanged: (v) {
             if (v == null) return;

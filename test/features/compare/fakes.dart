@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:ui';
 
 import 'package:body_frame/core/models/models.dart';
 import 'package:body_frame/core/repositories/body_photo_repository.dart';
@@ -96,8 +97,7 @@ class FakeBodyPhotoRepository implements BodyPhotoRepository {
     BodyDirection direction,
   ) async {
     return photos.values.where((p) {
-      return p.direction == direction &&
-          recordMemberId[p.recordId] == memberId;
+      return p.direction == direction && recordMemberId[p.recordId] == memberId;
     }).toList();
   }
 
@@ -137,7 +137,12 @@ class FakeCompareExportSink implements CompareExportSink {
   }
 
   @override
-  Future<void> share(Uint8List bytes, {required String name, String? text}) async {
+  Future<void> share(
+    Uint8List bytes, {
+    required String name,
+    String? text,
+    Rect? sharePositionOrigin,
+  }) async {
     if (failShare) throw Exception('share failed');
     sharedNames.add(name);
   }

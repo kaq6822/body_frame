@@ -1,10 +1,14 @@
+import 'dart:convert';
+
 import 'package:body_frame/features/settings/services/pin_hasher.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('PinHasher', () {
     test('createRecord으로 만든 레코드는 원본 PIN으로 검증에 성공한다', () {
       final record = PinHasher.createRecord('1234');
+      expect(record, startsWith('${PinHasher.algorithm}\$'));
       expect(PinHasher.verify('1234', record), isTrue);
     });
 
@@ -32,6 +36,14 @@ void main() {
     test('형식이 올바르지 않은 레코드는 검증에 실패한다(예외 없이 false)', () {
       expect(PinHasher.verify('1234', 'not-a-valid-record'), isFalse);
       expect(PinHasher.verify('1234', ''), isFalse);
+    });
+
+    test('기존 salt:sha256 레코드도 검증하고 업그레이드 대상으로 표시한다', () {
+      const salt = 'fixed-salt';
+      final digest = sha256.convert(utf8.encode('$salt:1234')).toString();
+      final legacy = '$salt:$digest';
+      expect(PinHasher.verify('1234', legacy), isTrue);
+      expect(PinHasher.needsUpgrade(legacy), isTrue);
     });
 
     test('원본 PIN 문자열은 레코드에 그대로 노출되지 않는다', () {

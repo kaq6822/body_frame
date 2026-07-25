@@ -1,8 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'database/app_database.dart';
+import 'models/app_settings.dart';
 import 'repositories/body_photo_repository.dart';
 import 'repositories/member_repository.dart';
+import 'repositories/photo_ingest_repository.dart';
 import 'repositories/photo_record_repository.dart';
 import 'services/app_logger.dart';
 import 'services/grid_settings_service.dart';
@@ -33,7 +36,44 @@ final appDatabaseProvider = Provider<AppDatabase>((ref) {
 
 /// 사진 파일 저장 서비스.
 final photoStorageServiceProvider = Provider<PhotoStorageService>((ref) {
-  return PhotoStorageServiceImpl(logger: ref.watch(appLoggerProvider));
+  final database = ref.watch(appDatabaseProvider);
+  return PhotoStorageServiceImpl(
+    logger: ref.watch(appLoggerProvider),
+    quarantineReferencesLoader: () async {
+      final db = await database.database;
+      String? studioLogoPath;
+      try {
+        final preferences = await SharedPreferences.getInstance();
+        studioLogoPath = AppSettings.fromJson(
+          preferences.getString('app_settings'),
+        ).studioLogoPath;
+      } catch (_) {
+        // 손상된 설정은 AppSettingsService에서 안전 기본값으로 처리한다.
+      }
+      return db.transaction((txn) async {
+        final memberRows = await txn.query(
+          AppDatabase.tableMembers,
+          columns: ['id', 'avatar_path'],
+        );
+        final photoRows = await txn.query(
+          AppDatabase.tableBodyPhotos,
+          columns: ['file_path'],
+        );
+        return StorageQuarantineReferences(
+          memberIds: memberRows.map((row) => row['id'] as String),
+          storedFilePaths: [
+            ...memberRows
+                .map((row) => row['avatar_path'] as String?)
+                .whereType<String>()
+                .where((path) => path.isNotEmpty),
+            ...photoRows.map((row) => row['file_path'] as String),
+            if (studioLogoPath != null && studioLogoPath.isNotEmpty)
+              studioLogoPath,
+          ],
+        );
+      });
+    },
+  );
 });
 
 /// 격자 설정 영속화 서비스.
@@ -50,11 +90,20 @@ final bodyPhotoRepositoryProvider = Provider<BodyPhotoRepository>((ref) {
   );
 });
 
+/// 파일 준비를 마친 촬영 기록과 사진을 단일 transaction으로 등록한다.
+final photoIngestRepositoryProvider = Provider<PhotoIngestRepository>((ref) {
+  return PhotoIngestRepositoryImpl(
+    database: ref.watch(appDatabaseProvider),
+    storage: ref.watch(photoStorageServiceProvider),
+    logger: ref.watch(appLoggerProvider),
+  );
+});
+
 /// 촬영 기록 리포지토리.
 final photoRecordRepositoryProvider = Provider<PhotoRecordRepository>((ref) {
   return PhotoRecordRepositoryImpl(
     database: ref.watch(appDatabaseProvider),
-    photos: ref.watch(bodyPhotoRepositoryProvider),
+    storage: ref.watch(photoStorageServiceProvider),
     logger: ref.watch(appLoggerProvider),
   );
 });

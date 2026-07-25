@@ -16,8 +16,10 @@ export '../members/providers/members_providers.dart'
 /// 교체된 구현을 사용한다.
 
 /// 단일 촬영 기록 조회(촬영일 표시용).
-final recordByIdProvider =
-    FutureProvider.family<PhotoRecord?, String>((ref, recordId) {
+final recordByIdProvider = FutureProvider.family<PhotoRecord?, String>((
+  ref,
+  recordId,
+) {
   return ref.watch(photoRecordRepositoryProvider).getById(recordId);
 });
 
@@ -50,32 +52,35 @@ typedef CompareViewKey = ({
 /// 사진/촬영 기록/회원/기본 격자 설정을 한 번에 모아 전후 비교 화면에 공급한다.
 final compareViewBundleProvider =
     FutureProvider.family<CompareViewBundle, CompareViewKey>((ref, key) async {
-  final photos = ref.watch(bodyPhotoRepositoryProvider);
-  final records = ref.watch(photoRecordRepositoryProvider);
-  final members = ref.watch(memberRepositoryProvider);
-  final grids = ref.watch(gridSettingsServiceProvider);
+      final photos = ref.watch(bodyPhotoRepositoryProvider);
+      final records = ref.watch(photoRecordRepositoryProvider);
+      final members = ref.watch(memberRepositoryProvider);
+      final grids = ref.watch(gridSettingsServiceProvider);
 
-  final beforePhoto = await photos.getById(key.beforePhotoId);
-  final afterPhoto = await photos.getById(key.afterPhotoId);
-  if (beforePhoto == null || afterPhoto == null) {
-    throw StateError('비교할 사진을 찾을 수 없습니다.');
-  }
+      final beforePhoto = await photos.getById(key.beforePhotoId);
+      final afterPhoto = await photos.getById(key.afterPhotoId);
+      if (beforePhoto == null || afterPhoto == null) {
+        throw StateError('비교할 사진을 찾을 수 없습니다.');
+      }
+      if (beforePhoto.recordId == afterPhoto.recordId) {
+        throw StateError('같은 촬영 기록의 사진끼리는 비교할 수 없습니다.');
+      }
 
-  final beforeRecord = await records.getById(beforePhoto.recordId);
-  final afterRecord = await records.getById(afterPhoto.recordId);
-  if (beforeRecord == null || afterRecord == null) {
-    throw StateError('촬영 기록을 찾을 수 없습니다.');
-  }
+      final beforeRecord = await records.getById(beforePhoto.recordId);
+      final afterRecord = await records.getById(afterPhoto.recordId);
+      if (beforeRecord == null || afterRecord == null) {
+        throw StateError('촬영 기록을 찾을 수 없습니다.');
+      }
 
-  final member = await members.getById(key.memberId);
-  final grid = await grids.load();
+      final member = await members.getById(key.memberId);
+      final grid = await grids.load();
 
-  return CompareViewBundle(
-    member: member,
-    beforeRecord: beforeRecord,
-    afterRecord: afterRecord,
-    beforePhoto: beforePhoto,
-    afterPhoto: afterPhoto,
-    defaultGrid: grid,
-  );
-});
+      return CompareViewBundle(
+        member: member,
+        beforeRecord: beforeRecord,
+        afterRecord: afterRecord,
+        beforePhoto: beforePhoto,
+        afterPhoto: afterPhoto,
+        defaultGrid: grid,
+      );
+    });

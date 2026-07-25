@@ -28,7 +28,8 @@ class RecordDetailScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(_recordDetailProvider(recordId));
+    final detailKey = (memberId: memberId, recordId: recordId);
+    final async = ref.watch(_recordDetailProvider(detailKey));
 
     return Semantics(
       identifier: screenId,
@@ -38,11 +39,7 @@ class RecordDetailScreen extends ConsumerWidget {
         key: const ValueKey(screenId),
         appBar: AppBar(title: const Text('촬영 기록 상세')),
         body: async.when(
-          data: (data) => _RecordDetailBody(
-            memberId: memberId,
-            recordId: recordId,
-            data: data,
-          ),
+          data: (data) => _RecordDetailBody(detailKey: detailKey, data: data),
           loading: () => const _StatusPane(
             key: ValueKey('screen.records.detail.status'),
             state: _PaneState.running,
@@ -51,7 +48,7 @@ class RecordDetailScreen extends ConsumerWidget {
             key: const ValueKey('screen.records.detail.status'),
             state: _PaneState.failure,
             message: '촬영 기록을 불러오지 못했습니다.',
-            onRetry: () => ref.invalidate(_recordDetailProvider(recordId)),
+            onRetry: () => ref.invalidate(_recordDetailProvider(detailKey)),
           ),
         ),
       ),
@@ -76,32 +73,27 @@ class RecordNotFoundException implements Exception {
   String toString() => '촬영 기록을 찾을 수 없습니다: $recordId';
 }
 
-final _recordDetailProvider =
-    FutureProvider.autoDispose.family<_RecordDetailData, String>(
-  (ref, recordId) async {
-    final recordRepo = ref.watch(photoRecordRepositoryProvider);
-    final photoRepo = ref.watch(bodyPhotoRepositoryProvider);
-    final record = await recordRepo.getById(recordId);
-    if (record == null) {
-      throw RecordNotFoundException(recordId);
-    }
-    final photos = await photoRepo.listByRecord(recordId);
-    return _RecordDetailData(record: record, photos: photos);
-  },
-);
+typedef _RecordDetailKey = ({String memberId, String recordId});
+
+final _recordDetailProvider = FutureProvider.autoDispose
+    .family<_RecordDetailData, _RecordDetailKey>((ref, key) async {
+      final recordRepo = ref.watch(photoRecordRepositoryProvider);
+      final photoRepo = ref.watch(bodyPhotoRepositoryProvider);
+      final record = await recordRepo.getById(key.recordId);
+      if (record == null || record.memberId != key.memberId) {
+        throw RecordNotFoundException(key.recordId);
+      }
+      final photos = await photoRepo.listByRecord(key.recordId);
+      return _RecordDetailData(record: record, photos: photos);
+    });
 
 enum _PaneState { idle, running, success, failure }
 
 class _RecordDetailBody extends ConsumerStatefulWidget {
-  final String memberId;
-  final String recordId;
+  final _RecordDetailKey detailKey;
   final _RecordDetailData data;
 
-  const _RecordDetailBody({
-    required this.memberId,
-    required this.recordId,
-    required this.data,
-  });
+  const _RecordDetailBody({required this.detailKey, required this.data});
 
   @override
   ConsumerState<_RecordDetailBody> createState() => _RecordDetailBodyState();
@@ -117,7 +109,9 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
   @override
   void initState() {
     super.initState();
-    _memoController = TextEditingController(text: widget.data.record.memo ?? '');
+    _memoController = TextEditingController(
+      text: widget.data.record.memo ?? '',
+    );
   }
 
   @override
@@ -127,7 +121,7 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
   }
 
   void _invalidate() {
-    ref.invalidate(_recordDetailProvider(widget.recordId));
+    ref.invalidate(_recordDetailProvider(widget.detailKey));
   }
 
   Future<void> _saveMemo() async {
@@ -145,7 +139,11 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
       );
       ref
           .read(appLoggerProvider)
-          .phase('record.memo.save', LogPhase.success, context: {'id': record.id});
+          .phase(
+            'record.memo.save',
+            LogPhase.success,
+            context: {'id': record.id},
+          );
       if (!mounted) return;
       setState(() => _memoState = _PaneState.success);
       _invalidate();
@@ -174,7 +172,11 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
       );
       ref
           .read(appLoggerProvider)
-          .phase('record.date.save', LogPhase.success, context: {'id': record.id});
+          .phase(
+            'record.date.save',
+            LogPhase.success,
+            context: {'id': record.id},
+          );
       if (!mounted) return;
       setState(() => _dateState = _PaneState.success);
       _invalidate();
@@ -213,11 +215,19 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
   Future<void> _deleteRecord() async {
     setState(() => _deleteState = _PaneState.running);
     final logger = ref.read(appLoggerProvider);
-    logger.phase('record.delete', LogPhase.start, context: {'id': widget.recordId});
+    logger.phase(
+      'record.delete',
+      LogPhase.start,
+      context: {'id': widget.detailKey.recordId},
+    );
     try {
       final repo = ref.read(photoRecordRepositoryProvider);
-      await repo.delete(widget.recordId);
-      logger.phase('record.delete', LogPhase.success, context: {'id': widget.recordId});
+      await repo.delete(widget.detailKey.recordId);
+      logger.phase(
+        'record.delete',
+        LogPhase.success,
+        context: {'id': widget.detailKey.recordId},
+      );
       if (!mounted) return;
       setState(() => _deleteState = _PaneState.success);
       if (context.canPop()) {
@@ -225,11 +235,15 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
       } else {
         context.goNamed(
           AppRoutes.memberDetail,
-          pathParameters: {AppParams.memberId: widget.memberId},
+          pathParameters: {AppParams.memberId: widget.detailKey.memberId},
         );
       }
     } catch (err) {
-      logger.phase('record.delete', LogPhase.failure, context: {'id': widget.recordId});
+      logger.phase(
+        'record.delete',
+        LogPhase.failure,
+        context: {'id': widget.detailKey.recordId},
+      );
       if (!mounted) return;
       setState(() => _deleteState = _PaneState.failure);
     }
@@ -239,8 +253,8 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
     final changed = await context.pushNamed<bool>(
       AppRoutes.photoView,
       pathParameters: {
-        AppParams.memberId: widget.memberId,
-        AppParams.recordId: widget.recordId,
+        AppParams.memberId: widget.detailKey.memberId,
+        AppParams.recordId: widget.detailKey.recordId,
         AppParams.photoId: photo.id,
       },
     );
@@ -290,8 +304,9 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
                 label: '촬영 기록 삭제',
                 child: IconButton(
                   key: const ValueKey('records.record.delete.button'),
-                  onPressed:
-                      _deleteState == _PaneState.running ? null : _confirmDelete,
+                  onPressed: _deleteState == _PaneState.running
+                      ? null
+                      : _confirmDelete,
                   icon: const Icon(Icons.delete_outline),
                 ),
               ),
@@ -314,9 +329,10 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
             childAspectRatio: 0.9,
             children: [
               for (final direction in BodyDirection.values)
-                for (final entry in photosByDirection[direction]!.isEmpty
-                    ? [null]
-                    : photosByDirection[direction]!)
+                for (final entry
+                    in photosByDirection[direction]!.isEmpty
+                        ? [null]
+                        : photosByDirection[direction]!)
                   entry == null
                       ? _EmptyDirectionTile(direction: direction)
                       : _PhotoTile(
@@ -354,7 +370,9 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
                 label: '메모 저장',
                 child: ElevatedButton(
                   key: const ValueKey('records.memo.save.button'),
-                  onPressed: _memoState == _PaneState.running ? null : _saveMemo,
+                  onPressed: _memoState == _PaneState.running
+                      ? null
+                      : _saveMemo,
                   child: const Text('메모 저장'),
                 ),
               ),
@@ -397,7 +415,9 @@ class _PhotoTile extends StatelessWidget {
         onTap: onTap,
         child: Container(
           decoration: BoxDecoration(
-            border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+            border: Border.all(
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
             borderRadius: BorderRadius.circular(8),
           ),
           clipBehavior: Clip.antiAlias,
@@ -416,7 +436,10 @@ class _PhotoTile extends StatelessWidget {
               ),
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Text(direction.label, style: Theme.of(context).textTheme.labelSmall),
+                child: Text(
+                  direction.label,
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
               ),
             ],
           ),
@@ -452,7 +475,10 @@ class _EmptyDirectionTile extends StatelessWidget {
             children: [
               const Icon(Icons.image_not_supported_outlined),
               const SizedBox(height: 4),
-              Text('${direction.label} 미등록', style: Theme.of(context).textTheme.labelSmall),
+              Text(
+                '${direction.label} 미등록',
+                style: Theme.of(context).textTheme.labelSmall,
+              ),
             ],
           ),
         ),
@@ -524,11 +550,19 @@ class _InlineStatus extends StatelessWidget {
         label = '진행 중';
         break;
       case _PaneState.success:
-        child = Icon(Icons.check_circle, size: 16, color: Theme.of(context).colorScheme.primary);
+        child = Icon(
+          Icons.check_circle,
+          size: 16,
+          color: Theme.of(context).colorScheme.primary,
+        );
         label = '저장됨';
         break;
       case _PaneState.failure:
-        child = Icon(Icons.error, size: 16, color: Theme.of(context).colorScheme.error);
+        child = Icon(
+          Icons.error,
+          size: 16,
+          color: Theme.of(context).colorScheme.error,
+        );
         label = '실패';
         break;
     }

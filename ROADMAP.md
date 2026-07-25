@@ -3,24 +3,20 @@
 완료된 기능은 이 문서에 기록하지 않는다. 항목을 완료하면 관련 테스트와 함께
 목록에서 제거한다.
 
-## 데이터 무결성
-
-- 전체 복원 시 백업에 포함된 앱 설정과 기본 격자 설정도 복원한다.
-- 복원 중 사진 파일 복사가 실패해도 DB와 파일이 부분 적용 상태로 남지 않게 한다.
-- 비교할 이전·이후 촬영 기록에 같은 기록을 동시에 선택할 수 없게 한다.
-
-## 사진 비교와 내보내기
-
-- 겹쳐 보기와 슬라이더 비교를 현재 준비 중 화면에서 실제 기능으로 교체한다.
-- 비교 이미지의 메모 옵션에 촬영 기록 메모뿐 아니라 사진 메모도 반영한다.
-- 원본 사진에 격자를 합성한 단일 사진 내보내기를 제공한다.
-- 저장된 스튜디오명, 기본 내보내기 옵션, 스튜디오 로고를 비교 이미지에 연동한다.
-
-## 촬영과 보안
-
-- 촬영 화면에서 이전 사진을 반투명 가이드로 표시한다.
-- 민감정보가 포함된 백업 파일에 비밀번호 기반 암호화를 제공한다.
-
 ## 배포 준비
 
-- Android의 정식 application ID와 release signing을 구성한다.
+- 소유자 계정과 식별자를 확정한 뒤 Android application ID·release signing,
+  iOS bundle ID·Team·배포 signing을 구성한다.
+- 브랜드 원본 자산을 확정한 뒤 Android/iOS 앱 아이콘과 시작 화면을 교체한다.
+- 출시 버전·빌드 번호를 확정하고 서명된 Android App Bundle과 iOS Archive/TestFlight
+  후보를 생성해 `docs/device-smoke-checklist.md`를 완료한다.
+- 스토어 설명·스크린샷·지원 및 개인정보처리방침 URL을 준비하고, Play Data Safety,
+  App Store App Privacy와 암호화 수출 규정 응답을 실제 데이터 처리와 일치시킨다.
+
+## 추후 개선
+
+- 대용량 백업에서 파일 전체를 메모리에 올리지 않도록 ZIP 생성·검증과 암호화·복호화를
+  스트리밍 방식으로 바꾸고, 저사양 실기기의 메모리 사용량을 회귀 테스트한다.
+- Flutter SDK를 올리기 전에 `camera_android_camerax`·`share_plus`의 Built-in
+  Kotlin 지원과 `flutter_secure_storage`의 iOS Swift Package Manager 지원 여부를
+  확인하고, 빌드 경고가 사라지는 호환 버전으로 갱신한다.

@@ -23,7 +23,7 @@ abstract class CaptureCameraController {
   /// 사진을 촬영하고 임시 저장된 파일의 절대 경로를 반환한다.
   ///
   /// 반환된 경로는 [PhotoStorageService.saveOriginal]로 앱 저장소에
-  /// 무변형 복사한 뒤 원본은 그대로 둔다(임시 파일 정리는 OS/카메라 플러그인 책임).
+  /// 무변형 복사한다. 촬영 리뷰가 저장·재촬영·뒤로가기 시 임시 원본을 정리한다.
   Future<String> takePicture();
 
   /// 리소스를 해제한다.
@@ -42,6 +42,10 @@ class DeviceCaptureCameraController implements CaptureCameraController {
 
   @override
   Future<void> initialize() async {
+    final previous = _controller;
+    _controller = null;
+    await previous?.dispose();
+
     final cameras = await availableCameras();
     if (cameras.isEmpty) {
       throw StateError('사용 가능한 카메라를 찾을 수 없습니다.');
@@ -55,8 +59,16 @@ class DeviceCaptureCameraController implements CaptureCameraController {
       ResolutionPreset.high,
       enableAudio: false,
     );
-    await controller.initialize();
     _controller = controller;
+    try {
+      await controller.initialize();
+    } catch (_) {
+      if (identical(_controller, controller)) {
+        _controller = null;
+      }
+      await controller.dispose();
+      rethrow;
+    }
   }
 
   @override

@@ -70,10 +70,18 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
   Future<void> _delete() async {
     final logger = ref.read(appLoggerProvider);
     setState(() => _deleteState = const AsyncValue.loading());
-    logger.phase('member.delete', LogPhase.start, context: {'id': widget.memberId});
+    logger.phase(
+      'member.delete',
+      LogPhase.start,
+      context: {'id': widget.memberId},
+    );
     try {
       await ref.read(memberRepositoryProvider).delete(widget.memberId);
-      logger.phase('member.delete', LogPhase.success, context: {'id': widget.memberId});
+      logger.phase(
+        'member.delete',
+        LogPhase.success,
+        context: {'id': widget.memberId},
+      );
       ref.invalidate(membersListProvider);
       if (!mounted) return;
       setState(() => _deleteState = const AsyncValue.data(null));
@@ -110,9 +118,9 @@ class _MemberDetailScreenState extends ConsumerState<MemberDetailScreen> {
                 onPressed: deleting
                     ? null
                     : () => context.pushNamed(
-                          AppRoutes.memberEdit,
-                          pathParameters: {AppParams.memberId: widget.memberId},
-                        ),
+                        AppRoutes.memberEdit,
+                        pathParameters: {AppParams.memberId: widget.memberId},
+                      ),
               ),
             ),
           ],
@@ -281,7 +289,9 @@ class _DetailBody extends StatelessWidget {
             // 기록마다 사진을 개별 조회하면 N+1 쿼리가 발생하므로, 기록 목록과
             // 기록별 사진을 회원 단위로 한 번에 조회하는 batched provider를
             // 사용한다(memberRecordsWithPhotosProvider).
-            final recordsAsync = ref.watch(memberRecordsWithPhotosProvider(member.id));
+            final recordsAsync = ref.watch(
+              memberRecordsWithPhotosProvider(member.id),
+            );
             return AsyncValueView<List<MemberRecordWithPhotos>>(
               value: recordsAsync,
               statusId: 'member.records.status',
@@ -323,7 +333,7 @@ class _DetailBody extends StatelessWidget {
               data: (_) => const SizedBox.shrink(),
               loading: () => const LinearProgressIndicator(),
               error: (e, _) => Text(
-                '삭제하지 못했습니다: $e',
+                '삭제하지 못했습니다. 다시 시도해 주세요.',
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ),
@@ -411,7 +421,9 @@ class _RecordTile extends StatelessWidget {
         ),
         leading: photos.isEmpty
             ? const CircleAvatar(child: Icon(Icons.image_not_supported))
-            : CircleAvatar(backgroundImage: FileImage(File(photos.first.filePath))),
+            : CircleAvatar(
+                backgroundImage: FileImage(File(photos.first.filePath)),
+              ),
         title: Text(dateLabel),
         subtitle: Text(_directionsSummary(photos)),
         trailing: Text('${photos.length}장'),

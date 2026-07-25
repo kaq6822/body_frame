@@ -5,6 +5,26 @@ import '../../core/models/models.dart';
 /// 비교 이미지 생성의 대기/진행/성공/실패 상태.
 enum CompareExportStatus { idle, generating, success, failure }
 
+/// 비교 화면과 생성 이미지가 공유하는 표시 방식.
+enum CompareMode {
+  sideBySide,
+  overlay,
+  slider;
+
+  String get key => name;
+
+  String get label {
+    switch (this) {
+      case CompareMode.sideBySide:
+        return '좌우 비교';
+      case CompareMode.overlay:
+        return '겹쳐 보기';
+      case CompareMode.slider:
+        return '슬라이더 비교';
+    }
+  }
+}
+
 /// 전후 사진 비교 화면(compareView)에서 이미지 생성 화면(compareExport)으로
 /// 전달하는 스냅샷.
 ///
@@ -28,6 +48,11 @@ class CompareExportRequest {
   final GridSettings grid;
   final bool showGrid;
 
+  /// 화면에서 선택한 비교 방식과 해당 방식의 조절값.
+  final CompareMode mode;
+  final double overlayOpacity;
+  final double sliderPosition;
+
   /// 비교 화면에서 실제 렌더링된 사진 프레임의 논리 크기.
   ///
   /// [beforeMatrix]/[afterMatrix]는 pane 로컬 픽셀 좌표 기준이므로, 생성
@@ -47,6 +72,9 @@ class CompareExportRequest {
     required this.afterMatrix,
     required this.grid,
     required this.showGrid,
+    this.mode = CompareMode.sideBySide,
+    this.overlayOpacity = 0.5,
+    this.sliderPosition = 0.5,
     this.panePhotoSize,
   });
 }

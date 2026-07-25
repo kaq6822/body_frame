@@ -33,7 +33,9 @@ void main() {
   });
 
   Widget buildApp() {
-    final router = createCompareTestRouter(initialLocation: '/members/m1/compare');
+    final router = createCompareTestRouter(
+      initialLocation: '/members/m1/compare',
+    );
     return ProviderScope(
       overrides: [
         photoRecordRepositoryProvider.overrideWithValue(records),
@@ -43,12 +45,14 @@ void main() {
     );
   }
 
-  testWidgets('촬영 기록이 2개 이상이면 최신순 기본값이 채워지고 다음으로 진행할 수 있다',
-      (tester) async {
+  testWidgets('촬영 기록이 2개 이상이면 최신순 기본값이 채워지고 다음으로 진행할 수 있다', (tester) async {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey(CompareDatesScreen.screenId)), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey(CompareDatesScreen.screenId)),
+      findsOneWidget,
+    );
     // 최근 촬영순 정렬이므로 이후=2026.03.01, 이전=2026.01.01이 기본값.
     expect(find.textContaining('2026.03.01'), findsOneWidget);
     expect(find.textContaining('2026.01.01'), findsOneWidget);
@@ -56,7 +60,10 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('compare.dates.next.button')));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey(CompareDirectionScreen.screenId)), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey(CompareDirectionScreen.screenId)),
+      findsOneWidget,
+    );
   });
 
   testWidgets('이전/이후 교환 버튼을 누르면 날짜가 서로 바뀐다', (tester) async {
@@ -71,6 +78,21 @@ void main() {
 
     expect(find.text('이전: 2026.03.01'), findsOneWidget);
     expect(find.text('이후: 2026.01.01'), findsOneWidget);
+  });
+
+  testWidgets('상대편에 선택된 촬영 기록은 날짜 선택 목록에서 비활성화된다', (tester) async {
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    // 기본값에서 이후 기록은 r2이므로 이전 기록 목록의 r2는 선택할 수 없다.
+    await tester.tap(find.byKey(const ValueKey('compare.before.date.button')));
+    await tester.pumpAndSettle();
+
+    final unavailableTile = tester.widget<ListTile>(
+      find.byKey(const ValueKey('compare.before.date.option.r2')),
+    );
+    expect(unavailableTile.enabled, isFalse);
+    expect(unavailableTile.onTap, isNull);
   });
 
   testWidgets('촬영 기록이 1개뿐이면 다음으로 진행할 수 없고 안내가 표시된다', (tester) async {

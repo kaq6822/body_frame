@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/models/models.dart';
+import '../../../core/widgets/grid_painter.dart';
 
 /// 촬영 화면과 동일한 규칙으로 그리는 정렬용 격자 오버레이.
 ///
@@ -22,7 +23,6 @@ class CompareGridOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!settings.visible) return const SizedBox.shrink();
     final opacityPercent = (settings.opacity.clamp(0.0, 1.0) * 100).round();
     return Semantics(
       identifier: semanticsIdentifier,
@@ -31,62 +31,11 @@ class CompareGridOverlay extends StatelessWidget {
       child: IgnorePointer(
         child: CustomPaint(
           size: Size.infinite,
-          painter: _GridPainter(settings),
+          // 이 위젯의 존재 자체가 비교 화면의 명시적인 표시 선택이다.
+          // 촬영 화면에서 저장한 visible 값이 이를 다시 숨기지 않게 한다.
+          painter: GridPainter(settings.copyWith(visible: true)),
         ),
       ),
     );
   }
-}
-
-class _GridPainter extends CustomPainter {
-  final GridSettings settings;
-
-  const _GridPainter(this.settings);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final spacing = settings.spacing <= 0 ? 40.0 : settings.spacing;
-    final opacity = settings.opacity.clamp(0.0, 1.0);
-    final color = Color(settings.colorValue).withValues(alpha: opacity);
-    final linePaint = Paint()
-      ..color = color
-      ..strokeWidth = settings.lineWidth <= 0 ? 1.0 : settings.lineWidth;
-
-    final centerX = size.width / 2;
-    final centerY = size.height / 2;
-
-    // 중앙 세로 기준선 + 좌우 대칭 세로선.
-    for (double x = centerX; x <= size.width; x += spacing) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), linePaint);
-      final mirrored = centerX - (x - centerX);
-      if (mirrored >= 0 && mirrored != x) {
-        canvas.drawLine(
-            Offset(mirrored, 0), Offset(mirrored, size.height), linePaint);
-      }
-    }
-
-    // 일정 간격 가로선(중앙 가로 기준선 포함).
-    for (double y = centerY; y <= size.height; y += spacing) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), linePaint);
-      final mirrored = centerY - (y - centerY);
-      if (mirrored >= 0 && mirrored != y) {
-        canvas.drawLine(
-            Offset(0, mirrored), Offset(size.width, mirrored), linePaint);
-      }
-    }
-
-    // 화면 중앙 기준점.
-    final centerPaint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(
-      Offset(centerX, centerY),
-      (settings.lineWidth <= 0 ? 1.0 : settings.lineWidth) * 2 + 2,
-      centerPaint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _GridPainter oldDelegate) =>
-      oldDelegate.settings != settings;
 }

@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// 비동기 상태를 진행/성공/실패로 구분해 표시하는 공용 위젯.
 ///
 /// 상태 표시 위젯에 `screen.<x>.status` 식별자를 부여하고 실패 시 재시도
-/// 액션과 에러 메시지를 노출한다. 대기(idle) 상태는 호출부가
+/// 액션과 재시도 가능한 일반 오류 문구를 노출한다. 예외 원문에는 로컬
+/// 경로나 데이터베이스 값이 포함될 수 있으므로 화면에 직접 표시하지 않는다.
+/// 대기(idle) 상태는 호출부가
 /// [AsyncValue]를 만들기 전(예: 액션 실행 전)에 해당하므로 이 위젯 바깥에서
 /// 표현한다.
 class AsyncValueView<T> extends StatelessWidget {
@@ -47,7 +49,7 @@ class AsyncValueView<T> extends StatelessWidget {
       error: (error, _) => Semantics(
         identifier: statusId,
         liveRegion: true,
-        label: '오류: $error',
+        label: '불러오지 못했습니다',
         child: KeyedSubtree(
           key: ValueKey(statusId),
           child: Center(
@@ -58,7 +60,7 @@ class AsyncValueView<T> extends StatelessWidget {
                 children: [
                   const Icon(Icons.error_outline, size: 40),
                   const SizedBox(height: 8),
-                  Text('불러오지 못했습니다: $error', textAlign: TextAlign.center),
+                  const Text('불러오지 못했습니다', textAlign: TextAlign.center),
                   const SizedBox(height: 12),
                   if (onRetry != null)
                     FilledButton(

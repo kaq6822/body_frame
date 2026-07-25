@@ -22,18 +22,32 @@ class GridSettingsServiceImpl implements GridSettingsService {
   final AppLogger _logger;
 
   GridSettingsServiceImpl({AppLogger? logger})
-      : _logger = logger ?? AppLogger.instance;
+    : _logger = logger ?? AppLogger.instance;
 
   @override
   Future<GridSettings> load() async {
     final prefs = await SharedPreferences.getInstance();
     final source = prefs.getString(_key);
     if (source == null) return GridSettings.defaults;
-    return GridSettings.fromJson(source);
+    try {
+      final settings = GridSettings.fromJson(source);
+      if (!_isValid(settings)) {
+        throw const FormatException('격자 설정 범위가 올바르지 않습니다.');
+      }
+      return settings;
+    } catch (_) {
+      // 손상된 로컬 설정 때문에 카메라/페인터가 열리지 않는 대신 안전한
+      // 기본값으로 복구한다. 다음 저장 시 정상 JSON으로 덮어쓴다.
+      _logger.warn('grid.load.invalid');
+      return GridSettings.defaults;
+    }
   }
 
   @override
   Future<void> save(GridSettings settings) async {
+    if (!_isValid(settings)) {
+      throw ArgumentError.value(settings, 'settings', '안전한 격자 설정이어야 합니다.');
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_key, settings.toJson());
     _logger.info('grid.save');
@@ -44,5 +58,17 @@ class GridSettingsServiceImpl implements GridSettingsService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_key);
     _logger.info('grid.reset');
+  }
+
+  bool _isValid(GridSettings settings) {
+    return settings.opacity.isFinite &&
+        settings.opacity >= 0 &&
+        settings.opacity <= 1 &&
+        settings.lineWidth.isFinite &&
+        settings.lineWidth > 0 &&
+        settings.spacing.isFinite &&
+        settings.spacing > 0 &&
+        settings.colorValue >= 0 &&
+        settings.colorValue <= 0xFFFFFFFF;
   }
 }

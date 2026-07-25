@@ -38,7 +38,9 @@ class Member {
   /// 이름 또는 식별용 별칭 (필수).
   final String name;
 
-  /// 대표 사진 로컬 파일 경로 (선택).
+  /// 실행 중 해석된 대표 사진 절대경로(선택).
+  ///
+  /// 영속화할 때는 리포지토리가 앱 저장소 기준 상대경로로 변환한다.
   final String? avatarPath;
 
   final Gender gender;
@@ -117,10 +119,8 @@ class Member {
       birth: map['birth'] as String?,
       contact: map['contact'] as String?,
       memo: map['memo'] as String?,
-      createdAt:
-          DateTime.fromMillisecondsSinceEpoch(map['created_at'] as int),
-      updatedAt:
-          DateTime.fromMillisecondsSinceEpoch(map['updated_at'] as int),
+      createdAt: DateTime.fromMillisecondsSinceEpoch(map['created_at'] as int),
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(map['updated_at'] as int),
     );
   }
 

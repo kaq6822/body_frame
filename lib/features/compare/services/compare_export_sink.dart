@@ -1,10 +1,20 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gal/gal.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+
+typedef CompareShareDirectoryProvider = Future<Directory> Function();
+typedef CompareShareInvoker =
+    Future<void> Function(
+      List<XFile> files, {
+      String? text,
+      Rect? sharePositionOrigin,
+    });
 
 /// 생성된 비교 이미지를 기기에 저장하거나 외부로 공유하는 출구.
 ///
@@ -14,22 +24,49 @@ import 'package:share_plus/share_plus.dart';
 abstract class CompareExportSink {
   Future<void> saveToGallery(Uint8List bytes, {required String name});
 
-  Future<void> share(Uint8List bytes, {required String name, String? text});
+  Future<void> share(
+    Uint8List bytes, {
+    required String name,
+    String? text,
+    Rect? sharePositionOrigin,
+  });
 }
 
 class CompareExportSinkImpl implements CompareExportSink {
+  final CompareShareDirectoryProvider _supportDirectoryProvider;
+  final CompareShareInvoker _shareInvoker;
+
+  CompareExportSinkImpl({
+    CompareShareDirectoryProvider? supportDirectoryProvider,
+    CompareShareInvoker? shareInvoker,
+  }) : _supportDirectoryProvider =
+           supportDirectoryProvider ?? getApplicationSupportDirectory,
+       _shareInvoker =
+           shareInvoker ??
+           ((files, {text, sharePositionOrigin}) async {
+             await Share.shareXFiles(
+               files,
+               text: text,
+               sharePositionOrigin: sharePositionOrigin,
+             );
+           });
+
   @override
   Future<void> saveToGallery(Uint8List bytes, {required String name}) {
     return Gal.putImageBytes(bytes, name: name);
   }
 
   @override
-  Future<void> share(Uint8List bytes, {required String name, String? text}) async {
-    final dir = await getTemporaryDirectory();
-    // 전용 하위 디렉터리를 사용하고, 새 공유 전에 이전 공유에서 남은 평문
-    // PNG를 정리한다(민감 사진 잔존 방지). 공유 직후 즉시 삭제하면 수신 앱이
-    // 파일을 읽기 전에 사라질 수 있어 다음 공유 시점에 청소한다.
-    final shareDir = Directory('${dir.path}/compare_share');
+  Future<void> share(
+    Uint8List bytes, {
+    required String name,
+    String? text,
+    Rect? sharePositionOrigin,
+  }) async {
+    // Application Support는 iOS 시작 시 백업 제외와 완전 파일 보호가
+    // 적용된다. 공유가 성공하거나 실패한 뒤에는 파생 평문을 즉시 정리한다.
+    final support = await _supportDirectoryProvider();
+    final shareDir = Directory(p.join(support.path, 'compare_share'));
     if (await shareDir.exists()) {
       try {
         await shareDir.delete(recursive: true);
@@ -38,12 +75,26 @@ class CompareExportSinkImpl implements CompareExportSink {
       }
     }
     await shareDir.create(recursive: true);
-    final file = File('${shareDir.path}/$name.png');
-    await file.writeAsBytes(bytes, flush: true);
-    await Share.shareXFiles(
-      [XFile(file.path, mimeType: 'image/png', name: '$name.png')],
-      text: text,
-    );
+    final safeName = p.basename(name);
+    final file = File(p.join(shareDir.path, '$safeName.png'));
+    try {
+      await file.writeAsBytes(bytes, flush: true);
+      await _shareInvoker(
+        [XFile(file.path, mimeType: 'image/png', name: '$safeName.png')],
+        text: text,
+        sharePositionOrigin:
+            // iPad의 popover 공유 시트는 비어 있지 않은 기준 사각형이 필수다.
+            sharePositionOrigin ?? const Rect.fromLTWH(0, 0, 1, 1),
+      );
+    } finally {
+      try {
+        if (await shareDir.exists()) {
+          await shareDir.delete(recursive: true);
+        }
+      } catch (_) {
+        // 다음 공유 시작 시에도 같은 전용 디렉터리를 다시 정리한다.
+      }
+    }
   }
 }
 

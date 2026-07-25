@@ -39,14 +39,16 @@ void main() {
         photoRecordRepositoryProvider.overrideWithValue(records),
         bodyPhotoRepositoryProvider.overrideWithValue(photos),
         memberRepositoryProvider.overrideWithValue(FakeMemberRepository()),
-        gridSettingsServiceProvider
-            .overrideWithValue(FakeGridSettingsService()),
+        gridSettingsServiceProvider.overrideWithValue(
+          FakeGridSettingsService(),
+        ),
       ],
       child: MaterialApp.router(routerConfig: router),
     );
   }
 
-  const location = '/members/m1/compare/direction'
+  const location =
+      '/members/m1/compare/direction'
       '?beforeRecordId=r1&afterRecordId=r2';
 
   testWidgets('공통 방향만 선택 가능하고, 선택 후 다음으로 전후 비교 화면에 진입한다', (tester) async {
@@ -75,7 +77,10 @@ void main() {
     await tester.pumpWidget(buildApp(location));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey(CompareDirectionScreen.screenId)), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey(CompareDirectionScreen.screenId)),
+      findsOneWidget,
+    );
     // front만 양쪽에 있으므로 선택 가능, back은 이후 쪽에 없어 비활성.
     final frontChip = tester.widget<ChoiceChip>(
       find.byKey(const ValueKey('compare.direction.selector.front')),
@@ -86,10 +91,15 @@ void main() {
     );
     expect(backChip.onSelected, isNull);
 
-    await tester.tap(find.byKey(const ValueKey('compare.direction.next.button')));
+    await tester.tap(
+      find.byKey(const ValueKey('compare.direction.next.button')),
+    );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey(CompareViewScreen.screenId)), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey(CompareViewScreen.screenId)),
+      findsOneWidget,
+    );
   });
 
   testWidgets('공통 방향이 없으면 안내 문구를 보여준다', (tester) async {
@@ -118,7 +128,29 @@ void main() {
     await tester.pumpWidget(buildApp('/members/m1/compare/direction'));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('compare.direction.backToDates.button')),
-        findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('compare.direction.backToDates.button')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('같은 촬영 기록이 이전과 이후에 전달되면 진행을 차단한다', (tester) async {
+    await tester.pumpWidget(
+      buildApp(
+        '/members/m1/compare/direction'
+        '?beforeRecordId=r1&afterRecordId=r1',
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('이전과 이후에는 서로 다른 촬영 기록을 선택해 주세요.'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('compare.direction.backToDates.button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('compare.direction.next.button')),
+      findsNothing,
+    );
   });
 }

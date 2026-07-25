@@ -41,10 +41,12 @@ void main() {
 
   setUp(() async {
     db = AppDatabase.forTesting();
-    tempRoot = await Directory.systemTemp.createTemp('body_frame_records_test_');
+    tempRoot = await Directory.systemTemp.createTemp(
+      'body_frame_records_test_',
+    );
     storage = PhotoStorageServiceImpl(rootPath: tempRoot.path);
     photos = BodyPhotoRepositoryImpl(database: db, storage: storage);
-    records = PhotoRecordRepositoryImpl(database: db, photos: photos);
+    records = PhotoRecordRepositoryImpl(database: db, storage: storage);
 
     // photo_records.member_id는 members 테이블을 참조하므로 먼저 회원을 등록한다.
     final members = MemberRepositoryImpl(database: db, storage: storage);
@@ -91,14 +93,17 @@ void main() {
     }
   });
 
-  Widget buildApp() {
+  Widget buildApp({String routeMemberId = memberId}) {
     return ProviderScope(
       overrides: [
         photoRecordRepositoryProvider.overrideWithValue(records),
         bodyPhotoRepositoryProvider.overrideWithValue(photos),
       ],
-      child: const MaterialApp(
-        home: RecordDetailScreen(memberId: memberId, recordId: recordId),
+      child: MaterialApp(
+        home: RecordDetailScreen(
+          memberId: routeMemberId,
+          recordId: recordId,
+        ),
       ),
     );
   }
@@ -108,21 +113,62 @@ void main() {
       await tester.pumpWidget(buildApp());
       await pumpUntil(
         tester,
-        () => find.byKey(const ValueKey('records.photo.front.image')).evaluate().isNotEmpty,
+        () => find
+            .byKey(const ValueKey('records.photo.front.image'))
+            .evaluate()
+            .isNotEmpty,
       );
 
-      expect(find.byKey(const ValueKey(RecordDetailScreen.screenId)), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey(RecordDetailScreen.screenId)),
+        findsOneWidget,
+      );
 
       // 등록된 방향(정면)은 사진 타일로, 미등록 방향은 빈 타일로 표시된다.
-      expect(find.byKey(const ValueKey('records.photo.front.image')), findsOneWidget);
-      expect(find.byKey(const ValueKey('records.photo.leftSide.empty')), findsOneWidget);
-      expect(find.byKey(const ValueKey('records.photo.rightSide.empty')), findsOneWidget);
-      expect(find.byKey(const ValueKey('records.photo.back.empty')), findsOneWidget);
-      expect(find.byKey(const ValueKey('records.photo.etc.empty')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('records.photo.front.image')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('records.photo.leftSide.empty')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('records.photo.rightSide.empty')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('records.photo.back.empty')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('records.photo.etc.empty')),
+        findsOneWidget,
+      );
 
-      final memoField =
-          tester.widget<TextField>(find.byKey(const ValueKey('records.memo.field')));
+      final memoField = tester.widget<TextField>(
+        find.byKey(const ValueKey('records.memo.field')),
+      );
       expect(memoField.controller?.text, '기존 메모');
+    });
+  });
+
+  testWidgets('URL의 회원과 기록 소유관계가 다르면 기록 작업을 노출하지 않는다', (
+    tester,
+  ) async {
+    await tester.runAsync(() async {
+      await tester.pumpWidget(buildApp(routeMemberId: 'other-member'));
+      await pumpUntil(
+        tester,
+        () => find.text('촬영 기록을 불러오지 못했습니다.').evaluate().isNotEmpty,
+      );
+
+      expect(find.byKey(const ValueKey('records.memo.field')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('records.delete.button')),
+        findsNothing,
+      );
+      expect((await records.getById(recordId))?.memberId, memberId);
     });
   });
 
@@ -131,14 +177,19 @@ void main() {
       await tester.pumpWidget(buildApp());
       await pumpUntil(
         tester,
-        () => find.byKey(const ValueKey('records.memo.field')).evaluate().isNotEmpty,
+        () => find
+            .byKey(const ValueKey('records.memo.field'))
+            .evaluate()
+            .isNotEmpty,
       );
 
       await tester.enterText(
         find.byKey(const ValueKey('records.memo.field')),
         '수정된 메모',
       );
-      await tester.ensureVisible(find.byKey(const ValueKey('records.memo.save.button')));
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('records.memo.save.button')),
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('records.memo.save.button')));
 

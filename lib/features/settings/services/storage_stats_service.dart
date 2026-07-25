@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import '../../../core/database/app_database.dart';
+import '../../../core/services/photo_storage_service.dart';
 
 /// 회원별 저장 공간 사용량.
 class MemberStorageUsage {
@@ -29,8 +30,11 @@ class StorageUsageReport {
     required this.byMember,
   });
 
-  static const empty =
-      StorageUsageReport(totalBytes: 0, totalPhotoCount: 0, byMember: []);
+  static const empty = StorageUsageReport(
+    totalBytes: 0,
+    totalPhotoCount: 0,
+    byMember: [],
+  );
 }
 
 abstract class StorageStatsService {
@@ -39,8 +43,13 @@ abstract class StorageStatsService {
 
 class StorageStatsServiceImpl implements StorageStatsService {
   final AppDatabase _db;
+  final PhotoStorageService _storage;
 
-  StorageStatsServiceImpl({required AppDatabase database}) : _db = database;
+  StorageStatsServiceImpl({
+    required AppDatabase database,
+    required PhotoStorageService storage,
+  }) : _db = database,
+       _storage = storage;
 
   @override
   Future<StorageUsageReport> collect() async {
@@ -64,7 +73,7 @@ class StorageStatsServiceImpl implements StorageStatsService {
 
     for (final row in photoRows) {
       final memberId = row['member_id'] as String;
-      final filePath = row['file_path'] as String;
+      final filePath = await _storage.resolvePath(row['file_path'] as String);
       final file = File(filePath);
       final size = await file.exists() ? await file.length() : 0;
       totalBytes += size;
@@ -81,8 +90,7 @@ class StorageStatsServiceImpl implements StorageStatsService {
         photoCount: countByMember[id] ?? 0,
         totalBytes: bytesByMember[id] ?? 0,
       );
-    }).toList()
-      ..sort((a, b) => b.totalBytes.compareTo(a.totalBytes));
+    }).toList()..sort((a, b) => b.totalBytes.compareTo(a.totalBytes));
 
     return StorageUsageReport(
       totalBytes: totalBytes,

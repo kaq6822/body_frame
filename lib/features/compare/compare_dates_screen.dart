@@ -29,8 +29,7 @@ class CompareDatesScreen extends ConsumerStatefulWidget {
   const CompareDatesScreen({super.key, required this.memberId});
 
   @override
-  ConsumerState<CompareDatesScreen> createState() =>
-      _CompareDatesScreenState();
+  ConsumerState<CompareDatesScreen> createState() => _CompareDatesScreenState();
 }
 
 class _CompareDatesScreenState extends ConsumerState<CompareDatesScreen> {
@@ -54,16 +53,22 @@ class _CompareDatesScreenState extends ConsumerState<CompareDatesScreen> {
     final selected = await showModalBottomSheet<String>(
       context: context,
       builder: (context) {
+        final unavailableRecordId = isBefore ? _afterRecordId : _beforeRecordId;
         return SafeArea(
           child: ListView(
             shrinkWrap: true,
             children: records.map((record) {
+              final isUnavailable = record.id == unavailableRecordId;
               return ListTile(
                 key: ValueKey(
-                    'compare.${isBefore ? 'before' : 'after'}.date.option.${record.id}'),
+                  'compare.${isBefore ? 'before' : 'after'}.date.option.${record.id}',
+                ),
                 title: Text(_dateFormat.format(record.shotAt)),
                 subtitle: record.memo == null ? null : Text(record.memo!),
-                onTap: () => Navigator.of(context).pop(record.id),
+                enabled: !isUnavailable,
+                onTap: isUnavailable
+                    ? null
+                    : () => Navigator.of(context).pop(record.id),
               );
             }).toList(),
           ),
@@ -91,7 +96,7 @@ class _CompareDatesScreenState extends ConsumerState<CompareDatesScreen> {
   void _goNext() {
     final beforeId = _beforeRecordId;
     final afterId = _afterRecordId;
-    if (beforeId == null || afterId == null) return;
+    if (beforeId == null || afterId == null || beforeId == afterId) return;
     context.pushNamed(
       AppRoutes.compareDirection,
       pathParameters: {AppParams.memberId: widget.memberId},
@@ -123,7 +128,8 @@ class _CompareDatesScreenState extends ConsumerState<CompareDatesScreen> {
             key: const ValueKey('screen.compare.dates.status'),
             state: _AsyncState.error,
             message: '촬영 기록을 불러오지 못했습니다.',
-            onRetry: () => ref.invalidate(memberRecordsProvider(widget.memberId)),
+            onRetry: () =>
+                ref.invalidate(memberRecordsProvider(widget.memberId)),
           ),
           data: (records) {
             if (records.length < 2) {
@@ -134,19 +140,26 @@ class _CompareDatesScreenState extends ConsumerState<CompareDatesScreen> {
               );
             }
             _applyDefaults(records);
-            final beforeRecord =
-                records.where((r) => r.id == _beforeRecordId).firstOrNull;
-            final afterRecord =
-                records.where((r) => r.id == _afterRecordId).firstOrNull;
-            final canProceed = beforeRecord != null && afterRecord != null;
+            final beforeRecord = records
+                .where((r) => r.id == _beforeRecordId)
+                .firstOrNull;
+            final afterRecord = records
+                .where((r) => r.id == _afterRecordId)
+                .firstOrNull;
+            final canProceed =
+                beforeRecord != null &&
+                afterRecord != null &&
+                beforeRecord.id != afterRecord.id;
 
             return Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text('같은 회원의 이전/이후 촬영일을 선택하세요.',
-                      style: Theme.of(context).textTheme.bodyMedium),
+                  Text(
+                    '같은 회원의 이전/이후 촬영일을 선택하세요.',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
                   const SizedBox(height: 16),
                   Semantics(
                     identifier: 'compare.before.date.button',
@@ -158,9 +171,11 @@ class _CompareDatesScreenState extends ConsumerState<CompareDatesScreen> {
                       key: const ValueKey('compare.before.date.button'),
                       onPressed: () =>
                           _pickRecord(isBefore: true, records: records),
-                      child: Text(beforeRecord == null
-                          ? '이전 촬영일 선택'
-                          : '이전: ${_dateFormat.format(beforeRecord.shotAt)}'),
+                      child: Text(
+                        beforeRecord == null
+                            ? '이전 촬영일 선택'
+                            : '이전: ${_dateFormat.format(beforeRecord.shotAt)}',
+                      ),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -186,9 +201,11 @@ class _CompareDatesScreenState extends ConsumerState<CompareDatesScreen> {
                       key: const ValueKey('compare.after.date.button'),
                       onPressed: () =>
                           _pickRecord(isBefore: false, records: records),
-                      child: Text(afterRecord == null
-                          ? '이후 촬영일 선택'
-                          : '이후: ${_dateFormat.format(afterRecord.shotAt)}'),
+                      child: Text(
+                        afterRecord == null
+                            ? '이후 촬영일 선택'
+                            : '이후: ${_dateFormat.format(afterRecord.shotAt)}',
+                      ),
                     ),
                   ),
                   const Spacer(),

@@ -2,12 +2,23 @@
     xmlns:tools="http://schemas.android.com/tools">
     <!-- 격자 카메라 촬영을 위한 카메라 권한. -->
     <uses-permission android:name="android.permission.CAMERA"/>
-    <uses-feature android:name="android.hardware.camera" android:required="false"/>
-    <!-- 갤러리 사진 등록과 기기로 내보내기(gal 패키지)를 위한
-         미디어 권한. API 33+는 READ_MEDIA_IMAGES로 세분화된 사진 읽기 권한을 요구하고,
-         API 29(Android 10) 이하는 gal 패키지가 갤러리에 저장할 때 WRITE_EXTERNAL_STORAGE가
-         필요하다(API 30+는 스코프드 스토리지로 불필요하므로 maxSdkVersion으로 범위를 제한한다). -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+    <!-- camera_android_camerax가 추가하는 필수 camera.any feature를 선택 기능으로
+         낮춘다. 카메라가 없는 기기에서도 갤러리 등록 기능은 사용할 수 있어야 한다. -->
+    <uses-feature
+        android:name="android.hardware.camera.any"
+        android:required="false"
+        tools:replace="android:required"/>
+    <!-- image_picker는 시스템 picker가 선택한 파일에만 접근하므로 광범위한
+         READ_MEDIA_IMAGES/READ_EXTERNAL_STORAGE 권한이 필요하지 않다. -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        tools:node="remove"/>
+    <!-- 사진 촬영에서 오디오를 사용하지 않으므로 camera plugin의 권한을 제거한다. -->
+    <uses-permission
+        android:name="android.permission.RECORD_AUDIO"
+        tools:node="remove"/>
+    <!-- API 29(Android 10) 이하에서 gal 패키지가 갤러리에 저장할 때 필요한
+         쓰기 권한. API 30+에서는 스코프드 스토리지를 사용한다. -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29"
         tools:replace="android:maxSdkVersion"/>
@@ -16,11 +27,13 @@
     <!-- 민감한 체형 사진·회원 정보가 adb backup/자동 백업으로 유출되지 않도록
          시스템 백업을 비활성화한다. 데이터 이전은 앱 자체 백업/복원을 사용한다. -->
     <application
-        android:label="body_frame"
+        android:label="Body Frame"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"
-        android:fullBackupContent="false">
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:requestLegacyExternalStorage="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"

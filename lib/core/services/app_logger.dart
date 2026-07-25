@@ -31,14 +31,16 @@ class AppLogger {
   void warn(String event, {Map<String, dynamic>? context}) =>
       _log(LogLevel.warn, event, context: context);
 
-  void error(String event,
-          {Map<String, dynamic>? context, Object? err, StackTrace? stack}) =>
-      _log(LogLevel.error, event, context: context, err: err, stack: stack);
+  void error(
+    String event, {
+    Map<String, dynamic>? context,
+    Object? err,
+    StackTrace? stack,
+  }) => _log(LogLevel.error, event, context: context, err: err, stack: stack);
 
   /// 기능 단계 로그. 예: `phase('member.delete', LogPhase.success, {'count': 3})`.
   void phase(String feature, LogPhase phase, {Map<String, dynamic>? context}) {
-    final level =
-        phase == LogPhase.failure ? LogLevel.error : LogLevel.info;
+    final level = phase == LogPhase.failure ? LogLevel.error : LogLevel.info;
     _log(level, '$feature.${phase.name}', context: context);
   }
 
@@ -54,7 +56,9 @@ class AppLogger {
       'level': level.name,
       'event': event,
       if (context != null && context.isNotEmpty) 'context': context,
-      if (err != null) 'error': err.toString(),
+      // FileSystemException/DatabaseException 메시지에는 사진 절대경로,
+      // SQL 인자 등 민감정보가 들어갈 수 있으므로 구체 메시지는 기록하지 않는다.
+      if (err != null) 'errorType': err.runtimeType.toString(),
     };
 
     final localSink = sink;
@@ -67,7 +71,6 @@ class AppLogger {
       jsonEncode(entry),
       name: 'body_frame',
       level: _levelValue(level),
-      error: err,
       stackTrace: stack,
     );
   }

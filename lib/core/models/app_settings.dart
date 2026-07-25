@@ -72,13 +72,13 @@ class ExportImageOptions {
   }
 
   Map<String, dynamic> toMap() => {
-        'includeMemberName': includeMemberName,
-        'includeShotDate': includeShotDate,
-        'includeMemo': includeMemo,
-        'includeGrid': includeGrid,
-        'includeStudioName': includeStudioName,
-        'includeWatermark': includeWatermark,
-      };
+    'includeMemberName': includeMemberName,
+    'includeShotDate': includeShotDate,
+    'includeMemo': includeMemo,
+    'includeGrid': includeGrid,
+    'includeStudioName': includeStudioName,
+    'includeWatermark': includeWatermark,
+  };
 
   factory ExportImageOptions.fromMap(Map<String, dynamic> map) {
     return ExportImageOptions(
@@ -115,7 +115,7 @@ class AppSettings {
   /// 스튜디오명 (선택).
   final String? studioName;
 
-  /// 스튜디오 로고 로컬 파일 경로 (선택).
+  /// 앱 관리 저장소 기준 스튜디오 로고 상대경로 (선택).
   final String? studioLogoPath;
 
   /// 앱 삭제 시 데이터 삭제 안내 확인 여부(최초 안내 노출 제어).
@@ -141,7 +141,9 @@ class AppSettings {
     GridSettings? defaultGrid,
     ExportImageOptions? defaultExportOptions,
     String? studioName,
+    bool clearStudioName = false,
     String? studioLogoPath,
+    bool clearStudioLogoPath = false,
     bool? dataNoticeAcknowledged,
   }) {
     return AppSettings(
@@ -150,8 +152,10 @@ class AppSettings {
       autoLockSeconds: autoLockSeconds ?? this.autoLockSeconds,
       defaultGrid: defaultGrid ?? this.defaultGrid,
       defaultExportOptions: defaultExportOptions ?? this.defaultExportOptions,
-      studioName: studioName ?? this.studioName,
-      studioLogoPath: studioLogoPath ?? this.studioLogoPath,
+      studioName: clearStudioName ? null : (studioName ?? this.studioName),
+      studioLogoPath: clearStudioLogoPath
+          ? null
+          : (studioLogoPath ?? this.studioLogoPath),
       dataNoticeAcknowledged:
           dataNoticeAcknowledged ?? this.dataNoticeAcknowledged,
     );
@@ -178,15 +182,16 @@ class AppSettings {
       defaultGrid: map['defaultGrid'] == null
           ? GridSettings.defaults
           : GridSettings.fromMap(
-              (map['defaultGrid'] as Map).cast<String, dynamic>()),
+              (map['defaultGrid'] as Map).cast<String, dynamic>(),
+            ),
       defaultExportOptions: map['defaultExportOptions'] == null
           ? ExportImageOptions.defaults
           : ExportImageOptions.fromMap(
-              (map['defaultExportOptions'] as Map).cast<String, dynamic>()),
+              (map['defaultExportOptions'] as Map).cast<String, dynamic>(),
+            ),
       studioName: map['studioName'] as String?,
       studioLogoPath: map['studioLogoPath'] as String?,
-      dataNoticeAcknowledged:
-          (map['dataNoticeAcknowledged'] as bool?) ?? false,
+      dataNoticeAcknowledged: (map['dataNoticeAcknowledged'] as bool?) ?? false,
     );
   }
 

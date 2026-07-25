@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../../core/models/models.dart';
 import '../../../core/providers.dart';
+import '../../../core/services/app_image_picker.dart';
 import '../../../core/services/app_logger.dart';
 import '../providers/members_providers.dart';
 
@@ -31,6 +33,7 @@ class _MemberFormBodyState extends ConsumerState<MemberFormBody> {
   late final TextEditingController _birthCtrl;
   late final TextEditingController _contactCtrl;
   late final TextEditingController _memoCtrl;
+  late final String _memberId;
   Gender _gender = Gender.unspecified;
 
   /// 새로 선택한 갤러리 원본 경로(아직 저장소에 복사되기 전).
@@ -42,8 +45,13 @@ class _MemberFormBodyState extends ConsumerState<MemberFormBody> {
 
   /// 대기(null)/진행(loading)/성공(data)/실패(error) 4-상태.
   AsyncValue<void>? _saveState;
+  bool _recoveringLostAvatar = false;
+  bool _lostAvatarRecoveryScheduled = false;
 
   bool get _isEdit => widget.existing != null;
+  ImagePickerRequestContext get _pickerContext => _isEdit
+      ? ImagePickerRequestContext.memberAvatar(_memberId)
+      : ImagePickerRequestContext.newMemberAvatar();
 
   @override
   void initState() {
@@ -53,8 +61,27 @@ class _MemberFormBodyState extends ConsumerState<MemberFormBody> {
     _birthCtrl = TextEditingController(text: m?.birth ?? '');
     _contactCtrl = TextEditingController(text: m?.contact ?? '');
     _memoCtrl = TextEditingController(text: m?.memo ?? '');
+    _memberId = m?.id ?? const Uuid().v4();
     _gender = m?.gender ?? Gender.unspecified;
     _avatarExistingPath = m?.avatarPath;
+    ref.listenManual<RecoveredImagePickerSelection?>(
+      appImagePickerCoordinatorProvider,
+      (previous, next) {
+        if (next?.context == _pickerContext) {
+          _scheduleLostAvatarRecovery();
+        }
+      },
+      fireImmediately: true,
+    );
+  }
+
+  void _scheduleLostAvatarRecovery() {
+    if (_lostAvatarRecoveryScheduled) return;
+    _lostAvatarRecoveryScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _lostAvatarRecoveryScheduled = false;
+      if (mounted) unawaited(_recoverLostAvatar());
+    });
   }
 
   @override
@@ -69,8 +96,41 @@ class _MemberFormBodyState extends ConsumerState<MemberFormBody> {
   String? get _avatarPreviewPath =>
       _avatarCleared ? null : (_avatarPickedPath ?? _avatarExistingPath);
 
+  Future<void> _recoverLostAvatar() async {
+    if (!mounted || _recoveringLostAvatar) return;
+    final coordinator = ref.read(appImagePickerCoordinatorProvider.notifier);
+    final recovered = coordinator.recoveredFor(_pickerContext);
+    if (recovered == null) return;
+    _recoveringLostAvatar = true;
+    try {
+      final picked = recovered.lastFile;
+      if (picked == null) {
+        throw StateError('복구할 대표 사진이 없습니다.');
+      }
+      if (!mounted) return;
+      setState(() {
+        _avatarPickedPath = picked.path;
+        _avatarCleared = false;
+      });
+      await coordinator.acknowledgeRecovered(_pickerContext);
+      ref.read(appLoggerProvider).info('member.avatar.pick.recovered');
+    } catch (_) {
+      ref
+          .read(appLoggerProvider)
+          .phase('member.avatar.pick.recovery', LogPhase.failure);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('이전 대표 사진 선택 결과를 복구하지 못했습니다.')),
+      );
+    } finally {
+      _recoveringLostAvatar = false;
+    }
+  }
+
   Future<void> _pickAvatar() async {
-    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+    final picked = await ref
+        .read(appImagePickerCoordinatorProvider.notifier)
+        .pickImage(context: _pickerContext, source: ImageSource.gallery);
     if (picked == null || !mounted) return;
     setState(() {
       _avatarPickedPath = picked.path;
@@ -92,7 +152,7 @@ class _MemberFormBodyState extends ConsumerState<MemberFormBody> {
     final repo = ref.read(memberRepositoryProvider);
     final storage = ref.read(photoStorageServiceProvider);
     final now = DateTime.now();
-    final id = widget.existing?.id ?? const Uuid().v4();
+    final id = _memberId;
 
     setState(() => _saveState = const AsyncValue.loading());
     logger.phase(
@@ -101,6 +161,8 @@ class _MemberFormBodyState extends ConsumerState<MemberFormBody> {
       context: {'id': id},
     );
 
+    String? newlySavedAvatar;
+    var repositoryCommitted = false;
     try {
       String? avatarPath = _avatarCleared ? null : _avatarExistingPath;
       if (_avatarPickedPath != null) {
@@ -108,6 +170,7 @@ class _MemberFormBodyState extends ConsumerState<MemberFormBody> {
           memberId: id,
           sourcePath: _avatarPickedPath!,
         );
+        newlySavedAvatar = avatarPath;
       }
 
       final member = Member(
@@ -116,8 +179,9 @@ class _MemberFormBodyState extends ConsumerState<MemberFormBody> {
         avatarPath: avatarPath,
         gender: _gender,
         birth: _birthCtrl.text.trim().isEmpty ? null : _birthCtrl.text.trim(),
-        contact:
-            _contactCtrl.text.trim().isEmpty ? null : _contactCtrl.text.trim(),
+        contact: _contactCtrl.text.trim().isEmpty
+            ? null
+            : _contactCtrl.text.trim(),
         memo: _memoCtrl.text.trim().isEmpty ? null : _memoCtrl.text.trim(),
         createdAt: widget.existing?.createdAt ?? now,
         updatedAt: now,
@@ -128,6 +192,7 @@ class _MemberFormBodyState extends ConsumerState<MemberFormBody> {
       } else {
         await repo.insert(member);
       }
+      repositoryCommitted = true;
       logger.phase(
         _isEdit ? 'member.update' : 'member.insert',
         LogPhase.success,
@@ -143,6 +208,13 @@ class _MemberFormBodyState extends ConsumerState<MemberFormBody> {
       setState(() => _saveState = const AsyncValue.data(null));
       Navigator.of(context).pop(true);
     } catch (e, st) {
+      if (!repositoryCommitted && newlySavedAvatar != null) {
+        try {
+          await storage.deleteFile(newlySavedAvatar);
+        } catch (_) {
+          logger.warn('member.avatar.cleanup.failure', context: {'id': id});
+        }
+      }
       logger.error(
         _isEdit ? 'member.update.failure' : 'member.insert.failure',
         err: e,
@@ -155,8 +227,9 @@ class _MemberFormBodyState extends ConsumerState<MemberFormBody> {
 
   @override
   Widget build(BuildContext context) {
-    final statusId =
-        _isEdit ? 'screen.members.edit.status' : 'screen.members.add.status';
+    final statusId = _isEdit
+        ? 'screen.members.edit.status'
+        : 'screen.members.add.status';
     final saving = _saveState is AsyncLoading;
 
     return SingleChildScrollView(
@@ -250,8 +323,9 @@ class _MemberFormBodyState extends ConsumerState<MemberFormBody> {
                       key: ValueKey('member.gender.option.${g.key}'),
                       label: Text(g.label),
                       selected: selected,
-                      onSelected:
-                          saving ? null : (_) => setState(() => _gender = g),
+                      onSelected: saving
+                          ? null
+                          : (_) => setState(() => _gender = g),
                     ),
                   );
                 }).toList(),
@@ -328,27 +402,27 @@ class _MemberFormBodyState extends ConsumerState<MemberFormBody> {
   }
 
   String _statusLabel(AsyncValue<void> s) => s.when(
-        data: (_) => '저장 완료',
-        loading: () => '저장 중',
-        error: (e, _) => '저장 실패: $e',
-      );
+    data: (_) => '저장 완료',
+    loading: () => '저장 중',
+    error: (e, _) => '저장 실패',
+  );
 
   Widget _statusContent(AsyncValue<void> s) => s.when(
-        data: (_) => const SizedBox.shrink(),
-        loading: () => const Padding(
-          padding: EdgeInsets.symmetric(vertical: 8),
-          child: LinearProgressIndicator(),
+    data: (_) => const SizedBox.shrink(),
+    loading: () => const Padding(
+      padding: EdgeInsets.symmetric(vertical: 8),
+      child: LinearProgressIndicator(),
+    ),
+    error: (e, _) => Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '저장하지 못했습니다.',
+          style: TextStyle(color: Theme.of(context).colorScheme.error),
         ),
-        error: (e, _) => Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '저장하지 못했습니다: $e',
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-            const SizedBox(height: 4),
-            TextButton(onPressed: _submit, child: const Text('다시 시도')),
-          ],
-        ),
-      );
+        const SizedBox(height: 4),
+        TextButton(onPressed: _submit, child: const Text('다시 시도')),
+      ],
+    ),
+  );
 }

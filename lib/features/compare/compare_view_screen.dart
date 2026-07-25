@@ -8,18 +8,17 @@ import '../../core/providers.dart';
 import '../../core/router/app_routes.dart';
 import 'compare_export_models.dart';
 import 'compare_providers.dart';
+import 'widgets/compare_layered_pane.dart';
 import 'widgets/compare_missing_context.dart';
 import 'widgets/compare_photo_pane.dart';
 import 'widgets/labeled_switch.dart';
 
 final _dateFormat = DateFormat('yyyy.MM.dd');
 
-enum _CompareMode { sideBySide, overlay, slider }
-
 /// 전후 사진 비교 화면.
 ///
-/// 좌우 비교(이전=왼쪽/이후=오른쪽)를 기본으로 제공한다. 겹쳐 보기/슬라이더
-/// 비교는 아직 구현되지 않아 진입점만 두고 '준비 중'으로 표시한다.
+/// 좌우 비교, 투명도를 조절하는 겹쳐 보기, 경계를 움직이는 슬라이더 비교를
+/// 제공한다.
 class CompareViewScreen extends ConsumerWidget {
   static const screenId = 'screen.compare.view';
 
@@ -87,7 +86,9 @@ class _CompareViewBodyState extends ConsumerState<_CompareViewBody> {
   bool _showGrid = false;
   GridSettings _grid = GridSettings.defaults;
   bool _gridInitialized = false;
-  _CompareMode _mode = _CompareMode.sideBySide;
+  CompareMode _mode = CompareMode.sideBySide;
+  double _overlayOpacity = 0.5;
+  double _sliderPosition = 0.5;
   bool _applyingSync = false;
 
   /// 실제 렌더링된 사진 프레임 크기. 생성 화면이 같은 크기로 재현해
@@ -153,6 +154,9 @@ class _CompareViewBodyState extends ConsumerState<_CompareViewBody> {
       afterMatrix: _afterCtrl.value.clone(),
       grid: _grid,
       showGrid: _showGrid,
+      mode: _mode,
+      overlayOpacity: _overlayOpacity,
+      sliderPosition: _sliderPosition,
       panePhotoSize: _panePhotoSize,
     );
     context.pushNamed(
@@ -207,53 +211,81 @@ class _CompareViewBodyState extends ConsumerState<_CompareViewBody> {
             ),
             Expanded(
               child: switch (_mode) {
-                _CompareMode.sideBySide => Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: ComparePhotoPane(
-                            label: '이전',
-                            dateLabel:
-                                _dateFormat.format(bundle.beforeRecord.shotAt),
-                            photo: bundle.beforePhoto,
-                            controller: _beforeCtrl,
-                            interactive: true,
-                            gridSettings: _grid,
-                            showGrid: _showGrid,
-                            paneIdentifier: 'compare.before',
-                            onPhotoBoxSize: (size) => _panePhotoSize = size,
+                CompareMode.sideBySide => Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: ComparePhotoPane(
+                          label: '이전',
+                          dateLabel: _dateFormat.format(
+                            bundle.beforeRecord.shotAt,
                           ),
+                          photo: bundle.beforePhoto,
+                          controller: _beforeCtrl,
+                          interactive: true,
+                          gridSettings: _grid,
+                          showGrid: _showGrid,
+                          paneIdentifier: 'compare.before',
+                          onPhotoBoxSize: (size) => _panePhotoSize = size,
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: ComparePhotoPane(
-                            label: '이후',
-                            dateLabel:
-                                _dateFormat.format(bundle.afterRecord.shotAt),
-                            photo: bundle.afterPhoto,
-                            controller: _afterCtrl,
-                            interactive: true,
-                            gridSettings: _grid,
-                            showGrid: _showGrid,
-                            paneIdentifier: 'compare.after',
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ComparePhotoPane(
+                          label: '이후',
+                          dateLabel: _dateFormat.format(
+                            bundle.afterRecord.shotAt,
                           ),
+                          photo: bundle.afterPhoto,
+                          controller: _afterCtrl,
+                          interactive: true,
+                          gridSettings: _grid,
+                          showGrid: _showGrid,
+                          paneIdentifier: 'compare.after',
                         ),
-                      ],
+                      ),
+                    ],
+                  ),
+                ),
+                CompareMode.overlay || CompareMode.slider => Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: CompareLayeredPane(
+                    mode: _mode,
+                    beforePhoto: bundle.beforePhoto,
+                    afterPhoto: bundle.afterPhoto,
+                    beforeDateLabel: _dateFormat.format(
+                      bundle.beforeRecord.shotAt,
                     ),
+                    afterDateLabel: _dateFormat.format(
+                      bundle.afterRecord.shotAt,
+                    ),
+                    beforeController: _beforeCtrl,
+                    afterController: _afterCtrl,
+                    interactive: true,
+                    gridSettings: _grid,
+                    showGrid: _showGrid,
+                    overlayOpacity: _overlayOpacity,
+                    sliderPosition: _sliderPosition,
+                    onSliderPositionChanged: (value) =>
+                        setState(() => _sliderPosition = value.clamp(0.0, 1.0)),
+                    identifierPrefix: _mode == CompareMode.overlay
+                        ? 'compare.overlay'
+                        : 'compare.slider',
+                    onPhotoBoxSize: (size) => _panePhotoSize = size,
                   ),
-                _CompareMode.overlay => const _NotReadyNotice(
-                    identifier: 'compare.overlay.placeholder',
-                    label: '겹쳐 보기',
-                  ),
-                _CompareMode.slider => const _NotReadyNotice(
-                    identifier: 'compare.slider.placeholder',
-                    label: '슬라이더 비교',
-                  ),
+                ),
               },
             ),
             _Controls(
+              mode: _mode,
+              overlayOpacity: _overlayOpacity,
+              onOverlayOpacityChanged: (value) =>
+                  setState(() => _overlayOpacity = value.clamp(0.0, 1.0)),
+              sliderPosition: _sliderPosition,
+              onSliderPositionChanged: (value) =>
+                  setState(() => _sliderPosition = value.clamp(0.0, 1.0)),
               sync: _sync,
               onSyncChanged: _toggleSync,
               showGrid: _showGrid,
@@ -271,8 +303,8 @@ class _CompareViewBodyState extends ConsumerState<_CompareViewBody> {
 }
 
 class _ModeSelector extends StatelessWidget {
-  final _CompareMode mode;
-  final ValueChanged<_CompareMode> onChanged;
+  final CompareMode mode;
+  final ValueChanged<CompareMode> onChanged;
 
   const _ModeSelector({required this.mode, required this.onChanged});
 
@@ -284,15 +316,27 @@ class _ModeSelector extends StatelessWidget {
       child: Wrap(
         spacing: 8,
         children: [
-          _chip('compare.mode.sideBySide.button', '좌우 비교', _CompareMode.sideBySide),
-          _chip('compare.mode.overlay.button', '겹쳐 보기', _CompareMode.overlay),
-          _chip('compare.mode.slider.button', '슬라이더 비교', _CompareMode.slider),
+          _chip(
+            'compare.mode.sideBySide.button',
+            CompareMode.sideBySide.label,
+            CompareMode.sideBySide,
+          ),
+          _chip(
+            'compare.mode.overlay.button',
+            CompareMode.overlay.label,
+            CompareMode.overlay,
+          ),
+          _chip(
+            'compare.mode.slider.button',
+            CompareMode.slider.label,
+            CompareMode.slider,
+          ),
         ],
       ),
     );
   }
 
-  Widget _chip(String id, String label, _CompareMode value) {
+  Widget _chip(String id, String label, CompareMode value) {
     final selected = mode == value;
     return Semantics(
       identifier: id,
@@ -308,36 +352,12 @@ class _ModeSelector extends StatelessWidget {
   }
 }
 
-class _NotReadyNotice extends StatelessWidget {
-  final String identifier;
-  final String label;
-
-  const _NotReadyNotice({required this.identifier, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Semantics(
-        identifier: identifier,
-        label: '$label, 준비 중인 기능입니다',
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            key: ValueKey(identifier),
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.hourglass_empty, size: 32),
-              const SizedBox(height: 8),
-              Text('$label 기능은 준비 중입니다.'),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _Controls extends StatelessWidget {
+  final CompareMode mode;
+  final double overlayOpacity;
+  final ValueChanged<double> onOverlayOpacityChanged;
+  final double sliderPosition;
+  final ValueChanged<double> onSliderPositionChanged;
   final bool sync;
   final ValueChanged<bool> onSyncChanged;
   final bool showGrid;
@@ -348,6 +368,11 @@ class _Controls extends StatelessWidget {
   final VoidCallback onExport;
 
   const _Controls({
+    required this.mode,
+    required this.overlayOpacity,
+    required this.onOverlayOpacityChanged,
+    required this.sliderPosition,
+    required this.onSliderPositionChanged,
     required this.sync,
     required this.onSyncChanged,
     required this.showGrid,
@@ -367,6 +392,24 @@ class _Controls extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (mode == CompareMode.overlay)
+              _GridSlider(
+                id: 'compare.overlay.opacity.slider',
+                label: '투명도',
+                value: overlayOpacity,
+                min: 0,
+                max: 1,
+                onChanged: onOverlayOpacityChanged,
+              ),
+            if (mode == CompareMode.slider)
+              _GridSlider(
+                id: 'compare.slider.position.slider',
+                label: '경계 위치',
+                value: sliderPosition,
+                min: 0,
+                max: 1,
+                onChanged: onSliderPositionChanged,
+              ),
             LabeledSwitch(
               id: 'compare.sync.toggle',
               title: '확대/이동 동기화',

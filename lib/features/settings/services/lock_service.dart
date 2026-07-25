@@ -1,8 +1,20 @@
+import 'dart:isolate';
+
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:local_auth/local_auth.dart';
 
 import '../../../core/services/app_logger.dart';
 import 'pin_hasher.dart';
+
+class LockThrottleState {
+  final int failedAttempts;
+  final DateTime? lockedUntil;
+
+  const LockThrottleState({this.failedAttempts = 0, this.lockedUntil});
+
+  bool get isLockedOut =>
+      lockedUntil != null && DateTime.now().isBefore(lockedUntil!);
+}
 
 /// 앱 잠금(PIN·비밀번호·생체 인증) 서비스.
 ///
@@ -17,6 +29,9 @@ abstract class LockService {
   /// 입력값이 저장된 비밀과 일치하는지 검증한다.
   Future<bool> verifySecret(String secret);
 
+  /// 앱 재시작 후에도 유지되는 실패 횟수와 일시 제한 상태.
+  Future<LockThrottleState> loadThrottleState();
+
   /// 저장된 비밀을 삭제한다(잠금 해제).
   Future<void> clearSecret();
 
@@ -29,6 +44,10 @@ abstract class LockService {
 
 class LockServiceImpl implements LockService {
   static const String _secretKey = 'app_lock_secret_record';
+  static const String _failedAttemptsKey = 'app_lock_failed_attempts';
+  static const String _lockedUntilKey = 'app_lock_locked_until';
+  static const int _maxAttemptsBeforeLockout = 5;
+  static const Duration _lockoutDuration = Duration(seconds: 30);
 
   final FlutterSecureStorage _secureStorage;
   final LocalAuthentication _localAuth;
@@ -38,19 +57,18 @@ class LockServiceImpl implements LockService {
     FlutterSecureStorage? secureStorage,
     LocalAuthentication? localAuth,
     AppLogger? logger,
-  })  : _secureStorage = secureStorage ??
-            const FlutterSecureStorage(
-              // 기기 잠금 해제 이후에만 접근 가능 + 백업/기기 이전에서 제외(iOS),
-              // EncryptedSharedPreferences 사용(Android).
-              iOptions: IOSOptions(
-                accessibility: KeychainAccessibility.first_unlock_this_device,
-              ),
-              aOptions: AndroidOptions(
-                encryptedSharedPreferences: true,
-              ),
-            ),
-        _localAuth = localAuth ?? LocalAuthentication(),
-        _logger = logger ?? AppLogger.instance;
+  }) : _secureStorage =
+           secureStorage ??
+           const FlutterSecureStorage(
+             // 기기 잠금 해제 이후에만 접근 가능 + 백업/기기 이전에서 제외(iOS),
+             // EncryptedSharedPreferences 사용(Android).
+             iOptions: IOSOptions(
+               accessibility: KeychainAccessibility.first_unlock_this_device,
+             ),
+             aOptions: AndroidOptions(encryptedSharedPreferences: true),
+           ),
+       _localAuth = localAuth ?? LocalAuthentication(),
+       _logger = logger ?? AppLogger.instance;
 
   @override
   Future<bool> hasSecret() async {
@@ -60,16 +78,31 @@ class LockServiceImpl implements LockService {
 
   @override
   Future<void> setSecret(String secret) async {
-    final record = PinHasher.createRecord(secret);
+    final record = await Isolate.run(() => PinHasher.createRecord(secret));
     await _secureStorage.write(key: _secretKey, value: record);
+    await _clearThrottle();
     _logger.phase('lock.secret', LogPhase.success, context: {'action': 'set'});
   }
 
   @override
   Future<bool> verifySecret(String secret) async {
+    final throttle = await loadThrottleState();
+    if (throttle.isLockedOut) return false;
+
     final record = await _secureStorage.read(key: _secretKey);
     if (record == null) return false;
-    final ok = PinHasher.verify(secret, record);
+    final ok = await Isolate.run(() => PinHasher.verify(secret, record));
+    if (ok) {
+      await _clearThrottle();
+      if (PinHasher.needsUpgrade(record)) {
+        final upgraded = await Isolate.run(
+          () => PinHasher.createRecord(secret),
+        );
+        await _secureStorage.write(key: _secretKey, value: upgraded);
+      }
+    } else {
+      await _recordFailure(throttle.failedAttempts);
+    }
     _logger.phase(
       'lock.secret',
       ok ? LogPhase.success : LogPhase.failure,
@@ -79,9 +112,33 @@ class LockServiceImpl implements LockService {
   }
 
   @override
+  Future<LockThrottleState> loadThrottleState() async {
+    final attemptsSource = await _secureStorage.read(key: _failedAttemptsKey);
+    final lockedUntilSource = await _secureStorage.read(key: _lockedUntilKey);
+    final attempts = int.tryParse(attemptsSource ?? '') ?? 0;
+    final lockedUntilMillis = int.tryParse(lockedUntilSource ?? '');
+    final lockedUntil = lockedUntilMillis == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(lockedUntilMillis);
+    if (lockedUntil != null && !DateTime.now().isBefore(lockedUntil)) {
+      await _clearThrottle();
+      return const LockThrottleState();
+    }
+    return LockThrottleState(
+      failedAttempts: attempts,
+      lockedUntil: lockedUntil,
+    );
+  }
+
+  @override
   Future<void> clearSecret() async {
     await _secureStorage.delete(key: _secretKey);
-    _logger.phase('lock.secret', LogPhase.success, context: {'action': 'clear'});
+    await _clearThrottle();
+    _logger.phase(
+      'lock.secret',
+      LogPhase.success,
+      context: {'action': 'clear'},
+    );
   }
 
   @override
@@ -106,14 +163,32 @@ class LockServiceImpl implements LockService {
           stickyAuth: true,
         ),
       );
-      _logger.phase(
-        'lock.biometric',
-        ok ? LogPhase.success : LogPhase.failure,
-      );
+      if (ok) await _clearThrottle();
+      _logger.phase('lock.biometric', ok ? LogPhase.success : LogPhase.failure);
       return ok;
     } catch (e) {
       _logger.error('lock.biometric.failure', err: e);
       return false;
     }
+  }
+
+  Future<void> _recordFailure(int previousAttempts) async {
+    final attempts = previousAttempts + 1;
+    await _secureStorage.write(
+      key: _failedAttemptsKey,
+      value: attempts.toString(),
+    );
+    if (attempts >= _maxAttemptsBeforeLockout) {
+      final lockedUntil = DateTime.now().add(_lockoutDuration);
+      await _secureStorage.write(
+        key: _lockedUntilKey,
+        value: lockedUntil.millisecondsSinceEpoch.toString(),
+      );
+    }
+  }
+
+  Future<void> _clearThrottle() async {
+    await _secureStorage.delete(key: _failedAttemptsKey);
+    await _secureStorage.delete(key: _lockedUntilKey);
   }
 }
