@@ -40,20 +40,25 @@ class CaptureProgressBar extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 6),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              for (var i = 0; i < shots.length; i++)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 3),
-                  child: _StepChip(
-                    shot: shots[i],
-                    isCurrent: i == currentIndex,
-                    foreground: foreground,
-                    onTap: () => onStepSelected(i),
+          // 방향 4개가 항상 한 줄에 다 보여야 진행 상황을 읽을 수 있다.
+          // 좁은 화면에서는 잘라내는 대신 축소한다.
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var i = 0; i < shots.length; i++)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 3),
+                    child: _StepChip(
+                      shot: shots[i],
+                      isCurrent: i == currentIndex,
+                      foreground: foreground,
+                      onTap: () => onStepSelected(i),
+                    ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ],
       ),

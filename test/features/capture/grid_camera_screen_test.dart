@@ -89,6 +89,27 @@ void main() {
     return container.read(captureSessionProvider);
   }
 
+  testWidgets('실기기 폭에서 진행 칩 4개가 넘치지 않고 모두 보인다', (tester) async {
+    // 기본 테스트 뷰포트(800x600 논리 픽셀)는 실기기보다 넓어 상단바 오버플로를
+    // 놓친다. 흔한 1080x2400 @2.75(≈393dp) 화면을 그대로 재현한다.
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(buildApp(_FakeCaptureCameraController.new));
+    await tester.pumpAndSettle();
+
+    // 오버플로는 렌더 예외로 보고된다.
+    expect(tester.takeException(), isNull);
+    for (final direction in kSessionDirections) {
+      expect(
+        find.byKey(ValueKey('capture.progress.step.${direction.key}')),
+        findsOneWidget,
+        reason: '${direction.label} 칩이 상단바에서 잘렸습니다.',
+      );
+    }
+  });
+
   testWidgets('셔터를 누르면 화면을 벗어나지 않고 다음 방향으로 넘어간다', (tester) async {
     final fake = _FakeCaptureCameraController();
     await tester.pumpWidget(buildApp(() => fake));
