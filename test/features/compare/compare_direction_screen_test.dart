@@ -18,14 +18,12 @@ void main() {
     photos = FakeBodyPhotoRepository();
     records.records['r1'] = PhotoRecord(
       id: 'r1',
-      memberId: 'm1',
       shotAt: DateTime(2026, 1, 1),
       createdAt: DateTime(2026, 1, 1),
       updatedAt: DateTime(2026, 1, 1),
     );
     records.records['r2'] = PhotoRecord(
       id: 'r2',
-      memberId: 'm1',
       shotAt: DateTime(2026, 3, 1),
       createdAt: DateTime(2026, 3, 1),
       updatedAt: DateTime(2026, 3, 1),
@@ -38,7 +36,6 @@ void main() {
       overrides: [
         photoRecordRepositoryProvider.overrideWithValue(records),
         bodyPhotoRepositoryProvider.overrideWithValue(photos),
-        memberRepositoryProvider.overrideWithValue(FakeMemberRepository()),
         gridSettingsServiceProvider.overrideWithValue(
           FakeGridSettingsService(),
         ),
@@ -48,7 +45,7 @@ void main() {
   }
 
   const location =
-      '/members/m1/compare/direction'
+      '/compare/direction'
       '?beforeRecordId=r1&afterRecordId=r2';
 
   testWidgets('공통 방향만 선택 가능하고, 선택 후 다음으로 전후 비교 화면에 진입한다', (tester) async {
@@ -125,7 +122,7 @@ void main() {
   });
 
   testWidgets('필요한 쿼리 파라미터 없이 진입하면 안내와 복귀 버튼을 보여준다', (tester) async {
-    await tester.pumpWidget(buildApp('/members/m1/compare/direction'));
+    await tester.pumpWidget(buildApp('/compare/direction'));
     await tester.pumpAndSettle();
 
     expect(
@@ -137,7 +134,7 @@ void main() {
   testWidgets('같은 촬영 기록이 이전과 이후에 전달되면 진행을 차단한다', (tester) async {
     await tester.pumpWidget(
       buildApp(
-        '/members/m1/compare/direction'
+        '/compare/direction'
         '?beforeRecordId=r1&afterRecordId=r1',
       ),
     );

@@ -5,76 +5,51 @@
 class AppRoutes {
   AppRoutes._();
 
-  // --- 회원 관리 ---
-  /// 1. 앱 시작 화면.
-  static const appStart = 'app.start';
+  /// 1. 홈 타임라인 화면.
+  static const home = 'home';
 
-  /// 2. 회원 목록 화면.
-  static const membersList = 'members.list';
+  // --- 사진 등록 ---
+  /// 2. 연속 세션 촬영 화면.
+  static const captureSession = 'capture.session';
 
-  /// 3. 회원 등록 화면.
-  static const memberAdd = 'members.add';
-
-  /// 4. 회원 상세 화면.
-  static const memberDetail = 'members.detail';
-
-  /// 5. 회원 정보 수정 화면.
-  static const memberEdit = 'members.edit';
-
-  // --- 사진 관리 ---
-  /// 6. 촬영 방향 선택 화면.
-  static const captureDirection = 'capture.direction';
-
-  /// 7. 격자 카메라 화면.
-  static const captureCamera = 'capture.camera';
-
-  /// 8. 촬영 결과 확인 화면.
+  /// 3. 촬영 결과 일괄 확인 화면.
   static const captureReview = 'capture.review';
 
-  /// 9. 갤러리 사진 등록 화면.
+  /// 4. 갤러리 사진 등록 화면.
   static const galleryImport = 'capture.import';
 
-  /// 10. 촬영 기록 상세 화면.
+  // --- 기록 ---
+  /// 5. 촬영 기록 상세 화면.
   static const recordDetail = 'records.detail';
 
-  /// 11. 원본 사진 보기 화면.
+  /// 6. 원본 사진 보기 화면.
   static const photoView = 'records.photo';
 
   // --- 비교 ---
-  /// 12. 비교 날짜 선택 화면.
+  /// 7. 비교 날짜 선택 화면.
   static const compareDates = 'compare.dates';
 
-  /// 13. 비교 방향 선택 화면.
+  /// 8. 비교 방향 선택 화면.
   static const compareDirection = 'compare.direction';
 
-  /// 14. 전후 사진 비교 화면.
+  /// 9. 전후 사진 비교 화면.
   static const compareView = 'compare.view';
 
-  /// 15. 비교 이미지 저장 설정 화면.
+  /// 10. 비교 이미지 저장 설정 화면.
   static const compareExport = 'compare.export';
 
-  // --- 데이터 및 설정 ---
-  /// 16. 앱 설정 화면.
+  // --- 설정 ---
+  /// 11. 앱 설정 화면.
   static const settings = 'settings.home';
 
-  /// 17. 앱 잠금 설정 화면.
-  static const appLock = 'settings.lock';
-
-  /// 18. 백업 및 복원 화면.
-  static const backupRestore = 'settings.backup';
-
-  /// 19. 저장 공간 관리 화면.
+  /// 12. 저장 공간 관리 화면.
   static const storage = 'settings.storage';
-
-  /// 20. 개인정보 및 이용 안내 화면.
-  static const privacyInfo = 'settings.privacy';
 }
 
 /// 경로 파라미터 키. 안정적 UUID 식별자를 전달한다.
 class AppParams {
   AppParams._();
 
-  static const memberId = 'memberId';
   static const recordId = 'recordId';
   static const photoId = 'photoId';
 

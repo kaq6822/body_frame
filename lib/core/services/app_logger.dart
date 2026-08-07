@@ -38,7 +38,7 @@ class AppLogger {
     StackTrace? stack,
   }) => _log(LogLevel.error, event, context: context, err: err, stack: stack);
 
-  /// 기능 단계 로그. 예: `phase('member.delete', LogPhase.success, {'count': 3})`.
+  /// 기능 단계 로그. 예: `phase('record.delete', LogPhase.success, {'count': 3})`.
   void phase(String feature, LogPhase phase, {Map<String, dynamic>? context}) {
     final level = phase == LogPhase.failure ? LogLevel.error : LogLevel.info;
     _log(level, '$feature.${phase.name}', context: context);

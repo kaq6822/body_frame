@@ -4,7 +4,6 @@ import 'dart:ui' as ui;
 
 import 'package:body_frame/core/models/models.dart';
 import 'package:body_frame/core/providers.dart';
-import 'package:body_frame/core/repositories/member_repository.dart';
 import 'package:body_frame/core/repositories/photo_ingest_repository.dart';
 import 'package:body_frame/core/repositories/photo_record_repository.dart';
 import 'package:body_frame/core/services/app_image_picker.dart';
@@ -73,7 +72,7 @@ void main() {
       ),
     );
     final store = _MemoryImagePickerRequestStore(
-      ImagePickerRequestContext.galleryImport('m1'),
+      ImagePickerRequestContext.galleryImport(),
     );
     final coordinator = AppImagePickerCoordinator(
       picker: picker,
@@ -85,9 +84,8 @@ void main() {
       ProviderScope(
         overrides: [
           appImagePickerCoordinatorProvider.overrideWith((ref) => coordinator),
-          memberRepositoryProvider.overrideWithValue(_FakeMemberRepository()),
         ],
-        child: const MaterialApp(home: GalleryImportScreen(memberId: 'm1')),
+        child: const MaterialApp(home: GalleryImportScreen()),
       ),
     );
     for (
@@ -110,83 +108,6 @@ void main() {
     );
   });
 
-  testWidgets('다른 회원의 갤러리 화면은 유실 결과를 소비하지 않는다', (tester) async {
-    final bytes = base64Decode(
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMA'
-      'ASsJTYQAAAAASUVORK5CYII=',
-    );
-    final picker = _FakeAppImagePicker(
-      LostDataResponse(
-        files: [XFile.fromData(bytes, path: recoveredImage.path)],
-      ),
-    );
-    final expected = ImagePickerRequestContext.galleryImport('m1');
-    final coordinator = AppImagePickerCoordinator(
-      picker: picker,
-      requestStore: _MemoryImagePickerRequestStore(expected),
-    );
-    await coordinator.initialize();
-    final container = ProviderContainer(
-      overrides: [
-        appImagePickerCoordinatorProvider.overrideWith((ref) => coordinator),
-        memberRepositoryProvider.overrideWithValue(_FakeMemberRepository()),
-      ],
-    );
-    addTearDown(container.dispose);
-
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: const MaterialApp(
-          home: GalleryImportScreen(
-            key: ValueKey('wrong-gallery-screen'),
-            memberId: 'm2',
-          ),
-        ),
-      ),
-    );
-    await tester.pump();
-
-    expect(
-      find.byKey(const ValueKey('capture.import.item.0.card')),
-      findsNothing,
-    );
-    expect(coordinator.state?.context, expected);
-
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: const MaterialApp(
-          home: GalleryImportScreen(
-            key: ValueKey('matching-gallery-screen'),
-            memberId: 'm1',
-          ),
-        ),
-      ),
-    );
-    for (
-      var i = 0;
-      i < 10 &&
-          find
-              .byKey(const ValueKey('capture.import.item.0.card'))
-              .evaluate()
-              .isEmpty;
-      i += 1
-    ) {
-      await tester.pump(const Duration(milliseconds: 10));
-    }
-
-    expect(
-      find.byKey(const ValueKey('capture.import.item.0.card')),
-      findsOneWidget,
-    );
-    // 복구는 목록만 채운다. 방향 지정과 사용자의 저장 조작 전에는 등록할 수 없다.
-    final saveButton = tester.widget<FilledButton>(
-      find.byKey(const ValueKey('capture.import.save.button')),
-    );
-    expect(saveButton.onPressed, isNull);
-  });
-
   testWidgets('모든 파일과 메타를 준비한 뒤 사진 두 장을 한 번의 ingest로 등록한다', (tester) async {
     final picker = _FakeAppImagePicker(
       LostDataResponse.empty(),
@@ -204,7 +125,6 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         appImagePickerCoordinatorProvider.overrideWith((ref) => coordinator),
-        memberRepositoryProvider.overrideWithValue(_FakeMemberRepository()),
         photoRecordRepositoryProvider.overrideWithValue(records),
         photoIngestRepositoryProvider.overrideWithValue(ingest),
         photoStorageServiceProvider.overrideWithValue(storage),
@@ -215,7 +135,7 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(home: GalleryImportScreen(memberId: 'm1')),
+        child: const MaterialApp(home: GalleryImportScreen()),
       ),
     );
     await pumpUntil(
@@ -274,7 +194,6 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         appImagePickerCoordinatorProvider.overrideWith((ref) => coordinator),
-        memberRepositoryProvider.overrideWithValue(_FakeMemberRepository()),
         photoRecordRepositoryProvider.overrideWithValue(records),
         photoIngestRepositoryProvider.overrideWithValue(ingest),
         photoStorageServiceProvider.overrideWithValue(storage),
@@ -285,7 +204,7 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(home: GalleryImportScreen(memberId: 'm1')),
+        child: const MaterialApp(home: GalleryImportScreen()),
       ),
     );
     await pumpUntil(
@@ -326,10 +245,12 @@ void main() {
     expect(ingest.allFilesExistedAtCall, isTrue);
     expect(records.records, isEmpty);
     expect(ingest.photos, isEmpty);
-    final managed = Directory(p.join(tempDir.path, 'photos', 'm1'));
+    final managed = Directory(p.join(tempDir.path, 'photos'));
     expect(
       managed.existsSync()
-          ? managed.listSync(followLinks: false).whereType<File>()
+          ? managed
+                .listSync(recursive: true, followLinks: false)
+                .whereType<File>()
           : const <File>[],
       isEmpty,
     );
@@ -364,34 +285,6 @@ class _FakeAppImagePicker implements AppImagePicker {
   }
 }
 
-class _FakeMemberRepository implements MemberRepository {
-  Member _member(String id) => Member(
-    id: id,
-    name: '테스트 회원',
-    createdAt: DateTime(2026, 1, 1),
-    updatedAt: DateTime(2026, 1, 1),
-  );
-
-  @override
-  Future<void> delete(String id) async {}
-
-  @override
-  Future<Member?> getById(String id) async =>
-      id == 'm1' || id == 'm2' ? _member(id) : null;
-
-  @override
-  Future<void> insert(Member member) async {}
-
-  @override
-  Future<List<MemberListItem>> list({
-    String? query,
-    MemberSort sort = MemberSort.recentShot,
-  }) async => [];
-
-  @override
-  Future<void> update(Member member) async {}
-}
-
 class _FakePhotoRecordRepository implements PhotoRecordRepository {
   final List<PhotoRecord> records = [];
 
@@ -410,8 +303,7 @@ class _FakePhotoRecordRepository implements PhotoRecordRepository {
   }
 
   @override
-  Future<List<PhotoRecord>> listByMember(String memberId) async =>
-      records.where((record) => record.memberId == memberId).toList();
+  Future<List<PhotoRecord>> listAll() async => List.of(records);
 
   @override
   Future<void> update(PhotoRecord record) async {
@@ -432,7 +324,6 @@ class _FakePhotoIngestRepository implements PhotoIngestRepository {
 
   @override
   Future<void> insertPrepared({
-    required String memberId,
     required List<PhotoRecord> newRecords,
     required List<BodyPhoto> photos,
   }) async {
@@ -453,22 +344,21 @@ class _FakePhotoStorageService implements PhotoStorageService {
   _FakePhotoStorageService(this.root);
 
   @override
-  Future<void> reconcilePendingQuarantines() async {}
-
-  @override
-  Future<Directory> memberDir(String memberId) async {
-    final directory = Directory(p.join(root.path, 'photos', memberId));
+  Future<Directory> bucketDir(DateTime shotAt) async {
+    final directory = Directory(
+      p.join(root.path, 'photos', PhotoStorageServiceImpl.bucketName(shotAt)),
+    );
     await directory.create(recursive: true);
     return directory;
   }
 
   @override
   Future<String> saveOriginal({
-    required String memberId,
+    required DateTime shotAt,
     required String sourcePath,
     String? fileName,
   }) async {
-    final directory = await memberDir(memberId);
+    final directory = await bucketDir(shotAt);
     return (await File(
       sourcePath,
     ).copy(p.join(directory.path, fileName ?? p.basename(sourcePath)))).path;
@@ -476,11 +366,11 @@ class _FakePhotoStorageService implements PhotoStorageService {
 
   @override
   Future<String> saveBytes({
-    required String memberId,
+    required DateTime shotAt,
     required List<int> bytes,
     required String fileName,
   }) async {
-    final directory = await memberDir(memberId);
+    final directory = await bucketDir(shotAt);
     final file = File(p.join(directory.path, fileName));
     await file.writeAsBytes(bytes);
     return file.path;
@@ -508,20 +398,6 @@ class _FakePhotoStorageService implements PhotoStorageService {
     if (await file.exists()) await file.delete();
   }
 
-  @override
-  Future<void> deleteMemberDir(String memberId) async {}
-
-  @override
-  Future<StorageQuarantine?> quarantineFile(String filePath) async => null;
-
-  @override
-  Future<StorageQuarantine?> quarantineMemberDir(String memberId) async => null;
-
-  @override
-  Future<void> restoreQuarantine(StorageQuarantine quarantine) async {}
-
-  @override
-  Future<void> discardQuarantine(StorageQuarantine quarantine) async {}
 }
 
 class _MemoryImagePickerRequestStore implements ImagePickerRequestStore {

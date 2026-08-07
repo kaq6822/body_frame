@@ -58,17 +58,9 @@ dependencies:
   # Export / share
   share_plus: ^10.1.4
   gal: ^2.3.1
-  file_selector: ^1.0.3
 
-  # Persistence & security
+  # Persistence
   shared_preferences: ^2.3.5
-  flutter_secure_storage: ^9.2.4
-  local_auth: ^2.3.0
-  cryptography: ^2.9.0
-
-  # Backup / restore
-  archive: ^3.6.1
-  crypto: ^3.0.6
 
   # Image metadata (EXIF for capture-date / rotation)
   exif: ^3.3.0

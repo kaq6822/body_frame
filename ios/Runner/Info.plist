@@ -29,11 +29,9 @@
 	<key>NSCameraUsageDescription</key>
 	<string>체형 변화 기록을 위한 격자 카메라 촬영에 카메라 접근이 필요합니다.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>기존에 촬영한 체형 사진을 회원 기록에 등록하려면 사진 보관함 접근이 필요합니다.</string>
+	<string>기존에 촬영한 체형 사진을 기록에 등록하려면 사진 보관함 접근이 필요합니다.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>사진을 내보내려면 사진 보관함에 저장할 수 있는 권한이 필요합니다.</string>
-	<key>NSFaceIDUsageDescription</key>
-	<string>앱 잠금을 해제하기 위해 Face ID 인증이 필요합니다.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

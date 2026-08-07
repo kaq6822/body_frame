@@ -14,11 +14,15 @@ import 'providers/capture_providers.dart';
 import 'providers/capture_session_provider.dart';
 import 'utils/capture_guides.dart';
 import 'widgets/async_status_indicator.dart';
-import 'widgets/capture_member_banner.dart';
+import 'widgets/capture_progress_bar.dart';
 import 'widgets/grid_overlay.dart';
 import 'widgets/grid_settings_panel.dart';
 
-/// 격자 카메라 화면.
+/// 연속 세션 촬영 화면.
+///
+/// 정면 → 좌측면 → 우측면 → 후면을 한 화면에서 이어 찍는다. 셔터를 누르면
+/// 화면을 벗어나지 않고 다음 방향으로 자동 전환되고, 마지막 컷을 찍으면
+/// 리뷰 화면으로 이동해 한 번에 저장한다.
 ///
 /// 카메라 컨트롤러는 [captureCameraControllerFactoryProvider]로 주입한다.
 /// 테스트에서는 `ProviderScope(overrides: [captureCameraControllerFactoryProvider
@@ -26,9 +30,7 @@ import 'widgets/grid_settings_panel.dart';
 class GridCameraScreen extends ConsumerStatefulWidget {
   static const screenId = 'screen.capture.camera';
 
-  final String memberId;
-
-  const GridCameraScreen({super.key, required this.memberId});
+  const GridCameraScreen({super.key});
 
   @override
   ConsumerState<GridCameraScreen> createState() => _GridCameraScreenState();
@@ -138,15 +140,16 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
       final grid =
           ref.read(gridSettingsControllerProvider).value ??
           GridSettings.defaults;
-      ref
-          .read(captureSessionProvider(widget.memberId).notifier)
-          .setCapturedImage(path, gridSettings: grid);
+      final notifier = ref.read(captureSessionProvider.notifier);
+      final wasLastRemaining =
+          ref.read(captureSessionProvider).nextUncapturedIndex == null;
+      notifier.captureCurrent(path, gridSettings: grid);
       logger.phase('capture.shot', LogPhase.success);
       if (!mounted) return;
-      await context.pushNamed(
-        AppRoutes.captureReview,
-        pathParameters: {AppParams.memberId: widget.memberId},
-      );
+      // 남은 단계가 없으면 세션을 끝내고 일괄 리뷰로 넘어간다.
+      if (wasLastRemaining) {
+        _goToReview();
+      }
     } catch (_) {
       logger.phase('capture.shot', LogPhase.failure);
       if (mounted) {
@@ -159,24 +162,37 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
     }
   }
 
+  void _goToReview() {
+    context.pushNamed(AppRoutes.captureReview);
+  }
+
+  void _onSkip() {
+    final session = ref.read(captureSessionProvider);
+    if (session.nextUncapturedIndex == null) {
+      // 마지막 남은 단계를 건너뛰는 경우. 찍은 컷이 있으면 리뷰로 보낸다.
+      if (session.hasAnyCapture) {
+        _goToReview();
+      } else {
+        context.pop();
+      }
+      return;
+    }
+    ref.read(captureSessionProvider.notifier).skipCurrent();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final memberAsync = ref.watch(memberByIdProvider(widget.memberId));
-    final direction = ref.watch(
-      captureSessionProvider(widget.memberId).select((s) => s.direction),
-    );
+    final session = ref.watch(captureSessionProvider);
+    final direction = session.current.direction;
     final gridAsync = ref.watch(gridSettingsControllerProvider);
     final previousPhotoGuideAsync = ref.watch(
-      previousPhotoGuidePathProvider((
-        memberId: widget.memberId,
-        direction: direction,
-      )),
+      previousPhotoGuidePathProvider(direction),
     );
 
     return Semantics(
       identifier: GridCameraScreen.screenId,
       container: true,
-      label: '격자 카메라',
+      label: '연속 촬영',
       child: Scaffold(
         key: const ValueKey(GridCameraScreen.screenId),
         backgroundColor: Colors.black,
@@ -194,10 +210,10 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
                 top: 8,
                 left: 8,
                 right: 8,
-                child: _buildTopBar(memberAsync, direction),
+                child: _buildTopBar(session),
               ),
               Positioned(
-                top: 64,
+                top: 96,
                 left: 8,
                 right: 8,
                 child: Align(
@@ -219,7 +235,7 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
                 left: 0,
                 right: 0,
                 bottom: 16,
-                child: Center(child: _buildShutterButton()),
+                child: _buildBottomBar(session),
               ),
             ],
           ),
@@ -404,10 +420,7 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
     );
   }
 
-  Widget _buildTopBar(
-    AsyncValue<Member?> memberAsync,
-    BodyDirection direction,
-  ) {
+  Widget _buildTopBar(CaptureSessionState session) {
     return Row(
       children: [
         Semantics(
@@ -427,13 +440,11 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
               color: Colors.black.withValues(alpha: 0.55),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: memberAsync.maybeWhen(
-              data: (member) => CaptureMemberBanner(
-                memberName: member?.name ?? '',
-                direction: direction,
-                textColor: Colors.white,
-              ),
-              orElse: () => const SizedBox.shrink(),
+            child: CaptureProgressBar(
+              shots: session.shots,
+              currentIndex: session.currentIndex,
+              onStepSelected: (index) =>
+                  ref.read(captureSessionProvider.notifier).goTo(index),
             ),
           ),
         ),
@@ -490,6 +501,42 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
         data: ThemeData.dark(useMaterial3: true),
         child: const GridSettingsPanel(),
       ),
+    );
+  }
+
+  Widget _buildBottomBar(CaptureSessionState session) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Semantics(
+          identifier: 'capture.skip.button',
+          button: true,
+          label: '이 방향 건너뛰기',
+          child: TextButton(
+            key: const ValueKey('capture.skip.button'),
+            onPressed: _onSkip,
+            child: const Text('건너뛰기', style: TextStyle(color: Colors.white)),
+          ),
+        ),
+        _buildShutterButton(),
+        Semantics(
+          identifier: 'capture.finish.button',
+          button: true,
+          enabled: session.hasAnyCapture,
+          label: '촬영 마치고 확인',
+          child: TextButton(
+            key: const ValueKey('capture.finish.button'),
+            onPressed: session.hasAnyCapture ? _goToReview : null,
+            child: Text(
+              '완료 (${session.capturedCount})',
+              style: TextStyle(
+                color: session.hasAnyCapture ? Colors.white : Colors.white38,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 

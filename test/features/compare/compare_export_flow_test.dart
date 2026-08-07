@@ -13,7 +13,6 @@ import 'fakes.dart';
 import 'test_router.dart';
 
 void main() {
-  late FakeMemberRepository members;
   late FakePhotoRecordRepository records;
   late FakeBodyPhotoRepository photos;
   late FakeGridSettingsService grid;
@@ -22,25 +21,17 @@ void main() {
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
-    members = FakeMemberRepository();
-    members.members['m1'] = Member(
-      id: 'm1',
-      name: '홍길동',
-      createdAt: DateTime(2026, 1, 1),
-      updatedAt: DateTime(2026, 1, 1),
-    );
 
     records = FakePhotoRecordRepository();
     records.records['r1'] = PhotoRecord(
       id: 'r1',
-      memberId: 'm1',
+      label: '동생',
       shotAt: DateTime(2026, 1, 1),
       createdAt: DateTime(2026, 1, 1),
       updatedAt: DateTime(2026, 1, 1),
     );
     records.records['r2'] = PhotoRecord(
       id: 'r2',
-      memberId: 'm1',
       shotAt: DateTime(2026, 3, 1),
       createdAt: DateTime(2026, 3, 1),
       updatedAt: DateTime(2026, 3, 1),
@@ -72,12 +63,11 @@ void main() {
   Widget buildApp() {
     final router = createCompareTestRouter(
       initialLocation:
-          '/members/m1/compare/view'
+          '/compare/view'
           '?direction=front&beforePhotoId=bp1&afterPhotoId=ap1',
     );
     return ProviderScope(
       overrides: [
-        memberRepositoryProvider.overrideWithValue(members),
         photoRecordRepositoryProvider.overrideWithValue(records),
         bodyPhotoRepositoryProvider.overrideWithValue(photos),
         gridSettingsServiceProvider.overrideWithValue(grid),
@@ -124,18 +114,20 @@ void main() {
       find.byKey(const ValueKey(CompareExportScreen.screenId)),
       findsOneWidget,
     );
-    // 개인정보 보호를 위해 회원 이름은 기본적으로 숨긴다.
-    expect(find.textContaining('홍길동'), findsNothing);
+    // 대상 라벨은 기본 포함이다.
+    expect(find.text('동생'), findsOneWidget);
 
-    // 회원 이름 포함 토글 -> 미리보기에 반영된다.
+    // 라벨 포함 토글을 끄면 미리보기에서 사라진다.
     // SingleChildScrollView 콘텐츠가 테스트 뷰포트보다 길므로 탭 전에
     // 스크롤해 화면 안으로 가져온다.
-    final nameToggle = find.byKey(const ValueKey('compare.export.name.toggle'));
-    await tester.ensureVisible(nameToggle);
+    final labelToggle = find.byKey(
+      const ValueKey('compare.export.label.toggle'),
+    );
+    await tester.ensureVisible(labelToggle);
     await tester.pumpAndSettle();
-    await tester.tap(nameToggle);
+    await tester.tap(labelToggle);
     await tester.pumpAndSettle();
-    expect(find.textContaining('홍길동'), findsOneWidget);
+    expect(find.text('동생'), findsNothing);
 
     // 생성 전 상태 확인.
     expect(find.text('이미지를 생성해 주세요.'), findsOneWidget);
@@ -233,33 +225,20 @@ void main() {
     expect(find.textContaining('이후 사진: 이후 사진 메모'), findsOneWidget);
   });
 
-  testWidgets('저장된 스튜디오명과 기본 내보내기 옵션을 최초값으로 사용한다', (tester) async {
-    final settings = AppSettings(
-      studioName: '저장된 스튜디오',
-      defaultExportOptions: const ExportImageOptions(
-        includeMemberName: true,
+  testWidgets('저장된 기본 내보내기 옵션을 최초값으로 사용한다', (tester) async {
+    const settings = AppSettings(
+      defaultExportOptions: ExportImageOptions(
         includeShotDate: false,
+        includeLabel: true,
         includeMemo: false,
         includeGrid: true,
-        includeStudioName: true,
-        includeWatermark: false,
       ),
     );
     SharedPreferences.setMockInitialValues({'app_settings': settings.toJson()});
 
     await openExport(tester);
 
-    expect(find.textContaining('홍길동'), findsOneWidget);
-    expect(find.text('저장된 스튜디오'), findsWidgets);
-    expect(
-      tester
-          .widget<TextField>(
-            find.byKey(const ValueKey('compare.export.studio.field')),
-          )
-          .controller
-          ?.text,
-      '저장된 스튜디오',
-    );
+    expect(find.text('동생'), findsWidgets);
     expect(
       tester
           .widget<SwitchListTile>(
@@ -279,14 +258,14 @@ void main() {
     expect(
       tester
           .widget<SwitchListTile>(
-            find.byKey(const ValueKey('compare.export.watermark.toggle')),
+            find.byKey(const ValueKey('compare.export.label.toggle')),
           )
           .value,
-      isFalse,
+      isTrue,
     );
   });
 
-  testWidgets('옵션이나 스튜디오명이 바뀌면 기존 생성 결과를 저장하거나 공유할 수 없다', (tester) async {
+  testWidgets('포함 옵션이 바뀌면 기존 생성 결과를 저장하거나 공유할 수 없다', (tester) async {
     await openExport(tester);
     await generateImage(tester);
 
@@ -295,9 +274,11 @@ void main() {
       findsOneWidget,
     );
 
-    final nameToggle = find.byKey(const ValueKey('compare.export.name.toggle'));
-    await tester.ensureVisible(nameToggle);
-    await tester.tap(nameToggle);
+    final labelToggle = find.byKey(
+      const ValueKey('compare.export.label.toggle'),
+    );
+    await tester.ensureVisible(labelToggle);
+    await tester.tap(labelToggle);
     await tester.pumpAndSettle();
 
     expect(
@@ -323,11 +304,9 @@ void main() {
     );
 
     await generateImage(tester);
-    final studioField = find.byKey(
-      const ValueKey('compare.export.studio.field'),
-    );
-    await tester.ensureVisible(studioField);
-    await tester.enterText(studioField, '변경된 스튜디오');
+    final gridToggle = find.byKey(const ValueKey('compare.export.grid.toggle'));
+    await tester.ensureVisible(gridToggle);
+    await tester.tap(gridToggle);
     await tester.pumpAndSettle();
 
     expect(
@@ -354,21 +333,21 @@ void main() {
     expect(sink.sharedNames, isEmpty);
   });
 
-  testWidgets('현재 포함 옵션만 기본 내보내기 설정으로 저장한다', (tester) async {
+  testWidgets('현재 포함 옵션을 기본 내보내기 설정으로 저장한다', (tester) async {
     final settingsService = FakeAppSettingsService(
-      const AppSettings(studioName: '보존할 스튜디오'),
+      const AppSettings(defaultGrid: GridSettings(spacing: 55)),
     );
     settingsServiceOverride = settingsService;
     await openExport(tester);
 
-    final nameToggle = find.byKey(const ValueKey('compare.export.name.toggle'));
-    await tester.ensureVisible(nameToggle);
-    await tester.tap(nameToggle);
-    final watermarkToggle = find.byKey(
-      const ValueKey('compare.export.watermark.toggle'),
+    final labelToggle = find.byKey(
+      const ValueKey('compare.export.label.toggle'),
     );
-    await tester.ensureVisible(watermarkToggle);
-    await tester.tap(watermarkToggle);
+    await tester.ensureVisible(labelToggle);
+    await tester.tap(labelToggle);
+    final memoToggle = find.byKey(const ValueKey('compare.export.memo.toggle'));
+    await tester.ensureVisible(memoToggle);
+    await tester.tap(memoToggle);
     await tester.pumpAndSettle();
 
     final saveDefaultsButton = find.byKey(
@@ -381,14 +360,12 @@ void main() {
     expect(find.text('기본 내보내기 옵션으로 저장했습니다.'), findsOneWidget);
     expect(settingsService.saveAttempts, 1);
     expect(
-      settingsService.current.defaultExportOptions.includeMemberName,
-      isTrue,
-    );
-    expect(
-      settingsService.current.defaultExportOptions.includeWatermark,
+      settingsService.current.defaultExportOptions.includeLabel,
       isFalse,
     );
-    expect(settingsService.current.studioName, '보존할 스튜디오');
+    expect(settingsService.current.defaultExportOptions.includeMemo, isTrue);
+    // 내보내기 옵션 외의 설정은 건드리지 않는다.
+    expect(settingsService.current.defaultGrid.spacing, 55);
   });
 
   testWidgets('기본 옵션 저장이 실패하면 성공 상태를 표시하지 않고 재시도할 수 있다', (tester) async {
@@ -399,9 +376,9 @@ void main() {
     settingsServiceOverride = settingsService;
     await openExport(tester);
 
-    final nameToggle = find.byKey(const ValueKey('compare.export.name.toggle'));
-    await tester.ensureVisible(nameToggle);
-    await tester.tap(nameToggle);
+    final memoToggle = find.byKey(const ValueKey('compare.export.memo.toggle'));
+    await tester.ensureVisible(memoToggle);
+    await tester.tap(memoToggle);
 
     final saveDefaultsButton = find.byKey(
       const ValueKey('compare.export.defaults.save.button'),
@@ -413,10 +390,7 @@ void main() {
     expect(find.text('기본값 저장에 실패했습니다. 다시 시도해 주세요.'), findsOneWidget);
     expect(find.text('기본 내보내기 옵션으로 저장했습니다.'), findsNothing);
     expect(settingsService.saveAttempts, 1);
-    expect(
-      settingsService.current.defaultExportOptions.includeMemberName,
-      isFalse,
-    );
+    expect(settingsService.current.defaultExportOptions.includeMemo, isFalse);
     expect(
       tester.widget<OutlinedButton>(saveDefaultsButton).onPressed,
       isNotNull,
@@ -426,12 +400,11 @@ void main() {
   testWidgets('필요한 컨텍스트 없이 진입하면 안내 화면을 보여준다', (tester) async {
     // 쿼리 파라미터조차 없으면 복구가 불가능하므로 안내 화면을 보여준다.
     final router = createCompareTestRouter(
-      initialLocation: '/members/m1/compare/export',
+      initialLocation: '/compare/export',
     );
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          memberRepositoryProvider.overrideWithValue(members),
           photoRecordRepositoryProvider.overrideWithValue(records),
           bodyPhotoRepositoryProvider.overrideWithValue(photos),
           gridSettingsServiceProvider.overrideWithValue(grid),
@@ -454,13 +427,12 @@ void main() {
     // 화면을 계속 사용할 수 있어야 한다(코드 리뷰 MAJOR-5 대응).
     final router = createCompareTestRouter(
       initialLocation:
-          '/members/m1/compare/export'
+          '/compare/export'
           '?direction=front&beforePhotoId=bp1&afterPhotoId=ap1',
     );
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          memberRepositoryProvider.overrideWithValue(members),
           photoRecordRepositoryProvider.overrideWithValue(records),
           bodyPhotoRepositoryProvider.overrideWithValue(photos),
           gridSettingsServiceProvider.overrideWithValue(grid),

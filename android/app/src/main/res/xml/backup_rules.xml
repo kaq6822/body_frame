@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Android 11 이하: 회원 정보와 체형 사진은 앱 자체 암호화 백업으로만 이동한다. -->
+<!--
+  Android 11 이하. 이 형식은 클라우드 백업과 기기 간 전송을 구분하지 못한다.
+  클라우드 자동 백업(25MB 한도)을 쓰지 않기로 했으므로 전부 제외한다.
+  Android 12 이상의 기기 간 전송은 data_extraction_rules.xml이 담당한다.
+-->
 <full-backup-content>
     <exclude domain="root" path="." />
     <exclude domain="file" path="." />

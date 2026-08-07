@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -35,9 +34,7 @@ enum _DefaultsSaveStatus { idle, saving, success, failure }
 class CompareExportScreen extends ConsumerStatefulWidget {
   static const screenId = 'screen.compare.export';
 
-  final String memberId;
-
-  const CompareExportScreen({super.key, required this.memberId});
+  const CompareExportScreen({super.key});
 
   @override
   ConsumerState<CompareExportScreen> createState() =>
@@ -46,15 +43,12 @@ class CompareExportScreen extends ConsumerStatefulWidget {
 
 class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
   final GlobalKey _boundaryKey = GlobalKey();
-  final TextEditingController _studioNameController = TextEditingController();
 
   CompareExportRequest? _request;
   TransformationController? _previewBeforeCtrl;
   TransformationController? _previewAfterCtrl;
 
   ExportImageOptions _options = ExportImageOptions.defaults;
-  String _studioName = '';
-  String? _studioLogoPath;
   bool _settingsInitialized = false;
 
   CompareExportStatus _status = CompareExportStatus.idle;
@@ -83,7 +77,6 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
 
   @override
   void dispose() {
-    _studioNameController.dispose();
     _previewBeforeCtrl?.dispose();
     _previewAfterCtrl?.dispose();
     super.dispose();
@@ -95,24 +88,7 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
     if (_request?.showGrid ?? false) {
       _options = _options.copyWith(includeGrid: true);
     }
-    _studioName = settings.studioName ?? '';
-    _studioNameController.text = _studioName;
     _settingsInitialized = true;
-    unawaited(_resolveStudioLogo(settings.studioLogoPath));
-  }
-
-  Future<void> _resolveStudioLogo(String? storedPath) async {
-    if (storedPath == null || storedPath.trim().isEmpty) return;
-    try {
-      final resolved = await ref
-          .read(photoStorageServiceProvider)
-          .resolvePath(storedPath);
-      if (!await File(resolved).exists() || !mounted) return;
-      _updateComposition(() => _studioLogoPath = resolved);
-    } on Object {
-      // 로고 저장 UI가 아직 없으므로 형식을 보장할 수 없는 legacy/외부
-      // 경로는 내보내기 전체를 실패시키지 않고 로고만 제외한다.
-    }
   }
 
   void _updateComposition(
@@ -298,17 +274,6 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
     return parts.join('\n');
   }
 
-  File? _studioLogoFile() {
-    final path = _studioLogoPath?.trim();
-    if (path == null || path.isEmpty) return null;
-    try {
-      final file = File(path);
-      return file.existsSync() ? file : null;
-    } on FileSystemException {
-      return null;
-    }
-  }
-
   Widget _buildComparisonMedia(
     CompareExportRequest req,
     TransformationController beforeCtrl,
@@ -377,8 +342,7 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
   Widget _buildComposition(CompareExportRequest req) {
     final beforeCtrl = _previewBeforeCtrl!;
     final afterCtrl = _previewAfterCtrl!;
-    final studioName = _studioName.trim();
-    final studioLogo = _studioLogoFile();
+    final label = req.beforeRecord.label?.trim() ?? '';
     return RepaintBoundary(
       key: _boundaryKey,
       child: Semantics(
@@ -400,61 +364,15 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
                 ),
                 const SizedBox(height: 8),
                 _buildComparisonMedia(req, beforeCtrl, afterCtrl),
-                if (_options.includeMemberName &&
-                    (req.member?.name.isNotEmpty ?? false))
+                if (_options.includeLabel && label.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                      '회원: ${req.member!.name}',
-                      textAlign: TextAlign.center,
-                    ),
+                    child: Text(label, textAlign: TextAlign.center),
                   ),
                 if (_options.includeMemo && _hasMemo(req))
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(_memoText(req), textAlign: TextAlign.center),
-                  ),
-                if (_options.includeStudioName &&
-                    (studioName.isNotEmpty || studioLogo != null))
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Wrap(
-                      alignment: WrapAlignment.center,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 8,
-                      runSpacing: 4,
-                      children: [
-                        if (studioLogo != null)
-                          Semantics(
-                            identifier: 'compare.export.studioLogo.image',
-                            label: '스튜디오 로고',
-                            image: true,
-                            child: Image.file(
-                              studioLogo,
-                              key: const ValueKey(
-                                'compare.export.studioLogo.image',
-                              ),
-                              width: 48,
-                              height: 48,
-                              fit: BoxFit.contain,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  const SizedBox.shrink(),
-                            ),
-                          ),
-                        if (studioName.isNotEmpty) Text(studioName),
-                      ],
-                    ),
-                  ),
-                if (_options.includeWatermark)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                      'body_frame',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(
-                        context,
-                      ).textTheme.labelSmall?.copyWith(color: Colors.grey),
-                    ),
                   ),
               ],
             ),
@@ -474,7 +392,6 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
   ) {
     final bundleAsync = ref.watch(
       compareViewBundleProvider((
-        memberId: widget.memberId,
         beforePhotoId: beforeId,
         afterPhotoId: afterId,
       )),
@@ -484,8 +401,7 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
         key: ValueKey('screen.compare.export.status'),
         child: CircularProgressIndicator(),
       ),
-      error: (e, st) => CompareMissingContext(
-        memberId: widget.memberId,
+      error: (e, st) => const CompareMissingContext(
         message: '비교 정보를 불러오지 못했습니다. 전후 사진 비교 화면에서 다시 진입해 주세요.',
         backButtonId: 'compare.export.backToDates.button',
       ),
@@ -494,7 +410,6 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
           if (!mounted || _request != null) return;
           setState(() {
             _request = CompareExportRequest(
-              member: bundle.member,
               beforeRecord: bundle.beforeRecord,
               afterRecord: bundle.afterRecord,
               beforePhoto: bundle.beforePhoto,
@@ -550,8 +465,7 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
           afterId,
         );
       } else {
-        body = CompareMissingContext(
-          memberId: widget.memberId,
+        body = const CompareMissingContext(
           message: '전후 사진 비교 화면에서 이미지 생성을 눌러 진입해 주세요.',
           backButtonId: 'compare.export.backToDates.button',
         );
@@ -579,12 +493,11 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
           const SizedBox(height: 16),
           Text('포함 항목', style: Theme.of(context).textTheme.titleSmall),
           LabeledSwitch(
-            id: 'compare.export.name.toggle',
-            title: '회원 이름 포함',
-            subtitle: '개인정보 보호를 위해 기본값은 숨김입니다.',
-            value: _options.includeMemberName,
+            id: 'compare.export.label.toggle',
+            title: '대상 라벨 포함',
+            value: _options.includeLabel,
             onChanged: (v) => _updateComposition(
-              () => _options = _options.copyWith(includeMemberName: v),
+              () => _options = _options.copyWith(includeLabel: v),
               exportOptionsChanged: true,
             ),
           ),
@@ -612,38 +525,6 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
             value: _options.includeGrid,
             onChanged: (v) => _updateComposition(
               () => _options = _options.copyWith(includeGrid: v),
-              exportOptionsChanged: true,
-            ),
-          ),
-          LabeledSwitch(
-            id: 'compare.export.studio.toggle',
-            title: '스튜디오명 포함',
-            value: _options.includeStudioName,
-            onChanged: (v) => _updateComposition(
-              () => _options = _options.copyWith(includeStudioName: v),
-              exportOptionsChanged: true,
-            ),
-          ),
-          if (_options.includeStudioName)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Semantics(
-                identifier: 'compare.export.studio.field',
-                label: '스튜디오명 입력',
-                child: TextField(
-                  key: const ValueKey('compare.export.studio.field'),
-                  controller: _studioNameController,
-                  decoration: const InputDecoration(labelText: '스튜디오명(선택)'),
-                  onChanged: (v) => _updateComposition(() => _studioName = v),
-                ),
-              ),
-            ),
-          LabeledSwitch(
-            id: 'compare.export.watermark.toggle',
-            title: '앱 워터마크 포함',
-            value: _options.includeWatermark,
-            onChanged: (v) => _updateComposition(
-              () => _options = _options.copyWith(includeWatermark: v),
               exportOptionsChanged: true,
             ),
           ),

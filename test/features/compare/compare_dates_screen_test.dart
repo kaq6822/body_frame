@@ -18,14 +18,12 @@ void main() {
     photos = FakeBodyPhotoRepository();
     records.records['r1'] = PhotoRecord(
       id: 'r1',
-      memberId: 'm1',
       shotAt: DateTime(2026, 1, 1),
       createdAt: DateTime(2026, 1, 1),
       updatedAt: DateTime(2026, 1, 1),
     );
     records.records['r2'] = PhotoRecord(
       id: 'r2',
-      memberId: 'm1',
       shotAt: DateTime(2026, 3, 1),
       createdAt: DateTime(2026, 3, 1),
       updatedAt: DateTime(2026, 3, 1),
@@ -34,7 +32,7 @@ void main() {
 
   Widget buildApp() {
     final router = createCompareTestRouter(
-      initialLocation: '/members/m1/compare',
+      initialLocation: '/compare',
     );
     return ProviderScope(
       overrides: [

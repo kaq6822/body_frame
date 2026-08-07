@@ -6,7 +6,6 @@ import 'package:body_frame/core/database/app_database.dart';
 import 'package:body_frame/core/models/models.dart';
 import 'package:body_frame/core/providers.dart';
 import 'package:body_frame/core/repositories/body_photo_repository.dart';
-import 'package:body_frame/core/repositories/member_repository.dart';
 import 'package:body_frame/core/repositories/photo_record_repository.dart';
 import 'package:body_frame/core/services/app_image_picker.dart';
 import 'package:body_frame/core/services/photo_storage_service.dart';
@@ -30,7 +29,6 @@ void main() {
   late FakePhotoExportSink exportSink;
   late FakeGridPhotoComposer gridComposer;
 
-  const memberId = 'member-1';
   const recordId = 'record-1';
   const photoId = 'photo-front';
   final shotAt = DateTime(2026, 1, 10);
@@ -53,21 +51,9 @@ void main() {
       await _solidPngBytes(4, 3, color: const ui.Color(0xFFCC3300)),
     );
 
-    // photo_records.member_id는 members 테이블을 참조하므로 먼저 회원을 등록한다.
-    final members = MemberRepositoryImpl(database: db, storage: storage);
-    await members.insert(
-      Member(
-        id: memberId,
-        name: '테스트 회원',
-        createdAt: shotAt,
-        updatedAt: shotAt,
-      ),
-    );
-
     await records.insert(
       PhotoRecord(
         id: recordId,
-        memberId: memberId,
         shotAt: shotAt,
         createdAt: shotAt,
         updatedAt: shotAt,
@@ -75,7 +61,7 @@ void main() {
     );
 
     final photoPath = await storage.saveBytes(
-      memberId: memberId,
+      shotAt: shotAt,
       bytes: await _solidPngBytes(4, 3),
       fileName: 'front.png',
     );
@@ -107,7 +93,6 @@ void main() {
   });
 
   Widget buildApp({
-    String routeMemberId = memberId,
     String routeRecordId = recordId,
     String routePhotoId = photoId,
     AppImagePickerCoordinator? pickerCoordinator,
@@ -126,7 +111,6 @@ void main() {
       ],
       child: MaterialApp(
         home: PhotoViewScreen(
-          memberId: routeMemberId,
           recordId: routeRecordId,
           photoId: routePhotoId,
         ),
@@ -166,23 +150,8 @@ void main() {
     });
   });
 
-  testWidgets('URL의 회원 또는 기록과 소유관계가 다르면 사진 작업을 노출하지 않는다', (tester) async {
+  testWidgets('URL의 기록과 사진 소유관계가 다르면 사진 작업을 노출하지 않는다', (tester) async {
     await tester.runAsync(() async {
-      await tester.pumpWidget(buildApp(routeMemberId: 'other-member'));
-      await pumpUntil(
-        tester,
-        () => find.text('사진 정보를 불러오지 못했습니다.').evaluate().isNotEmpty,
-      );
-
-      expect(
-        find.byKey(const ValueKey('records.viewer.replace.button')),
-        findsNothing,
-      );
-      expect(
-        find.byKey(const ValueKey('records.viewer.delete.button')),
-        findsNothing,
-      );
-
       await tester.pumpWidget(buildApp(routeRecordId: 'other-record'));
       await pumpUntil(
         tester,
@@ -281,7 +250,6 @@ void main() {
       final originalBytes = await File(original.filePath).readAsBytes();
 
       final request = ImagePickerRequestContext.photoReplacement(
-        memberId: memberId,
         recordId: recordId,
         photoId: photoId,
       );

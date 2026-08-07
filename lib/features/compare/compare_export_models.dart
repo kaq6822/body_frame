@@ -33,7 +33,6 @@ enum CompareMode {
 /// 구도가 정확히 일치해야 하므로, 비교 화면에서 사용자가
 /// 조정한 확대/이동 값([beforeMatrix]/[afterMatrix])을 그대로 재사용한다.
 class CompareExportRequest {
-  final Member? member;
   final PhotoRecord beforeRecord;
   final PhotoRecord afterRecord;
   final BodyPhoto beforePhoto;
@@ -62,7 +61,6 @@ class CompareExportRequest {
   final Size? panePhotoSize;
 
   const CompareExportRequest({
-    required this.member,
     required this.beforeRecord,
     required this.afterRecord,
     required this.beforePhoto,

@@ -1,7 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:body_frame/core/models/models.dart';
-import 'package:body_frame/features/capture/widgets/grid_painter.dart';
+import 'package:body_frame/core/widgets/grid_painter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 

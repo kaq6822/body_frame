@@ -3,7 +3,6 @@ import 'dart:ui' as ui;
 
 import 'package:body_frame/core/models/models.dart';
 import 'package:body_frame/core/providers.dart';
-import 'package:body_frame/core/repositories/member_repository.dart';
 import 'package:body_frame/core/repositories/photo_ingest_repository.dart';
 import 'package:body_frame/core/repositories/photo_record_repository.dart';
 import 'package:body_frame/core/router/app_routes.dart';
@@ -16,16 +15,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path/path.dart' as p;
 
-/// 촬영 결과 확인 화면 위젯 테스트.
+/// 연속 촬영 결과 일괄 확인 화면 위젯 테스트.
 ///
-/// 미리보기/저장 전 회원 이름·방향 재확인/저장 흐름(같은 촬영일 기록에
-/// 추가 또는 새 기록 생성)을 검증한다. 실제 리포지토리 대신 ProviderScope
+/// 여러 컷을 하나의 촬영 기록으로 저장하는 흐름, 같은 촬영일 기록 재사용,
+/// 실패 시 준비 파일 정리를 검증한다. 실제 리포지토리 대신 ProviderScope
 /// override로 인메모리 Fake를 주입한다.
 void main() {
-  const memberId = 'm1';
-  late Member member;
   late Directory tempDir;
-  late File imageFile;
+  late File frontFile;
+  late File backFile;
 
   Future<File> writeTinyPng(Directory dir, String name) async {
     final recorder = ui.PictureRecorder();
@@ -45,10 +43,9 @@ void main() {
   }
 
   setUp(() async {
-    final now = DateTime(2026, 1, 1);
-    member = Member(id: memberId, name: '홍길동', createdAt: now, updatedAt: now);
     tempDir = await Directory.systemTemp.createTemp('capture_review_test_');
-    imageFile = await writeTinyPng(tempDir, 'shot.png');
+    frontFile = await writeTinyPng(tempDir, 'front.png');
+    backFile = await writeTinyPng(tempDir, 'back.png');
   });
 
   tearDown(() async {
@@ -58,17 +55,13 @@ void main() {
   });
 
   ProviderContainer buildContainer({
-    _FakeMemberRepository? memberRepo,
     _FakePhotoRecordRepository? recordRepo,
     _FakePhotoIngestRepository? ingestRepo,
     PhotoStorageService? storage,
   }) {
     final records = recordRepo ?? _FakePhotoRecordRepository();
-    final container = ProviderContainer(
+    return ProviderContainer(
       overrides: [
-        memberRepositoryProvider.overrideWithValue(
-          memberRepo ?? _FakeMemberRepository(member),
-        ),
         photoRecordRepositoryProvider.overrideWithValue(records),
         photoIngestRepositoryProvider.overrideWithValue(
           ingestRepo ?? _FakePhotoIngestRepository(records),
@@ -78,7 +71,15 @@ void main() {
         ),
       ],
     );
-    return container;
+  }
+
+  /// 세션에 촬영 결과를 채워 넣는다. 인덱스는 [kSessionDirections] 순서다.
+  void captureShots(ProviderContainer container, Map<int, String> paths) {
+    final notifier = container.read(captureSessionProvider.notifier);
+    for (final entry in paths.entries) {
+      notifier.goTo(entry.key);
+      notifier.captureCurrent(entry.value, gridSettings: GridSettings.defaults);
+    }
   }
 
   // 저장 과정은 실제 파일 IO(dart:io)와 이미지 디코드(dart:ui)를 거치므로
@@ -98,30 +99,35 @@ void main() {
     }
   }
 
-  // capture_review_screen은 저장 성공 시 context.goNamed(AppRoutes.captureDirection, ...)로
-  // 이동한다. go_router 없이 순수 MaterialApp만 두면 이동 시 예외가 나며 위젯이 settle되지
-  // 않으므로, 실제 라우팅과 동일하게 최소 GoRouter로 감싼다.
-  Widget wrapWithRouter(
-    ProviderContainer container, {
-    TargetPlatform platform = TargetPlatform.android,
-  }) {
+  // capture_review_screen은 저장 성공 시 context.go('/')로 홈에 돌아간다.
+  // go_router 없이 순수 MaterialApp만 두면 이동 시 예외가 나며 위젯이
+  // settle되지 않으므로, 실제 라우팅과 동일하게 최소 GoRouter로 감싼다.
+  Widget wrapWithRouter(ProviderContainer container) {
     final router = GoRouter(
-      initialLocation: '/members/$memberId/capture/review',
+      initialLocation: '/capture/review',
       routes: [
         GoRoute(
-          path: '/members/:${AppParams.memberId}/capture',
-          name: AppRoutes.captureDirection,
-          builder: (context, state) => Scaffold(
-            key: const ValueKey('screen.capture.direction.stub'),
-            body: const Text('direction stub'),
+          path: '/',
+          name: AppRoutes.home,
+          builder: (context, state) => const Scaffold(
+            key: ValueKey('screen.home.stub'),
+            body: Text('home stub'),
           ),
           routes: [
             GoRoute(
-              path: 'review',
-              name: AppRoutes.captureReview,
-              builder: (context, state) => CaptureReviewScreen(
-                memberId: state.pathParameters[AppParams.memberId]!,
+              path: 'capture',
+              name: AppRoutes.captureSession,
+              builder: (context, state) => const Scaffold(
+                key: ValueKey('screen.capture.camera.stub'),
+                body: Text('camera stub'),
               ),
+              routes: [
+                GoRoute(
+                  path: 'review',
+                  name: AppRoutes.captureReview,
+                  builder: (context, state) => const CaptureReviewScreen(),
+                ),
+              ],
             ),
           ],
         ),
@@ -129,14 +135,11 @@ void main() {
     );
     return UncontrolledProviderScope(
       container: container,
-      child: MaterialApp.router(
-        theme: ThemeData(platform: platform),
-        routerConfig: router,
-      ),
+      child: MaterialApp.router(routerConfig: router),
     );
   }
 
-  testWidgets('회원 이름과 방향을 표시하고 저장하면 촬영 기록과 사진이 생성된다', (tester) async {
+  testWidgets('여러 컷을 하나의 촬영 기록으로 한 번에 저장한다', (tester) async {
     final recordRepo = _FakePhotoRecordRepository();
     final ingestRepo = _FakePhotoIngestRepository(recordRepo);
     final storage = _FakePhotoStorageService(tempDir);
@@ -147,60 +150,98 @@ void main() {
     );
     addTearDown(container.dispose);
 
-    container
-        .read(captureSessionProvider(memberId).notifier)
-        .setCapturedImage(imageFile.path, gridSettings: GridSettings.defaults);
+    captureShots(container, {0: frontFile.path, 3: backFile.path});
 
     await tester.pumpWidget(wrapWithRouter(container));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('screen.capture.review')), findsOneWidget);
-    // 저장 전 회원 이름 + 촬영 방향 재확인 표시.
-    expect(find.textContaining('홍길동'), findsWidgets);
-    expect(find.textContaining('정면'), findsWidgets);
+    expect(find.text('2장 촬영됨'), findsOneWidget);
+    // 찍은 컷과 건너뛴 컷을 모두 보여준다.
+    expect(
+      find.byKey(const ValueKey('capture.review.shot.front')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('capture.review.shot.leftSide')),
+      findsOneWidget,
+    );
 
     await tester.ensureVisible(
       find.byKey(const ValueKey('capture.save.button')),
     );
     await tester.tap(find.byKey(const ValueKey('capture.save.button')));
-    await pumpUntil(tester, () => recordRepo.records.isNotEmpty);
+    await pumpUntil(tester, () => ingestRepo.photos.isNotEmpty);
 
-    expect(recordRepo.records, hasLength(1));
-    expect(recordRepo.records.first.memberId, memberId);
-    expect(ingestRepo.photos, hasLength(1));
-    expect(ingestRepo.photos.first.direction, BodyDirection.front);
-    expect(ingestRepo.photos.first.recordId, recordRepo.records.first.id);
     expect(ingestRepo.calls, 1);
-    expect(storage.savedFrom, contains(imageFile.path));
-    await pumpUntil(tester, () => !imageFile.existsSync());
-    expect(imageFile.existsSync(), isFalse);
-    expect(File(ingestRepo.photos.single.filePath).existsSync(), isTrue);
+    expect(ingestRepo.lastNewRecords, hasLength(1));
+    expect(ingestRepo.photos, hasLength(2));
+    // 두 사진 모두 같은 기록에 속한다.
+    final recordIds = ingestRepo.photos.map((p) => p.recordId).toSet();
+    expect(recordIds, hasLength(1));
+    expect(recordIds.single, ingestRepo.lastNewRecords.single.id);
+    expect(
+      ingestRepo.photos.map((p) => p.direction),
+      containsAll([BodyDirection.front, BodyDirection.back]),
+    );
+    expect(storage.savedFrom, containsAll([frontFile.path, backFile.path]));
+  });
+
+  testWidgets('라벨과 메모를 입력하면 기록에 함께 저장된다', (tester) async {
+    final recordRepo = _FakePhotoRecordRepository();
+    final ingestRepo = _FakePhotoIngestRepository(recordRepo);
+    final container = buildContainer(
+      recordRepo: recordRepo,
+      ingestRepo: ingestRepo,
+    );
+    addTearDown(container.dispose);
+
+    captureShots(container, {0: frontFile.path});
+
+    await tester.pumpWidget(wrapWithRouter(container));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('capture.review.label.field')),
+      '동생',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('capture.review.memo.field')),
+      '체중 감량 시작',
+    );
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('capture.save.button')),
+    );
+    await tester.tap(find.byKey(const ValueKey('capture.save.button')));
+    await pumpUntil(tester, () => ingestRepo.photos.isNotEmpty);
+
+    final record = ingestRepo.lastNewRecords.single;
+    expect(record.label, '동생');
+    expect(record.memo, '체중 감량 시작');
   });
 
   testWidgets('같은 촬영일 기록이 이미 있으면 새로 만들지 않고 사진만 추가한다', (tester) async {
     final recordRepo = _FakePhotoRecordRepository();
     final ingestRepo = _FakePhotoIngestRepository(recordRepo);
-    final storage = _FakePhotoStorageService(tempDir);
     final container = buildContainer(
       recordRepo: recordRepo,
       ingestRepo: ingestRepo,
-      storage: storage,
     );
     addTearDown(container.dispose);
 
     final today = DateTime.now();
-    final existing = PhotoRecord(
-      id: 'r-existing',
-      memberId: memberId,
-      shotAt: DateTime(today.year, today.month, today.day),
-      createdAt: today,
-      updatedAt: today,
+    recordRepo.records.add(
+      PhotoRecord(
+        id: 'r-existing',
+        shotAt: DateTime(today.year, today.month, today.day),
+        createdAt: today,
+        updatedAt: today,
+      ),
     );
-    recordRepo.records.add(existing);
 
-    container
-        .read(captureSessionProvider(memberId).notifier)
-        .setCapturedImage(imageFile.path, gridSettings: GridSettings.defaults);
+    captureShots(container, {0: frontFile.path});
 
     await tester.pumpWidget(wrapWithRouter(container));
     await tester.pumpAndSettle();
@@ -211,15 +252,11 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('capture.save.button')));
     await pumpUntil(tester, () => ingestRepo.photos.isNotEmpty);
 
-    expect(recordRepo.records, hasLength(1));
-    expect(ingestRepo.photos, hasLength(1));
-    expect(ingestRepo.photos.first.recordId, 'r-existing');
     expect(ingestRepo.lastNewRecords, isEmpty);
+    expect(ingestRepo.photos.single.recordId, 'r-existing');
   });
 
-  testWidgets('transaction 실패 시 준비 파일을 정리하고 임시 촬영 원본은 재시도용으로 유지한다', (
-    tester,
-  ) async {
+  testWidgets('transaction 실패 시 준비 파일을 정리하고 재시도할 수 있다', (tester) async {
     final recordRepo = _FakePhotoRecordRepository();
     final ingestRepo = _FakePhotoIngestRepository(recordRepo, fail: true);
     final storage = _FakePhotoStorageService(tempDir);
@@ -230,9 +267,7 @@ void main() {
     );
     addTearDown(container.dispose);
 
-    container
-        .read(captureSessionProvider(memberId).notifier)
-        .setCapturedImage(imageFile.path, gridSettings: GridSettings.defaults);
+    captureShots(container, {0: frontFile.path, 3: backFile.path});
 
     await tester.pumpWidget(wrapWithRouter(container));
     await tester.pumpAndSettle();
@@ -245,162 +280,64 @@ void main() {
     await pumpUntil(tester, () => find.byKey(retryKey).evaluate().isNotEmpty);
 
     expect(find.byKey(retryKey), findsOneWidget);
-    expect(imageFile.existsSync(), isTrue);
-    expect(recordRepo.records, isEmpty);
+    // 임시 촬영 원본은 재시도를 위해 남긴다.
+    expect(frontFile.existsSync(), isTrue);
+    expect(backFile.existsSync(), isTrue);
     expect(ingestRepo.photos, isEmpty);
-    final managed = Directory(p.join(tempDir.path, 'photos', memberId));
+    // 앱 저장소에 준비했던 파일은 모두 정리한다.
+    final managed = Directory(p.join(tempDir.path, 'photos'));
     expect(
       managed.existsSync()
-          ? managed.listSync(followLinks: false).whereType<File>()
+          ? managed
+                .listSync(recursive: true, followLinks: false)
+                .whereType<File>()
           : const <File>[],
       isEmpty,
     );
   });
 
-  testWidgets('AppBar 뒤로가기는 임시 원본과 촬영 이미지 세션을 정리한다', (tester) async {
+  testWidgets('다시 촬영을 누르면 해당 컷을 비우고 카메라로 돌아간다', (tester) async {
     final container = buildContainer();
     addTearDown(container.dispose);
-    final sessionSubscription = container.listen(
-      captureSessionProvider(memberId),
+    final subscription = container.listen(
+      captureSessionProvider,
       (previous, next) {},
       fireImmediately: true,
     );
-    addTearDown(sessionSubscription.close);
-    container
-        .read(captureSessionProvider(memberId).notifier)
-        .setCapturedImage(imageFile.path, gridSettings: GridSettings.defaults);
+    addTearDown(subscription.close);
+
+    captureShots(container, {0: frontFile.path});
 
     await tester.pumpWidget(wrapWithRouter(container));
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(BackButton));
-    await tester.pumpAndSettle();
-    await pumpUntil(tester, () => !imageFile.existsSync());
 
-    expect(
-      find.byKey(const ValueKey('screen.capture.direction.stub')),
-      findsOneWidget,
-    );
-    expect(imageFile.existsSync(), isFalse);
-    expect(
-      container.read(captureSessionProvider(memberId)).capturedImagePath,
-      isNull,
-    );
-  });
-
-  testWidgets('Android 시스템 뒤로가기도 임시 원본과 세션을 정리한다', (tester) async {
-    final container = buildContainer();
-    addTearDown(container.dispose);
-    final sessionSubscription = container.listen(
-      captureSessionProvider(memberId),
-      (previous, next) {},
-      fireImmediately: true,
-    );
-    addTearDown(sessionSubscription.close);
-    container
-        .read(captureSessionProvider(memberId).notifier)
-        .setCapturedImage(imageFile.path, gridSettings: GridSettings.defaults);
-
-    await tester.pumpWidget(wrapWithRouter(container));
-    await tester.pumpAndSettle();
-    await tester.binding.handlePopRoute();
-    await tester.pumpAndSettle();
-    await pumpUntil(tester, () => !imageFile.existsSync());
-
-    expect(
-      find.byKey(const ValueKey('screen.capture.direction.stub')),
-      findsOneWidget,
-    );
-    expect(imageFile.existsSync(), isFalse);
-    expect(
-      container.read(captureSessionProvider(memberId)).capturedImagePath,
-      isNull,
-    );
-  });
-
-  testWidgets('iOS 뒤로가기 스와이프도 임시 원본과 세션을 정리한다', (tester) async {
-    final container = buildContainer();
-    addTearDown(container.dispose);
-    final sessionSubscription = container.listen(
-      captureSessionProvider(memberId),
-      (previous, next) {},
-      fireImmediately: true,
-    );
-    addTearDown(sessionSubscription.close);
-    container
-        .read(captureSessionProvider(memberId).notifier)
-        .setCapturedImage(imageFile.path, gridSettings: GridSettings.defaults);
-
-    await tester.pumpWidget(
-      wrapWithRouter(container, platform: TargetPlatform.iOS),
-    );
-    await tester.pumpAndSettle();
-    await tester.dragFrom(
-      const Offset(1, 300),
-      const Offset(700, 0),
-      touchSlopY: 0,
-    );
-    await tester.pumpAndSettle();
-    await pumpUntil(tester, () => !imageFile.existsSync());
-
-    expect(
-      find.byKey(const ValueKey('screen.capture.direction.stub')),
-      findsOneWidget,
-    );
-    expect(imageFile.existsSync(), isFalse);
-    expect(
-      container.read(captureSessionProvider(memberId)).capturedImagePath,
-      isNull,
-    );
-  });
-
-  testWidgets('다시 촬영은 pop callback과 겹쳐도 임시 원본만 정리한다', (tester) async {
-    final storage = _FakePhotoStorageService(tempDir);
-    final container = buildContainer(storage: storage);
-    addTearDown(container.dispose);
-    container
-        .read(captureSessionProvider(memberId).notifier)
-        .setCapturedImage(imageFile.path, gridSettings: GridSettings.defaults);
-
-    await tester.pumpWidget(wrapWithRouter(container));
-    await tester.pumpAndSettle();
     await tester.ensureVisible(
-      find.byKey(const ValueKey('capture.retake.button')),
+      find.byKey(const ValueKey('capture.review.retake.front')),
     );
-    await tester.tap(find.byKey(const ValueKey('capture.retake.button')));
+    await tester.tap(find.byKey(const ValueKey('capture.review.retake.front')));
     await tester.pumpAndSettle();
-    await pumpUntil(tester, () => !imageFile.existsSync());
+    await pumpUntil(tester, () => !frontFile.existsSync());
 
     expect(
-      find.byKey(const ValueKey('screen.capture.direction.stub')),
+      find.byKey(const ValueKey('screen.capture.camera.stub')),
       findsOneWidget,
     );
-    expect(imageFile.existsSync(), isFalse);
-    expect(storage.savedFrom, isEmpty);
+    final session = container.read(captureSessionProvider);
+    expect(session.shots.first.isCaptured, isFalse);
+    expect(session.currentIndex, 0);
+    expect(frontFile.existsSync(), isFalse);
   });
-}
 
-class _FakeMemberRepository implements MemberRepository {
-  final Member member;
+  testWidgets('촬영 결과가 없으면 안내 문구만 보여준다', (tester) async {
+    final container = buildContainer();
+    addTearDown(container.dispose);
 
-  _FakeMemberRepository(this.member);
+    await tester.pumpWidget(wrapWithRouter(container));
+    await tester.pumpAndSettle();
 
-  @override
-  Future<void> delete(String id) async {}
-
-  @override
-  Future<Member?> getById(String id) async => id == member.id ? member : null;
-
-  @override
-  Future<void> insert(Member member) async {}
-
-  @override
-  Future<List<MemberListItem>> list({
-    String? query,
-    MemberSort sort = MemberSort.recentShot,
-  }) async => [];
-
-  @override
-  Future<void> update(Member member) async {}
+    expect(find.text('확인할 촬영 결과가 없습니다.'), findsOneWidget);
+    expect(find.byKey(const ValueKey('capture.save.button')), findsNothing);
+  });
 }
 
 class _FakePhotoRecordRepository implements PhotoRecordRepository {
@@ -425,8 +362,7 @@ class _FakePhotoRecordRepository implements PhotoRecordRepository {
   }
 
   @override
-  Future<List<PhotoRecord>> listByMember(String memberId) async =>
-      records.where((r) => r.memberId == memberId).toList();
+  Future<List<PhotoRecord>> listAll() async => List.of(records);
 
   @override
   Future<void> update(PhotoRecord record) async {
@@ -446,7 +382,6 @@ class _FakePhotoIngestRepository implements PhotoIngestRepository {
 
   @override
   Future<void> insertPrepared({
-    required String memberId,
     required List<PhotoRecord> newRecords,
     required List<BodyPhoto> photos,
   }) async {
@@ -465,23 +400,22 @@ class _FakePhotoStorageService implements PhotoStorageService {
   _FakePhotoStorageService(this.root);
 
   @override
-  Future<void> reconcilePendingQuarantines() async {}
-
-  @override
-  Future<Directory> memberDir(String memberId) async {
-    final directory = Directory(p.join(root.path, 'photos', memberId));
+  Future<Directory> bucketDir(DateTime shotAt) async {
+    final directory = Directory(
+      p.join(root.path, 'photos', PhotoStorageServiceImpl.bucketName(shotAt)),
+    );
     await directory.create(recursive: true);
     return directory;
   }
 
   @override
   Future<String> saveOriginal({
-    required String memberId,
+    required DateTime shotAt,
     required String sourcePath,
     String? fileName,
   }) async {
     savedFrom.add(sourcePath);
-    final directory = await memberDir(memberId);
+    final directory = await bucketDir(shotAt);
     final saved = await File(
       sourcePath,
     ).copy(p.join(directory.path, fileName ?? p.basename(sourcePath)));
@@ -490,11 +424,11 @@ class _FakePhotoStorageService implements PhotoStorageService {
 
   @override
   Future<String> saveBytes({
-    required String memberId,
+    required DateTime shotAt,
     required List<int> bytes,
     required String fileName,
   }) async {
-    final directory = await memberDir(memberId);
+    final directory = await bucketDir(shotAt);
     final file = File(p.join(directory.path, fileName));
     await file.writeAsBytes(bytes);
     return file.path;
@@ -508,33 +442,17 @@ class _FakePhotoStorageService implements PhotoStorageService {
   }
 
   @override
-  Future<void> deleteMemberDir(String memberId) async {}
-
-  @override
-  Future<StorageQuarantine?> quarantineFile(String filePath) async => null;
-
-  @override
-  Future<StorageQuarantine?> quarantineMemberDir(String memberId) async => null;
-
-  @override
-  Future<void> restoreQuarantine(StorageQuarantine quarantine) async {}
-
-  @override
-  Future<void> discardQuarantine(StorageQuarantine quarantine) async {}
-
-  @override
   Future<String> resolvePath(String storedPath) async {
     if (p.isAbsolute(storedPath)) return storedPath;
-    return p.joinAll([root.path, ...p.posix.split(storedPath)]);
+    return p.join(root.path, storedPath);
   }
 
   @override
   Future<String> toStoredPath(String filePath) async {
     final photosRoot = p.join(root.path, 'photos');
-    final absolute = p.normalize(p.absolute(filePath));
-    if (!p.isWithin(photosRoot, absolute)) {
-      throw const FormatException('관리 저장소 밖의 경로');
+    if (!p.isWithin(photosRoot, filePath)) {
+      throw const FormatException('앱 사진 저장소 밖의 경로입니다.');
     }
-    return p.posix.joinAll(p.split(p.relative(absolute, from: root.path)));
+    return p.posix.joinAll(p.split(p.relative(filePath, from: root.path)));
   }
 }

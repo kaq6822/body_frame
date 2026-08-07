@@ -28,24 +28,18 @@ import 'services/photo_export_sink.dart';
 class PhotoViewScreen extends ConsumerWidget {
   static const screenId = 'screen.records.photo';
 
-  final String memberId;
   final String recordId;
   final String photoId;
 
   const PhotoViewScreen({
     super.key,
-    required this.memberId,
     required this.recordId,
     required this.photoId,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final detailKey = (
-      memberId: memberId,
-      recordId: recordId,
-      photoId: photoId,
-    );
+    final detailKey = (recordId: recordId, photoId: photoId);
     final async = ref.watch(_photoDetailProvider(detailKey));
 
     return Semantics(
@@ -90,7 +84,7 @@ class PhotoNotFoundException implements Exception {
   String toString() => '사진을 찾을 수 없습니다: $photoId';
 }
 
-typedef _PhotoDetailKey = ({String memberId, String recordId, String photoId});
+typedef _PhotoDetailKey = ({String recordId, String photoId});
 
 final _photoDetailProvider = FutureProvider.autoDispose
     .family<_PhotoDetailData, _PhotoDetailKey>((ref, key) async {
@@ -101,7 +95,7 @@ final _photoDetailProvider = FutureProvider.autoDispose
         throw PhotoNotFoundException(key.photoId);
       }
       final record = await recordRepo.getById(key.recordId);
-      if (record == null || record.memberId != key.memberId) {
+      if (record == null) {
         throw RecordNotFoundException(key.recordId);
       }
       return _PhotoDetailData(photo: photo, record: record);
@@ -154,7 +148,6 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
 
   ImagePickerRequestContext get _pickerContext =>
       ImagePickerRequestContext.photoReplacement(
-        memberId: widget.detailKey.memberId,
         recordId: widget.detailKey.recordId,
         photoId: widget.detailKey.photoId,
       );
@@ -372,7 +365,7 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
       final orientation = await _readOrientation(bytes);
       final storage = ref.read(photoStorageServiceProvider);
       final newPath = await storage.saveOriginal(
-        memberId: widget.detailKey.memberId,
+        shotAt: widget.data.record.shotAt,
         sourcePath: picked.path,
       );
       newlySavedPath = newPath;
@@ -383,8 +376,7 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
           .getById(widget.detailKey.recordId);
       if (latestPhoto == null ||
           latestPhoto.recordId != widget.detailKey.recordId ||
-          latestRecord == null ||
-          latestRecord.memberId != widget.detailKey.memberId) {
+          latestRecord == null) {
         throw const PhotoReplacementOwnershipException();
       }
       await repo.update(

@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:body_frame/core/models/models.dart';
 import 'package:body_frame/core/providers.dart';
 import 'package:body_frame/core/repositories/body_photo_repository.dart';
-import 'package:body_frame/core/repositories/member_repository.dart';
 import 'package:body_frame/core/router/app_routes.dart';
 import 'package:body_frame/features/capture/camera/capture_camera_controller.dart';
 import 'package:body_frame/features/capture/grid_camera_screen.dart';
@@ -16,14 +15,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 격자 카메라 화면 위젯 테스트.
+/// 연속 세션 촬영 화면 위젯 테스트.
 ///
 /// `camera` 패키지는 실기기 하드웨어에 의존하므로 [CaptureCameraController]를
-/// 가짜로 교체해(ProviderScope override) 초기화 성공/실패, 셔터 촬영 →
-/// 결과 확인 화면 이동을 실기기 없이 검증한다.
+/// 가짜로 교체해(ProviderScope override) 초기화 성공/실패, 방향 자동 전환,
+/// 마지막 컷 이후 리뷰 이동을 실기기 없이 검증한다.
 void main() {
-  const memberId = 'm1';
-  late Member member;
   late Directory tempDir;
   late File frontGuideFile;
   late File sideGuideFile;
@@ -31,8 +28,6 @@ void main() {
   setUp(() async {
     // GridSettingsServiceImpl이 내부에서 사용하는 shared_preferences 목 초기화.
     SharedPreferences.setMockInitialValues({});
-    final now = DateTime(2026, 1, 1);
-    member = Member(id: memberId, name: '홍길동', createdAt: now, updatedAt: now);
     tempDir = await Directory.systemTemp.createTemp('body_frame_camera_guide_');
     final imageBytes = base64Decode(
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMA'
@@ -52,45 +47,49 @@ void main() {
 
   Widget buildApp(
     CaptureCameraController Function() factory, {
-    Future<String?> Function(PreviousPhotoGuideKey key)? loadPreviousGuide,
+    Future<String?> Function(BodyDirection direction)? loadPreviousGuide,
   }) {
     final guideLoader = loadPreviousGuide ?? (_) async => null;
     final router = GoRouter(
-      initialLocation: '/members/$memberId/capture/camera',
+      initialLocation: '/capture',
       routes: [
         GoRoute(
-          path: '/members/:memberId/capture/camera',
-          name: AppRoutes.captureCamera,
-          builder: (context, state) => GridCameraScreen(
-            memberId: state.pathParameters[AppParams.memberId]!,
-          ),
-        ),
-        GoRoute(
-          path: '/members/:memberId/capture/review',
-          name: AppRoutes.captureReview,
-          builder: (context, state) => Scaffold(
-            key: const ValueKey('screen.capture.review.stub'),
-            body: const Text('review stub'),
-          ),
+          path: '/capture',
+          name: AppRoutes.captureSession,
+          builder: (context, state) => const GridCameraScreen(),
+          routes: [
+            GoRoute(
+              path: 'review',
+              name: AppRoutes.captureReview,
+              builder: (context, state) => const Scaffold(
+                key: ValueKey('screen.capture.review.stub'),
+                body: Text('review stub'),
+              ),
+            ),
+          ],
         ),
       ],
     );
 
     return ProviderScope(
       overrides: [
-        memberRepositoryProvider.overrideWithValue(
-          _FakeMemberRepository(member),
-        ),
         captureCameraControllerFactoryProvider.overrideWithValue(factory),
         previousPhotoGuidePathProvider.overrideWith(
-          (ref, key) => guideLoader(key),
+          (ref, direction) => guideLoader(direction),
         ),
       ],
       child: MaterialApp.router(routerConfig: router),
     );
   }
 
-  testWidgets('카메라 초기화 성공 시 셔터를 누르면 결과 확인 화면으로 이동한다', (tester) async {
+  CaptureSessionState sessionOf(WidgetTester tester) {
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(GridCameraScreen)),
+    );
+    return container.read(captureSessionProvider);
+  }
+
+  testWidgets('셔터를 누르면 화면을 벗어나지 않고 다음 방향으로 넘어간다', (tester) async {
     final fake = _FakeCaptureCameraController();
     await tester.pumpWidget(buildApp(() => fake));
     await tester.pumpAndSettle();
@@ -99,17 +98,88 @@ void main() {
       find.byKey(const ValueKey(GridCameraScreen.screenId)),
       findsOneWidget,
     );
-    expect(
-      find.byKey(const ValueKey('capture.shutter.button')),
-      findsOneWidget,
-    );
-    // 회원 이름이 상시 표시되는지 확인.
-    expect(find.textContaining('홍길동'), findsWidgets);
+    expect(sessionOf(tester).current.direction, BodyDirection.front);
+    expect(find.textContaining('1 / 4 · 정면'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('capture.shutter.button')));
     await tester.pumpAndSettle();
 
     expect(fake.takePictureCalls, 1);
+    // 리뷰로 넘어가지 않고 같은 화면에서 다음 방향으로 전환된다.
+    expect(
+      find.byKey(const ValueKey('screen.capture.review.stub')),
+      findsNothing,
+    );
+    final session = sessionOf(tester);
+    expect(session.current.direction, BodyDirection.leftSide);
+    expect(session.shots.first.imagePath, fake.capturedPath);
+    expect(session.capturedCount, 1);
+    expect(find.textContaining('2 / 4 · 좌측면'), findsOneWidget);
+  });
+
+  testWidgets('마지막 방향까지 찍으면 리뷰 화면으로 이동한다', (tester) async {
+    final fake = _FakeCaptureCameraController();
+    await tester.pumpWidget(buildApp(() => fake));
+    await tester.pumpAndSettle();
+
+    for (var i = 0; i < kSessionDirections.length; i++) {
+      await tester.tap(find.byKey(const ValueKey('capture.shutter.button')));
+      await tester.pumpAndSettle();
+    }
+
+    expect(fake.takePictureCalls, kSessionDirections.length);
+    expect(
+      find.byKey(const ValueKey('screen.capture.review.stub')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('건너뛴 방향은 촬영하지 않고 다음 단계로 넘어간다', (tester) async {
+    final fake = _FakeCaptureCameraController();
+    await tester.pumpWidget(buildApp(() => fake));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('capture.skip.button')));
+    await tester.pumpAndSettle();
+
+    expect(fake.takePictureCalls, 0);
+    final session = sessionOf(tester);
+    expect(session.current.direction, BodyDirection.leftSide);
+    expect(session.shots.first.isCaptured, isFalse);
+  });
+
+  testWidgets('진행 칩을 탭하면 해당 방향으로 되돌아가 재촬영할 수 있다', (tester) async {
+    final fake = _FakeCaptureCameraController();
+    await tester.pumpWidget(buildApp(() => fake));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('capture.shutter.button')));
+    await tester.pumpAndSettle();
+    expect(sessionOf(tester).current.direction, BodyDirection.leftSide);
+
+    await tester.tap(
+      find.byKey(const ValueKey('capture.progress.step.front')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(sessionOf(tester).current.direction, BodyDirection.front);
+  });
+
+  testWidgets('찍은 컷이 없으면 완료 버튼이 비활성이고 한 장이라도 있으면 활성이다', (tester) async {
+    final fake = _FakeCaptureCameraController();
+    await tester.pumpWidget(buildApp(() => fake));
+    await tester.pumpAndSettle();
+
+    final finishButton = find.byKey(const ValueKey('capture.finish.button'));
+    expect(tester.widget<TextButton>(finishButton).onPressed, isNull);
+
+    await tester.tap(find.byKey(const ValueKey('capture.shutter.button')));
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<TextButton>(finishButton).onPressed, isNotNull);
+
+    await tester.tap(finishButton);
+    await tester.pumpAndSettle();
     expect(
       find.byKey(const ValueKey('screen.capture.review.stub')),
       findsOneWidget,
@@ -146,10 +216,6 @@ void main() {
       find.bySemanticsIdentifier('capture.previousGuide.opacity.slider'),
       findsOneWidget,
     );
-    expect(
-      find.bySemanticsIdentifier('capture.previousGuide.status'),
-      findsOneWidget,
-    );
 
     final imageFinder = find.byKey(
       ValueKey('capture.previousGuide.image.${frontGuideFile.path}'),
@@ -166,18 +232,14 @@ void main() {
     );
     expect(opacity.opacity, 0.35);
 
-    await tester.tap(
-      find.byKey(const ValueKey('capture.previousGuide.toggle')),
-    );
+    await tester.tap(find.byKey(const ValueKey('capture.previousGuide.toggle')));
     await tester.pump();
     expect(
       find.bySemanticsIdentifier('capture.previousGuide.image'),
       findsNothing,
     );
 
-    await tester.tap(
-      find.byKey(const ValueKey('capture.previousGuide.toggle')),
-    );
+    await tester.tap(find.byKey(const ValueKey('capture.previousGuide.toggle')));
     await tester.pump();
     final sliderFinder = find.byKey(
       const ValueKey('capture.previousGuide.opacity.slider'),
@@ -188,28 +250,16 @@ void main() {
     final after = tester.widget<Slider>(sliderFinder).value;
     expect(after, greaterThan(before));
     expect(after, lessThanOrEqualTo(0.7));
-
-    final container = ProviderScope.containerOf(
-      tester.element(find.byType(GridCameraScreen)),
-    );
-    await tester.tap(find.byKey(const ValueKey('capture.shutter.button')));
-    await tester.pumpAndSettle();
-
-    expect(fake.takePictureCalls, 1);
-    expect(
-      container.read(captureSessionProvider(memberId)).capturedImagePath,
-      fake.capturedPath,
-    );
   });
 
-  testWidgets('촬영 방향이 바뀌면 같은 회원의 해당 방향 가이드로 교체한다', (tester) async {
-    final requested = <PreviousPhotoGuideKey>[];
+  testWidgets('단계가 넘어가면 해당 방향의 가이드로 교체한다', (tester) async {
+    final requested = <BodyDirection>[];
     await tester.pumpWidget(
       buildApp(
         _FakeCaptureCameraController.new,
-        loadPreviousGuide: (key) async {
-          requested.add(key);
-          return key.direction == BodyDirection.front
+        loadPreviousGuide: (direction) async {
+          requested.add(direction);
+          return direction == BodyDirection.front
               ? frontGuideFile.path
               : sideGuideFile.path;
         },
@@ -217,33 +267,22 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(requested.last.memberId, memberId);
-    expect(requested.last.direction, BodyDirection.front);
+    expect(requested.last, BodyDirection.front);
     expect(
-      find.byKey(
-        ValueKey('capture.previousGuide.image.${frontGuideFile.path}'),
-      ),
+      find.byKey(ValueKey('capture.previousGuide.image.${frontGuideFile.path}')),
       findsOneWidget,
     );
 
-    final container = ProviderScope.containerOf(
-      tester.element(find.byType(GridCameraScreen)),
-    );
-    container
-        .read(captureSessionProvider(memberId).notifier)
-        .selectDirection(BodyDirection.leftSide);
+    await tester.tap(find.byKey(const ValueKey('capture.skip.button')));
     await tester.pumpAndSettle();
 
-    expect(requested.last.memberId, memberId);
-    expect(requested.last.direction, BodyDirection.leftSide);
+    expect(requested.last, BodyDirection.leftSide);
     expect(
       find.byKey(ValueKey('capture.previousGuide.image.${sideGuideFile.path}')),
       findsOneWidget,
     );
     expect(
-      find.byKey(
-        ValueKey('capture.previousGuide.image.${frontGuideFile.path}'),
-      ),
+      find.byKey(ValueKey('capture.previousGuide.image.${frontGuideFile.path}')),
       findsNothing,
     );
   });
@@ -334,14 +373,10 @@ void main() {
     addTearDown(container.dispose);
 
     final path = await container.read(
-      previousPhotoGuidePathProvider((
-        memberId: memberId,
-        direction: BodyDirection.front,
-      )).future,
+      previousPhotoGuidePathProvider(BodyDirection.front).future,
     );
 
     expect(path, frontGuideFile.path);
-    expect(repository.requestedMemberId, memberId);
     expect(repository.requestedDirection, BodyDirection.front);
   });
 }
@@ -356,43 +391,14 @@ BodyPhoto _photo({required String id, required String path}) {
   );
 }
 
-class _FakeMemberRepository implements MemberRepository {
-  final Member member;
-
-  _FakeMemberRepository(this.member);
-
-  @override
-  Future<void> delete(String id) async {}
-
-  @override
-  Future<Member?> getById(String id) async => id == member.id ? member : null;
-
-  @override
-  Future<void> insert(Member member) async {}
-
-  @override
-  Future<List<MemberListItem>> list({
-    String? query,
-    MemberSort sort = MemberSort.recentShot,
-  }) async => [];
-
-  @override
-  Future<void> update(Member member) async {}
-}
-
 class _FakeBodyPhotoRepository implements BodyPhotoRepository {
   final List<BodyPhoto> photos;
-  String? requestedMemberId;
   BodyDirection? requestedDirection;
 
   _FakeBodyPhotoRepository(this.photos);
 
   @override
-  Future<List<BodyPhoto>> listByMemberDirection(
-    String memberId,
-    BodyDirection direction,
-  ) async {
-    requestedMemberId = memberId;
+  Future<List<BodyPhoto>> listByDirection(BodyDirection direction) async {
     requestedDirection = direction;
     return photos;
   }
@@ -401,16 +407,13 @@ class _FakeBodyPhotoRepository implements BodyPhotoRepository {
   Future<void> delete(String id) async {}
 
   @override
-  Future<void> deleteByRecord(String recordId) async {}
-
-  @override
   Future<BodyPhoto?> getById(String id) async => null;
 
   @override
   Future<void> insert(BodyPhoto photo) async {}
 
   @override
-  Future<List<BodyPhoto>> listByMember(String memberId) async => photos;
+  Future<List<BodyPhoto>> listAll() async => photos;
 
   @override
   Future<List<BodyPhoto>> listByRecord(String recordId) async => photos;

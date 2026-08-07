@@ -13,7 +13,6 @@ import 'fakes.dart';
 import 'test_router.dart';
 
 void main() {
-  late FakeMemberRepository members;
   late FakePhotoRecordRepository records;
   late FakeBodyPhotoRepository photos;
   late FakeGridSettingsService grid;
@@ -21,24 +20,15 @@ void main() {
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
-    members = FakeMemberRepository()
-      ..members['m1'] = Member(
-        id: 'm1',
-        name: '테스트 회원',
-        createdAt: DateTime(2026, 1, 1),
-        updatedAt: DateTime(2026, 1, 1),
-      );
     records = FakePhotoRecordRepository()
       ..records['r1'] = PhotoRecord(
         id: 'r1',
-        memberId: 'm1',
         shotAt: DateTime(2026, 1, 1),
         createdAt: DateTime(2026, 1, 1),
         updatedAt: DateTime(2026, 1, 1),
       )
       ..records['r2'] = PhotoRecord(
         id: 'r2',
-        memberId: 'm1',
         shotAt: DateTime(2026, 3, 1),
         createdAt: DateTime(2026, 3, 1),
         updatedAt: DateTime(2026, 3, 1),
@@ -69,12 +59,11 @@ void main() {
   Widget buildApp() {
     final router = createCompareTestRouter(
       initialLocation:
-          '/members/m1/compare/view'
+          '/compare/view'
           '?direction=front&beforePhotoId=before&afterPhotoId=after',
     );
     return ProviderScope(
       overrides: [
-        memberRepositoryProvider.overrideWithValue(members),
         photoRecordRepositoryProvider.overrideWithValue(records),
         bodyPhotoRepositoryProvider.overrideWithValue(photos),
         gridSettingsServiceProvider.overrideWithValue(grid),

@@ -22,9 +22,7 @@ final _dateFormat = DateFormat('yyyy.MM.dd');
 class CompareViewScreen extends ConsumerWidget {
   static const screenId = 'screen.compare.view';
 
-  final String memberId;
-
-  const CompareViewScreen({super.key, required this.memberId});
+  const CompareViewScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -35,16 +33,13 @@ class CompareViewScreen extends ConsumerWidget {
 
     final Widget body;
     if (directionKey == null || beforePhotoId == null || afterPhotoId == null) {
-      body = CompareMissingContext(
-        memberId: memberId,
+      body = const CompareMissingContext(
         backButtonId: 'compare.view.backToDates.button',
       );
     } else {
       body = _CompareViewBody(
-        memberId: memberId,
         direction: BodyDirection.fromKey(directionKey),
         bundleKey: (
-          memberId: memberId,
           beforePhotoId: beforePhotoId,
           afterPhotoId: afterPhotoId,
         ),
@@ -65,12 +60,10 @@ class CompareViewScreen extends ConsumerWidget {
 }
 
 class _CompareViewBody extends ConsumerStatefulWidget {
-  final String memberId;
   final BodyDirection direction;
   final CompareViewKey bundleKey;
 
   const _CompareViewBody({
-    required this.memberId,
     required this.direction,
     required this.bundleKey,
   });
@@ -144,7 +137,6 @@ class _CompareViewBodyState extends ConsumerState<_CompareViewBody> {
 
   void _goExport(CompareViewBundle bundle) {
     final request = CompareExportRequest(
-      member: bundle.member,
       beforeRecord: bundle.beforeRecord,
       afterRecord: bundle.afterRecord,
       beforePhoto: bundle.beforePhoto,
@@ -161,7 +153,6 @@ class _CompareViewBodyState extends ConsumerState<_CompareViewBody> {
     );
     context.pushNamed(
       AppRoutes.compareExport,
-      pathParameters: {AppParams.memberId: widget.memberId},
       queryParameters: {
         AppParams.direction: widget.direction.key,
         AppParams.beforePhotoId: bundle.beforePhoto.id,

@@ -1,5 +1,5 @@
-import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as p;
+import 'package:sqflite/sqflite.dart';
 
 import '../database/app_database.dart';
 import '../models/body_direction.dart';
@@ -14,16 +14,13 @@ import '../services/photo_storage_service.dart';
 abstract class BodyPhotoRepository {
   Future<List<BodyPhoto>> listByRecord(String recordId);
 
-  /// 회원의 특정 방향 사진 전체(비교 화면에서 날짜별 선택에 사용).
-  Future<List<BodyPhoto>> listByMemberDirection(
-    String memberId,
-    BodyDirection direction,
-  );
+  /// 특정 방향의 사진 전체(비교 화면에서 날짜별 선택에 사용). 최신 촬영일 먼저.
+  Future<List<BodyPhoto>> listByDirection(BodyDirection direction);
 
-  /// 회원의 모든 촬영 기록에 속한 사진 전체(방향 무관). 회원 상세 화면에서
-  /// 기록마다 [listByRecord]를 개별 호출하면 N+1 쿼리가 발생하므로, 한 번에
-  /// 조회한 뒤 recordId로 그룹핑해 쓰기 위한 배치 조회 메서드.
-  Future<List<BodyPhoto>> listByMember(String memberId);
+  /// 모든 촬영 기록에 속한 사진 전체(방향 무관). 홈 타임라인에서 기록마다
+  /// [listByRecord]를 개별 호출하면 N+1 쿼리가 발생하므로, 한 번에 조회한 뒤
+  /// recordId로 그룹핑해 쓰기 위한 배치 조회 메서드.
+  Future<List<BodyPhoto>> listAll();
 
   Future<BodyPhoto?> getById(String id);
 
@@ -34,9 +31,6 @@ abstract class BodyPhotoRepository {
 
   /// 단일 사진 삭제(DB 행 + 파일).
   Future<void> delete(String id);
-
-  /// 촬영 기록에 속한 모든 사진의 파일을 삭제한다(행은 CASCADE로 정리).
-  Future<void> deleteByRecord(String recordId);
 }
 
 class BodyPhotoRepositoryImpl implements BodyPhotoRepository {
@@ -54,7 +48,6 @@ class BodyPhotoRepositoryImpl implements BodyPhotoRepository {
 
   @override
   Future<List<BodyPhoto>> listByRecord(String recordId) async {
-    await _storage.reconcilePendingQuarantines();
     final db = await _db.database;
     final rows = await db.query(
       AppDatabase.tableBodyPhotos,
@@ -66,46 +59,34 @@ class BodyPhotoRepositoryImpl implements BodyPhotoRepository {
   }
 
   @override
-  Future<List<BodyPhoto>> listByMemberDirection(
-    String memberId,
-    BodyDirection direction,
-  ) async {
-    await _storage.reconcilePendingQuarantines();
+  Future<List<BodyPhoto>> listByDirection(BodyDirection direction) async {
     final db = await _db.database;
-    // 회원 → 촬영 기록 → 사진 조인. 최신 촬영일 먼저.
-    final sql =
-        '''
-      SELECT bp.*, r.shot_at AS r_shot_at
+    final rows = await db.rawQuery('''
+      SELECT bp.*
       FROM ${AppDatabase.tableBodyPhotos} bp
       JOIN ${AppDatabase.tablePhotoRecords} r ON r.id = bp.record_id
-      WHERE r.member_id = ? AND bp.direction = ?
+      WHERE bp.direction = ?
       ORDER BY r.shot_at DESC
-    ''';
-    final rows = await db.rawQuery(sql, [memberId, direction.key]);
+    ''', [direction.key]);
     return Future.wait(rows.map(_photoFromRow));
   }
 
   @override
-  Future<List<BodyPhoto>> listByMember(String memberId) async {
-    await _storage.reconcilePendingQuarantines();
+  Future<List<BodyPhoto>> listAll() async {
     final db = await _db.database;
-    // 회원 → 촬영 기록 → 사진 조인. 기록별 그룹핑을 쉽게 하도록 최신 촬영일
-    // 순으로 정렬하고, 같은 기록 내에서는 등록순을 유지한다.
-    final sql =
-        '''
+    // 기록별 그룹핑을 쉽게 하도록 최신 촬영일 순으로 정렬하고,
+    // 같은 기록 안에서는 등록순을 유지한다.
+    final rows = await db.rawQuery('''
       SELECT bp.*
       FROM ${AppDatabase.tableBodyPhotos} bp
       JOIN ${AppDatabase.tablePhotoRecords} r ON r.id = bp.record_id
-      WHERE r.member_id = ?
       ORDER BY r.shot_at DESC, bp.created_at ASC
-    ''';
-    final rows = await db.rawQuery(sql, [memberId]);
+    ''');
     return Future.wait(rows.map(_photoFromRow));
   }
 
   @override
   Future<BodyPhoto?> getById(String id) async {
-    await _storage.reconcilePendingQuarantines();
     final db = await _db.database;
     final rows = await db.query(
       AppDatabase.tableBodyPhotos,
@@ -119,7 +100,6 @@ class BodyPhotoRepositoryImpl implements BodyPhotoRepository {
 
   @override
   Future<void> insert(BodyPhoto photo) async {
-    await _storage.reconcilePendingQuarantines();
     final db = await _db.database;
     await db.insert(
       AppDatabase.tableBodyPhotos,
@@ -131,7 +111,6 @@ class BodyPhotoRepositoryImpl implements BodyPhotoRepository {
 
   @override
   Future<void> update(BodyPhoto photo) async {
-    await _storage.reconcilePendingQuarantines();
     final db = await _db.database;
     final existingRows = await db.query(
       AppDatabase.tableBodyPhotos,
@@ -150,87 +129,41 @@ class BodyPhotoRepositoryImpl implements BodyPhotoRepository {
     final map = await _storedPhotoMap(photo);
     final oldPath = existingRows.single['file_path'] as String;
     final newPath = map['file_path'] as String;
-    StorageQuarantine? quarantine;
+
+    final updated = await db.update(
+      AppDatabase.tableBodyPhotos,
+      map,
+      where: 'id = ?',
+      whereArgs: [photo.id],
+    );
+    if (updated != 1) {
+      throw StateError('사진 수정 결과가 올바르지 않습니다.');
+    }
     if (oldPath != newPath) {
-      quarantine = await _storage.quarantineFile(oldPath);
+      await _deleteBestEffort(oldPath);
     }
-    try {
-      final updated = await db.update(
-        AppDatabase.tableBodyPhotos,
-        map,
-        where: 'id = ?',
-        whereArgs: [photo.id],
-      );
-      if (updated != 1) {
-        throw StateError('사진 수정 결과가 올바르지 않습니다.');
-      }
-    } catch (_) {
-      if (quarantine != null) {
-        await _storage.restoreQuarantine(quarantine);
-      }
-      rethrow;
-    }
-    await _discardBestEffort(quarantine);
     _logger.phase('photo.update', LogPhase.success, context: {'id': photo.id});
   }
 
   @override
   Future<void> delete(String id) async {
-    await _storage.reconcilePendingQuarantines();
     final db = await _db.database;
-    final photo = await getById(id);
-    final quarantine = photo == null
-        ? null
-        : await _storage.quarantineFile(photo.filePath);
-    try {
-      await db.transaction((txn) async {
-        await txn.delete(
-          AppDatabase.tableBodyPhotos,
-          where: 'id = ?',
-          whereArgs: [id],
-        );
-      });
-    } catch (_) {
-      if (quarantine != null) {
-        await _storage.restoreQuarantine(quarantine);
-      }
-      rethrow;
-    }
-    await _discardBestEffort(quarantine);
-    _logger.phase('photo.delete', LogPhase.success, context: {'id': id});
-  }
+    final rows = await db.query(
+      AppDatabase.tableBodyPhotos,
+      columns: ['file_path'],
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (rows.isEmpty) return;
 
-  @override
-  Future<void> deleteByRecord(String recordId) async {
-    await _storage.reconcilePendingQuarantines();
-    final photos = await listByRecord(recordId);
-    final quarantines = <StorageQuarantine>[];
-    try {
-      for (final photo in photos) {
-        final quarantine = await _storage.quarantineFile(photo.filePath);
-        if (quarantine != null) quarantines.add(quarantine);
-      }
-    } catch (_) {
-      await _restoreAll(quarantines);
-      rethrow;
-    }
-    final db = await _db.database;
-    try {
-      await db.transaction((txn) async {
-        await txn.delete(
-          AppDatabase.tableBodyPhotos,
-          where: 'record_id = ?',
-          whereArgs: [recordId],
-        );
-      });
-    } catch (_) {
-      await _restoreAll(quarantines);
-      rethrow;
-    }
-    for (final quarantine in quarantines) {
-      await _discardBestEffort(quarantine);
-    }
-    _logger.info('photo.deleteByRecord', context: {'count': photos.length});
+    await db.delete(
+      AppDatabase.tableBodyPhotos,
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    await _deleteBestEffort(rows.single['file_path'] as String);
+    _logger.phase('photo.delete', LogPhase.success, context: {'id': id});
   }
 
   Future<BodyPhoto> _photoFromRow(Map<String, Object?> row) async {
@@ -240,42 +173,22 @@ class BodyPhotoRepositoryImpl implements BodyPhotoRepository {
   }
 
   Future<Map<String, dynamic>> _storedPhotoMap(BodyPhoto photo) async {
-    final db = await _db.database;
-    final ownerRows = await db.query(
-      AppDatabase.tablePhotoRecords,
-      columns: ['member_id'],
-      where: 'id = ?',
-      whereArgs: [photo.recordId],
-      limit: 1,
-    );
-    if (ownerRows.isEmpty) {
-      throw StateError('사진의 촬영 기록을 찾을 수 없습니다.');
-    }
-    final memberId = ownerRows.single['member_id'] as String;
     final map = photo.toMap();
     final storedPath = await _storage.toStoredPath(photo.filePath);
     final segments = p.posix.split(storedPath);
     if (segments.length < 3 ||
-        segments[0] != PhotoStorageServiceImpl.rootDirName ||
-        segments[1] != memberId) {
-      throw StateError('사진 파일이 촬영 기록 소유자의 저장소에 있지 않습니다.');
+        segments[0] != PhotoStorageServiceImpl.rootDirName) {
+      throw StateError('사진 파일이 앱 사진 저장소 안에 있지 않습니다.');
     }
     map['file_path'] = storedPath;
     return map;
   }
 
-  Future<void> _restoreAll(List<StorageQuarantine> quarantines) async {
-    for (final quarantine in quarantines.reversed) {
-      await _storage.restoreQuarantine(quarantine);
-    }
-  }
-
-  Future<void> _discardBestEffort(StorageQuarantine? quarantine) async {
-    if (quarantine == null) return;
+  Future<void> _deleteBestEffort(String storedPath) async {
     try {
-      await _storage.discardQuarantine(quarantine);
+      await _storage.deleteFile(storedPath);
     } catch (_) {
-      _logger.warn('storage.quarantine.cleanup.failure');
+      _logger.warn('storage.delete.failure');
     }
   }
 }

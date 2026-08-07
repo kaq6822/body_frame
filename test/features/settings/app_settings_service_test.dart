@@ -1,94 +1,74 @@
-import 'dart:io';
-
 import 'package:body_frame/core/models/models.dart';
-import 'package:body_frame/core/services/photo_storage_service.dart';
 import 'package:body_frame/features/settings/services/app_settings_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  setUp(() {
-    SharedPreferences.setMockInitialValues({});
-  });
+  TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('저장한 적 없으면 기본값을 반환한다', () async {
-    final service = AppSettingsServiceImpl();
-    final loaded = await service.load();
-    expect(loaded.lockMode, LockMode.none);
-    expect(loaded.studioName, isNull);
-  });
+  setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  test('저장 후 다시 불러오면 동일한 값이 유지된다(라운드트립)', () async {
-    final service = AppSettingsServiceImpl();
-    final settings = AppSettings.defaults.copyWith(
-      lockMode: LockMode.pin,
-      biometricEnabled: true,
-      autoLockSeconds: 60,
-      studioName: '테스트 스튜디오',
-    );
+  group('AppSettingsService', () {
+    test('저장된 값이 없으면 기본값을 반환한다', () async {
+      final settings = await AppSettingsServiceImpl().load();
 
-    await service.save(settings);
-    final loaded = await service.load();
-
-    expect(loaded.lockMode, LockMode.pin);
-    expect(loaded.biometricEnabled, isTrue);
-    expect(loaded.autoLockSeconds, 60);
-    expect(loaded.studioName, '테스트 스튜디오');
-  });
-
-  test('손상된 설정은 예외 대신 잠금 없는 안전 기본값으로 복구한다', () async {
-    SharedPreferences.setMockInitialValues({'app_settings': '{invalid-json'});
-    final service = AppSettingsServiceImpl();
-
-    final loaded = await service.load();
-
-    expect(loaded.lockMode, LockMode.none);
-    expect(loaded.biometricEnabled, isFalse);
-  });
-
-  test('UI에서 처리할 수 없는 설정 범위도 기본값으로 복구한다', () async {
-    SharedPreferences.setMockInitialValues({
-      'app_settings': const AppSettings(autoLockSeconds: 999).toJson(),
+      expect(settings.defaultGrid, GridSettings.defaults);
+      expect(settings.defaultExportOptions.includeShotDate, isTrue);
+      expect(settings.defaultExportOptions.includeLabel, isTrue);
+      expect(settings.defaultExportOptions.includeMemo, isFalse);
+      expect(settings.defaultExportOptions.includeGrid, isFalse);
     });
 
-    final loaded = await AppSettingsServiceImpl().load();
+    test('저장한 설정을 그대로 다시 읽는다', () async {
+      final service = AppSettingsServiceImpl();
+      const saved = AppSettings(
+        defaultGrid: GridSettings(opacity: 0.8, spacing: 60),
+        defaultExportOptions: ExportImageOptions(
+          includeShotDate: false,
+          includeLabel: false,
+          includeMemo: true,
+          includeGrid: true,
+        ),
+      );
 
-    expect(loaded.autoLockSeconds, AppSettings.defaults.autoLockSeconds);
-  });
+      await service.save(saved);
+      final loaded = await service.load();
 
-  test('스튜디오 로고는 앱 저장소 상대경로로 저장하고 명시적으로 지울 수 있다', () async {
-    final service = AppSettingsServiceImpl();
-    final withLogo = AppSettings.defaults.copyWith(
-      studioLogoPath: 'photos/studio-assets/logo.png',
-    );
-    await service.save(withLogo);
-
-    expect(
-      (await service.load()).studioLogoPath,
-      'photos/studio-assets/logo.png',
-    );
-    expect(withLogo.copyWith(clearStudioLogoPath: true).studioLogoPath, isNull);
-  });
-
-  test('기존 스튜디오 로고 절대경로를 로드할 때 상대경로로 마이그레이션한다', () async {
-    final root = await Directory.systemTemp.createTemp(
-      'body_frame_settings_logo_',
-    );
-    addTearDown(() async {
-      if (await root.exists()) await root.delete(recursive: true);
-    });
-    final storage = PhotoStorageServiceImpl(rootPath: root.path);
-    final absolute = await storage.saveBytes(
-      memberId: 'studio-assets',
-      bytes: const [1, 2, 3],
-      fileName: 'logo.png',
-    );
-    SharedPreferences.setMockInitialValues({
-      'app_settings': AppSettings(studioLogoPath: absolute).toJson(),
+      expect(loaded.defaultGrid.opacity, 0.8);
+      expect(loaded.defaultGrid.spacing, 60);
+      expect(loaded.defaultExportOptions.includeShotDate, isFalse);
+      expect(loaded.defaultExportOptions.includeLabel, isFalse);
+      expect(loaded.defaultExportOptions.includeMemo, isTrue);
+      expect(loaded.defaultExportOptions.includeGrid, isTrue);
     });
 
-    final loaded = await AppSettingsServiceImpl(storage: storage).load();
+    test('손상된 JSON은 기본값으로 대체한다', () async {
+      SharedPreferences.setMockInitialValues({'app_settings': '{not json'});
 
-    expect(loaded.studioLogoPath, 'photos/studio-assets/logo.png');
+      final settings = await AppSettingsServiceImpl().load();
+
+      expect(settings.defaultGrid, GridSettings.defaults);
+    });
+
+    test('범위를 벗어난 격자 값이 저장돼 있으면 기본값으로 대체한다', () async {
+      SharedPreferences.setMockInitialValues({
+        'app_settings': const AppSettings(
+          defaultGrid: GridSettings(opacity: 5),
+        ).toJson(),
+      });
+
+      final settings = await AppSettingsServiceImpl().load();
+
+      expect(settings.defaultGrid, GridSettings.defaults);
+    });
+
+    test('범위를 벗어난 격자 값은 저장을 거부한다', () async {
+      final service = AppSettingsServiceImpl();
+
+      await expectLater(
+        service.save(const AppSettings(defaultGrid: GridSettings(spacing: 0))),
+        throwsArgumentError,
+      );
+    });
   });
 }

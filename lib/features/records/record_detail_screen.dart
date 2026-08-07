@@ -17,19 +17,13 @@ import '../../core/services/app_logger.dart';
 class RecordDetailScreen extends ConsumerWidget {
   static const screenId = 'screen.records.detail';
 
-  final String memberId;
   final String recordId;
 
-  const RecordDetailScreen({
-    super.key,
-    required this.memberId,
-    required this.recordId,
-  });
+  const RecordDetailScreen({super.key, required this.recordId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final detailKey = (memberId: memberId, recordId: recordId);
-    final async = ref.watch(_recordDetailProvider(detailKey));
+    final async = ref.watch(_recordDetailProvider(recordId));
 
     return Semantics(
       identifier: screenId,
@@ -39,7 +33,7 @@ class RecordDetailScreen extends ConsumerWidget {
         key: const ValueKey(screenId),
         appBar: AppBar(title: const Text('촬영 기록 상세')),
         body: async.when(
-          data: (data) => _RecordDetailBody(detailKey: detailKey, data: data),
+          data: (data) => _RecordDetailBody(recordId: recordId, data: data),
           loading: () => const _StatusPane(
             key: ValueKey('screen.records.detail.status'),
             state: _PaneState.running,
@@ -48,7 +42,7 @@ class RecordDetailScreen extends ConsumerWidget {
             key: const ValueKey('screen.records.detail.status'),
             state: _PaneState.failure,
             message: '촬영 기록을 불러오지 못했습니다.',
-            onRetry: () => ref.invalidate(_recordDetailProvider(detailKey)),
+            onRetry: () => ref.invalidate(_recordDetailProvider(recordId)),
           ),
         ),
       ),
@@ -73,27 +67,25 @@ class RecordNotFoundException implements Exception {
   String toString() => '촬영 기록을 찾을 수 없습니다: $recordId';
 }
 
-typedef _RecordDetailKey = ({String memberId, String recordId});
-
 final _recordDetailProvider = FutureProvider.autoDispose
-    .family<_RecordDetailData, _RecordDetailKey>((ref, key) async {
+    .family<_RecordDetailData, String>((ref, recordId) async {
       final recordRepo = ref.watch(photoRecordRepositoryProvider);
       final photoRepo = ref.watch(bodyPhotoRepositoryProvider);
-      final record = await recordRepo.getById(key.recordId);
-      if (record == null || record.memberId != key.memberId) {
-        throw RecordNotFoundException(key.recordId);
+      final record = await recordRepo.getById(recordId);
+      if (record == null) {
+        throw RecordNotFoundException(recordId);
       }
-      final photos = await photoRepo.listByRecord(key.recordId);
+      final photos = await photoRepo.listByRecord(recordId);
       return _RecordDetailData(record: record, photos: photos);
     });
 
 enum _PaneState { idle, running, success, failure }
 
 class _RecordDetailBody extends ConsumerStatefulWidget {
-  final _RecordDetailKey detailKey;
+  final String recordId;
   final _RecordDetailData data;
 
-  const _RecordDetailBody({required this.detailKey, required this.data});
+  const _RecordDetailBody({required this.recordId, required this.data});
 
   @override
   ConsumerState<_RecordDetailBody> createState() => _RecordDetailBodyState();
@@ -121,7 +113,7 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
   }
 
   void _invalidate() {
-    ref.invalidate(_recordDetailProvider(widget.detailKey));
+    ref.invalidate(_recordDetailProvider(widget.recordId));
   }
 
   Future<void> _saveMemo() async {
@@ -218,31 +210,28 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
     logger.phase(
       'record.delete',
       LogPhase.start,
-      context: {'id': widget.detailKey.recordId},
+      context: {'id': widget.recordId},
     );
     try {
       final repo = ref.read(photoRecordRepositoryProvider);
-      await repo.delete(widget.detailKey.recordId);
+      await repo.delete(widget.recordId);
       logger.phase(
         'record.delete',
         LogPhase.success,
-        context: {'id': widget.detailKey.recordId},
+        context: {'id': widget.recordId},
       );
       if (!mounted) return;
       setState(() => _deleteState = _PaneState.success);
       if (context.canPop()) {
         context.pop(true);
       } else {
-        context.goNamed(
-          AppRoutes.memberDetail,
-          pathParameters: {AppParams.memberId: widget.detailKey.memberId},
-        );
+        context.goNamed(AppRoutes.home);
       }
     } catch (err) {
       logger.phase(
         'record.delete',
         LogPhase.failure,
-        context: {'id': widget.detailKey.recordId},
+        context: {'id': widget.recordId},
       );
       if (!mounted) return;
       setState(() => _deleteState = _PaneState.failure);
@@ -253,8 +242,7 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
     final changed = await context.pushNamed<bool>(
       AppRoutes.photoView,
       pathParameters: {
-        AppParams.memberId: widget.detailKey.memberId,
-        AppParams.recordId: widget.detailKey.recordId,
+        AppParams.recordId: widget.recordId,
         AppParams.photoId: photo.id,
       },
     );

@@ -9,28 +9,21 @@ import 'package:uuid/uuid.dart';
 
 import 'package:body_frame/core/models/models.dart';
 import 'package:body_frame/core/providers.dart';
-import 'package:body_frame/core/router/app_routes.dart';
 import 'package:body_frame/core/services/app_logger.dart';
 import 'package:body_frame/core/services/photo_storage_service.dart';
-import 'providers/capture_providers.dart';
+import '../home/providers/home_providers.dart';
 import 'providers/capture_session_provider.dart';
 import 'utils/image_meta.dart';
 import 'widgets/async_status_indicator.dart';
-import 'widgets/capture_member_banner.dart';
-import 'widgets/direction_selector.dart';
 
-/// 촬영 결과 확인 화면.
+/// 연속 촬영 결과 일괄 확인 화면.
 ///
-/// 미리보기(원본 비율, BoxFit.contain)/확대/다시 촬영/방향 변경/촬영일·메모
-/// 입력/저장을 제공한다. 저장 전 회원 이름과 촬영 방향을 다시 표시한다.
-/// 저장은 같은 촬영일의 [PhotoRecord]가 있으면 재사용하고,
-/// 없으면 새로 만든다.
+/// 세션에서 찍은 컷을 한눈에 보여주고, 촬영일·라벨·메모를 지정해 **하나의
+/// [PhotoRecord]로** 저장한다. 같은 촬영일의 기록이 이미 있으면 재사용한다.
 class CaptureReviewScreen extends ConsumerStatefulWidget {
   static const screenId = 'screen.capture.review';
 
-  final String memberId;
-
-  const CaptureReviewScreen({super.key, required this.memberId});
+  const CaptureReviewScreen({super.key});
 
   @override
   ConsumerState<CaptureReviewScreen> createState() =>
@@ -38,20 +31,22 @@ class CaptureReviewScreen extends ConsumerStatefulWidget {
 }
 
 class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
+  final _labelController = TextEditingController();
   final _memoController = TextEditingController();
   AsyncStatus _saveStatus = AsyncStatus.idle;
   String? _saveError;
-  Future<void>? _sourceCleanupFuture;
 
   @override
   void initState() {
     super.initState();
-    final memo = ref.read(captureSessionProvider(widget.memberId)).memo;
-    _memoController.text = memo ?? '';
+    final session = ref.read(captureSessionProvider);
+    _labelController.text = session.label ?? '';
+    _memoController.text = session.memo ?? '';
   }
 
   @override
   void dispose() {
+    _labelController.dispose();
     _memoController.dispose();
     super.dispose();
   }
@@ -67,43 +62,25 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
       lastDate: DateTime.now().add(const Duration(days: 1)),
     );
     if (picked != null) {
-      ref
-          .read(captureSessionProvider(widget.memberId).notifier)
-          .setShotDate(picked);
+      ref.read(captureSessionProvider.notifier).setShotDate(picked);
     }
   }
 
-  void _retake() {
-    unawaited(_cleanupCapturedSourceOnce());
+  /// 해당 단계를 다시 찍는다. 기존 컷을 지우고 카메라 화면으로 돌아간다.
+  void _retake(int index) {
+    final notifier = ref.read(captureSessionProvider.notifier);
+    final path = ref.read(captureSessionProvider).shots[index].imagePath;
+    notifier.clearShot(index);
+    notifier.goTo(index);
+    if (path != null) {
+      unawaited(_deleteTemporaryCaptureBestEffort(path));
+    }
     context.pop();
   }
 
-  Future<void> _cleanupCapturedSourceOnce({bool resetSession = false}) {
-    final pending = _sourceCleanupFuture;
-    if (pending != null) return pending;
-
-    final session = ref.read(captureSessionProvider(widget.memberId));
-    final path = session.capturedImagePath;
-    final notifier = ref.read(captureSessionProvider(widget.memberId).notifier);
-    if (resetSession) {
-      notifier.reset();
-    } else {
-      notifier.clearCapturedImage();
-    }
+  Future<void> _deleteTemporaryCaptureBestEffort(String path) async {
     final storage = ref.read(photoStorageServiceProvider);
     final logger = ref.read(appLoggerProvider);
-    final cleanup = path == null
-        ? Future<void>.value()
-        : _deleteTemporaryCaptureBestEffort(path, storage, logger);
-    _sourceCleanupFuture = cleanup;
-    return cleanup;
-  }
-
-  Future<void> _deleteTemporaryCaptureBestEffort(
-    String path,
-    PhotoStorageService storage,
-    AppLogger logger,
-  ) async {
     try {
       // 관리 저장소 안의 파일이면 원본이므로 절대 정리하지 않는다.
       final stored = await storage.toStoredPath(path);
@@ -124,36 +101,32 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
   }
 
   Future<void> _save(CaptureSessionState session) async {
-    final path = session.capturedImagePath;
-    if (path == null) return;
+    final captured = session.capturedShots;
+    if (captured.isEmpty) return;
+
     setState(() {
       _saveStatus = AsyncStatus.busy;
       _saveError = null;
     });
     final logger = ref.read(appLoggerProvider);
     final storage = ref.read(photoStorageServiceProvider);
-    String? preparedPath;
+    final preparedPaths = <String>[];
     var databaseCommitted = false;
     logger.phase(
       'capture.save',
       LogPhase.start,
-      context: {'memberId': widget.memberId},
+      context: {'count': captured.length},
     );
-    try {
-      final records = ref.read(photoRecordRepositoryProvider);
-      preparedPath = await storage.saveOriginal(
-        memberId: widget.memberId,
-        sourcePath: path,
-      );
-      final meta = await readImageMeta(preparedPath);
 
-      final existing = await records.listByMember(widget.memberId);
+    try {
       final shotDate = DateTime(
         session.shotDate.year,
         session.shotDate.month,
         session.shotDate.day,
       );
       final now = DateTime.now();
+
+      final existing = await ref.read(photoRecordRepositoryProvider).listAll();
       PhotoRecord? matched;
       for (final record in existing) {
         if (_isSameDate(record.shotAt, shotDate)) {
@@ -161,62 +134,79 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
           break;
         }
       }
+
+      final label = _labelController.text.trim();
+      final memo = _memoController.text.trim();
       final record =
           matched ??
           PhotoRecord(
             id: const Uuid().v4(),
-            memberId: widget.memberId,
             shotAt: shotDate,
+            label: label.isEmpty ? null : label,
+            memo: memo.isEmpty ? null : memo,
             createdAt: now,
             updatedAt: now,
           );
-      final memo = _memoController.text.trim();
-      final photo = BodyPhoto(
-        id: const Uuid().v4(),
-        recordId: record.id,
-        filePath: preparedPath,
-        direction: session.direction,
-        width: meta.width,
-        height: meta.height,
-        orientation: meta.orientation,
-        gridSettings: session.gridSettingsAtCapture ?? GridSettings.defaults,
-        memo: memo.isEmpty ? null : memo,
-        createdAt: now,
-      );
+
+      final photos = <BodyPhoto>[];
+      for (final shot in captured) {
+        final preparedPath = await storage.saveOriginal(
+          shotAt: shotDate,
+          sourcePath: shot.imagePath!,
+        );
+        preparedPaths.add(preparedPath);
+        final meta = await readImageMeta(preparedPath);
+        photos.add(
+          BodyPhoto(
+            id: const Uuid().v4(),
+            recordId: record.id,
+            filePath: preparedPath,
+            direction: shot.direction,
+            width: meta.width,
+            height: meta.height,
+            orientation: meta.orientation,
+            gridSettings: shot.gridSettingsAtCapture ?? GridSettings.defaults,
+            createdAt: now,
+          ),
+        );
+      }
+
       await ref
           .read(photoIngestRepositoryProvider)
           .insertPrepared(
-            memberId: widget.memberId,
             newRecords: matched == null ? [record] : const [],
-            photos: [photo],
+            photos: photos,
           );
       databaseCommitted = true;
 
       logger.phase(
         'capture.save',
         LogPhase.success,
-        context: {'memberId': widget.memberId},
+        context: {'count': photos.length},
       );
-      unawaited(_cleanupCapturedSourceOnce(resetSession: true));
+
+      // 임시 촬영 파일 정리 후 세션 초기화.
+      for (final shot in captured) {
+        unawaited(_deleteTemporaryCaptureBestEffort(shot.imagePath!));
+      }
+      ref.read(captureSessionProvider.notifier).reset();
+      ref.invalidate(timelineProvider);
+
       if (!mounted) return;
       setState(() => _saveStatus = AsyncStatus.success);
-      context.goNamed(
-        AppRoutes.captureDirection,
-        pathParameters: {AppParams.memberId: widget.memberId},
-      );
+      // 카메라 화면까지 함께 닫고 홈으로 돌아간다.
+      context.go('/');
     } catch (e) {
-      if (!databaseCommitted && preparedPath != null) {
-        try {
-          await storage.deleteFile(preparedPath);
-        } catch (_) {
-          logger.warn('capture.preparedFile.cleanup.failure');
+      if (!databaseCommitted) {
+        for (final prepared in preparedPaths) {
+          try {
+            await storage.deleteFile(prepared);
+          } catch (_) {
+            logger.warn('capture.preparedFile.cleanup.failure');
+          }
         }
       }
-      logger.phase(
-        'capture.save',
-        LogPhase.failure,
-        context: {'memberId': widget.memberId},
-      );
+      logger.phase('capture.save', LogPhase.failure);
       if (!mounted) return;
       setState(() {
         _saveStatus = AsyncStatus.failure;
@@ -227,16 +217,10 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final session = ref.watch(captureSessionProvider(widget.memberId));
-    final memberAsync = ref.watch(memberByIdProvider(widget.memberId));
+    final session = ref.watch(captureSessionProvider);
 
     return PopScope(
       canPop: _saveStatus != AsyncStatus.busy,
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop) {
-          unawaited(_cleanupCapturedSourceOnce());
-        }
-      },
       child: Semantics(
         identifier: CaptureReviewScreen.screenId,
         container: true,
@@ -244,34 +228,15 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
         child: Scaffold(
           key: const ValueKey(CaptureReviewScreen.screenId),
           appBar: AppBar(title: const Text('촬영 결과 확인')),
-          body: session.capturedImagePath == null
-              ? const Center(child: Text('확인할 촬영 결과가 없습니다.'))
-              : memberAsync.when(
-                  data: (member) => _buildBody(session, member?.name ?? ''),
-                  loading: () => const Center(
-                    child: AsyncStatusIndicator(
-                      statusId: 'screen.capture.review.status',
-                      status: AsyncStatus.busy,
-                      busyLabel: '회원 정보를 불러오는 중입니다.',
-                    ),
-                  ),
-                  error: (error, stackTrace) => Center(
-                    child: AsyncStatusIndicator(
-                      statusId: 'screen.capture.review.status',
-                      status: AsyncStatus.failure,
-                      failureMessage: '회원 정보를 불러오지 못했습니다.',
-                      onRetry: () =>
-                          ref.invalidate(memberByIdProvider(widget.memberId)),
-                    ),
-                  ),
-                ),
+          body: session.hasAnyCapture
+              ? _buildBody(session)
+              : const Center(child: Text('확인할 촬영 결과가 없습니다.')),
         ),
       ),
     );
   }
 
-  Widget _buildBody(CaptureSessionState session, String memberName) {
-    final path = session.capturedImagePath!;
+  Widget _buildBody(CaptureSessionState session) {
     final dateLabel = DateFormat('yyyy.MM.dd').format(session.shotDate);
 
     return SingleChildScrollView(
@@ -279,59 +244,24 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CaptureMemberBanner(
-            memberName: memberName,
-            direction: session.direction,
+          Text(
+            '${session.capturedCount}장 촬영됨',
+            style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 12),
-          Semantics(
-            identifier: 'capture.review.photo.image',
-            label: '촬영 결과 미리보기, 확대해서 확인할 수 있습니다.',
-            child: Container(
-              key: const ValueKey('capture.review.photo.image'),
-              height: 360,
-              width: double.infinity,
-              color: Colors.black12,
-              child: InteractiveViewer(
-                minScale: 1,
-                maxScale: 5,
-                child: Image.file(
-                  File(path),
-                  fit: BoxFit.contain,
-                  width: double.infinity,
-                  height: double.infinity,
-                ),
+          SizedBox(
+            height: 260,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: session.shots.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 12),
+              itemBuilder: (context, index) => _ShotPreview(
+                shot: session.shots[index],
+                onRetake: () => _retake(index),
               ),
             ),
           ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: Semantics(
-                  identifier: 'capture.retake.button',
-                  button: true,
-                  label: '다시 촬영',
-                  child: OutlinedButton(
-                    key: const ValueKey('capture.retake.button'),
-                    onPressed: _retake,
-                    child: const Text('다시 촬영'),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          const Text('촬영 방향 변경', style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          DirectionSelector(
-            idPrefix: 'capture.review.direction',
-            selected: session.direction,
-            onSelected: (direction) => ref
-                .read(captureSessionProvider(widget.memberId).notifier)
-                .selectDirection(direction),
-          ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
           const Text('촬영일', style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           Semantics(
@@ -345,43 +275,37 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
             ),
           ),
           const SizedBox(height: 16),
+          const Text('대상 라벨', style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Semantics(
+            identifier: 'capture.review.label.field',
+            label: '촬영 대상 라벨',
+            child: TextField(
+              key: const ValueKey('capture.review.label.field'),
+              controller: _labelController,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                hintText: '비워두면 내 기록으로 저장됩니다',
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
           const Text('메모', style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           Semantics(
             identifier: 'capture.review.memo.field',
-            label: '사진 메모',
+            label: '기록 메모',
             child: TextField(
               key: const ValueKey('capture.review.memo.field'),
               controller: _memoController,
               maxLines: 3,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
-                hintText: '사진에 대한 메모(선택)',
+                hintText: '기록에 대한 메모(선택)',
               ),
             ),
           ),
           const SizedBox(height: 24),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '저장 전 확인',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 4),
-                Text('회원: $memberName'),
-                Text('촬영 방향: ${session.direction.label}'),
-                Text('촬영일: $dateLabel'),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
           AsyncStatusIndicator(
             statusId: 'screen.capture.review.status',
             status: _saveStatus,
@@ -396,18 +320,78 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
             child: Semantics(
               identifier: 'capture.save.button',
               button: true,
-              label: '사진 저장',
+              label: '${session.capturedCount}장 모두 저장',
               enabled: _saveStatus != AsyncStatus.busy,
               child: FilledButton(
                 key: const ValueKey('capture.save.button'),
                 onPressed: _saveStatus == AsyncStatus.busy
                     ? null
                     : () => _save(session),
-                child: const Text('저장'),
+                child: Text('${session.capturedCount}장 모두 저장'),
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ShotPreview extends StatelessWidget {
+  final CaptureShot shot;
+  final VoidCallback onRetake;
+
+  const _ShotPreview({required this.shot, required this.onRetake});
+
+  @override
+  Widget build(BuildContext context) {
+    final id = 'capture.review.shot.${shot.direction.key}';
+
+    return Semantics(
+      identifier: id,
+      container: true,
+      label: '${shot.direction.label} ${shot.isCaptured ? '촬영 결과' : '미촬영'}',
+      child: SizedBox(
+        key: ValueKey(id),
+        width: 160,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              shot.direction.label,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 6),
+            Expanded(
+              child: Container(
+                color: Colors.black12,
+                child: shot.isCaptured
+                    ? Image.file(File(shot.imagePath!), fit: BoxFit.contain)
+                    : const Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.remove_circle_outline),
+                            SizedBox(height: 4),
+                            Text('건너뜀', style: TextStyle(fontSize: 12)),
+                          ],
+                        ),
+                      ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Semantics(
+              identifier: 'capture.review.retake.${shot.direction.key}',
+              button: true,
+              label: '${shot.direction.label} ${shot.isCaptured ? '다시' : ''} 촬영',
+              child: OutlinedButton(
+                key: ValueKey('capture.review.retake.${shot.direction.key}'),
+                onPressed: onRetake,
+                child: Text(shot.isCaptured ? '다시 촬영' : '촬영하기'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
