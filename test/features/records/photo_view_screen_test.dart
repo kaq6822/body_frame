@@ -566,6 +566,69 @@ void main() {
     });
   });
 
+  testWidgets('격자가 보이는 사진은 격자 합성본을 공유한다', (tester) async {
+    await tester.runAsync(() async {
+      final gridPhotoId = await insertPhotoWithVisibleGrid();
+      await tester.pumpWidget(buildApp(routePhotoId: gridPhotoId));
+      await pumpUntil(
+        tester,
+        () => find
+            .byKey(const ValueKey('records.viewer.share.button'))
+            .evaluate()
+            .isNotEmpty,
+      );
+
+      final shareButton = find.byKey(
+        const ValueKey('records.viewer.share.button'),
+      );
+      await tester.ensureVisible(shareButton);
+      await tester.tap(shareButton);
+      await tester.pump();
+
+      for (var i = 0; i < 60 && exportSink.sharedPngNames.isEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+        await tester.pump(const Duration(milliseconds: 25));
+      }
+
+      expect(exportSink.sharedPngNames.single, contains('_grid'));
+      expect(exportSink.sharedOriginalPaths, isEmpty);
+      expect(gridComposer.settings.single.visible, isTrue);
+    });
+  });
+
+  testWidgets('격자를 숨긴 사진은 원본 파일을 그대로 공유한다', (tester) async {
+    await tester.runAsync(() async {
+      // setUp의 기본 사진은 격자를 숨긴 채 저장돼 있다.
+      await tester.pumpWidget(buildApp());
+      await pumpUntil(
+        tester,
+        () => find
+            .byKey(const ValueKey('records.viewer.share.button'))
+            .evaluate()
+            .isNotEmpty,
+      );
+
+      final shareButton = find.byKey(
+        const ValueKey('records.viewer.share.button'),
+      );
+      await tester.ensureVisible(shareButton);
+      await tester.tap(shareButton);
+      await tester.pump();
+
+      for (var i = 0; i < 60 && exportSink.sharedOriginalPaths.isEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+        await tester.pump(const Duration(milliseconds: 25));
+      }
+
+      expect(
+        exportSink.sharedOriginalPaths.single,
+        (await photos.getById(photoId))!.filePath,
+      );
+      expect(exportSink.sharedPngBytes, isEmpty);
+      expect(gridComposer.sourceBytes, isEmpty);
+    });
+  });
+
   testWidgets('격자를 숨긴 상태에서는 합성 없이 원본을 내보내고 옵션도 잠긴다', (tester) async {
     await tester.runAsync(() async {
       // setUp의 기본 사진은 격자를 숨긴 채 저장돼 있다. 화면에 없는 격자가
@@ -645,6 +708,9 @@ class FakePhotoExportSink implements PhotoExportSink {
   final List<String> originalPaths = [];
   final List<Uint8List> pngBytes = [];
   final List<String> pngNames = [];
+  final List<String> sharedOriginalPaths = [];
+  final List<Uint8List> sharedPngBytes = [];
+  final List<String> sharedPngNames = [];
 
   @override
   Future<void> saveOriginalFile(
@@ -658,6 +724,24 @@ class FakePhotoExportSink implements PhotoExportSink {
   Future<void> savePng(Uint8List bytes, {required String name}) async {
     pngBytes.add(Uint8List.fromList(bytes));
     pngNames.add(name);
+  }
+
+  @override
+  Future<void> shareOriginalFile(
+    String sourcePath, {
+    ui.Rect? sharePositionOrigin,
+  }) async {
+    sharedOriginalPaths.add(sourcePath);
+  }
+
+  @override
+  Future<void> sharePng(
+    Uint8List bytes, {
+    required String name,
+    ui.Rect? sharePositionOrigin,
+  }) async {
+    sharedPngBytes.add(Uint8List.fromList(bytes));
+    sharedPngNames.add(name);
   }
 }
 

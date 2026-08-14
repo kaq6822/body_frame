@@ -9,7 +9,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:photo_view/photo_view.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../../core/models/models.dart';
 import '../../core/providers.dart';
@@ -534,26 +533,32 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
     final photo = widget.data.photo;
     final includeGrid = _willComposeGrid;
     final logger = ref.read(appLoggerProvider);
-    // 격자 합성본은 공유 시트에 넘기기 위한 임시 산출물이다. 성공하든 실패하든
-    // 정리해야 캐시에 파생 이미지가 쌓이지 않는다.
-    Directory? shareDir;
+    final sink = ref.read(photoExportSinkProvider);
+    // iPad의 popover 공유 시트는 비어 있지 않은 기준 사각형이 필수다.
+    final renderBox = context.findRenderObject() as RenderBox?;
+    final shareOrigin = renderBox == null || !renderBox.hasSize
+        ? null
+        : renderBox.localToGlobal(Offset.zero) & renderBox.size;
     try {
-      // 격자 합성은 공유하는 순간에만 일어난다. 앱 안에는 합성본을 남기지 않으므로
-      // 임시 파일로 만들어 넘긴다. 토글이 꺼져 있으면 원본을 그대로 공유한다.
-      final XFile file;
+      // 격자 합성은 공유하는 순간에만 일어난다. 앱 안에 합성본을 남기지 않도록
+      // 임시 파일 생성과 정리는 sink 안에서 끝낸다. 토글이 꺼져 있으면 원본을
+      // 그대로 넘긴다.
       if (includeGrid) {
         final sourceBytes = await File(photo.filePath).readAsBytes();
         final png = await ref
             .read(gridPhotoComposerProvider)
             .compose(sourceBytes, _grid);
-        shareDir = await Directory.systemTemp.createTemp('body_frame_share_');
-        final composed = File('${shareDir.path}/${photo.id}_grid.png');
-        await composed.writeAsBytes(png, flush: true);
-        file = XFile(composed.path);
+        await sink.sharePng(
+          png,
+          name: '${photo.id}_grid',
+          sharePositionOrigin: shareOrigin,
+        );
       } else {
-        file = XFile(photo.filePath);
+        await sink.shareOriginalFile(
+          photo.filePath,
+          sharePositionOrigin: shareOrigin,
+        );
       }
-      await Share.shareXFiles([file]);
       logger.phase(
         'photo.share',
         LogPhase.success,
@@ -565,16 +570,6 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
       logger.phase('photo.share', LogPhase.failure, context: {'id': photo.id});
       if (!mounted) return;
       setState(() => _shareState = _OpState.failure);
-    } finally {
-      if (shareDir != null) {
-        try {
-          if (await shareDir.exists()) {
-            await shareDir.delete(recursive: true);
-          }
-        } catch (_) {
-          logger.warn('photo.share.temp.cleanup.failure');
-        }
-      }
     }
   }
 
