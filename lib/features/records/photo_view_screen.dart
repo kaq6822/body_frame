@@ -16,7 +16,7 @@ import '../../core/providers.dart';
 import '../../core/services/app_image_picker.dart';
 import '../../core/services/app_logger.dart';
 import '../../core/theme/app_tokens.dart';
-import '../../core/widgets/grid_painter.dart';
+import '../../core/widgets/photo_grid_overlay.dart';
 import 'services/grid_photo_composer.dart';
 import 'services/photo_export_sink.dart';
 
@@ -140,13 +140,17 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
   _OpState _shareState = _OpState.idle;
   _OpState _deleteState = _OpState.idle;
   _OpState _gridState = _OpState.idle;
-  bool _includeGridOnExport = false;
+
+  /// 내보내기·공유할 이미지에 격자를 합성할지. 앱 안에서 늘 격자와 함께 보므로
+  /// 내보낸 이미지도 같은 모습이 기본이다.
+  bool _includeGridOnExport = true;
 
   /// 이 사진에 적용된 격자 설정. 원본 픽셀에는 굽지 않고 메타데이터로만 남기므로
   /// 촬영 후에도 여기서 조정할 수 있다.
   late GridSettings _grid;
 
-  /// 격자 조정 패널을 펼친 상태인지. 펼치면 미리보기가 함께 켜진다.
+  /// 격자 조정 패널을 펼친 상태인지. 격자 자체는 기본으로 켜져 있으므로 이
+  /// 값은 세부 설정 노출 여부만 결정한다.
   bool _gridEditing = false;
   XFile? _pendingReplacement;
   bool _recoveringLostReplacement = false;
@@ -649,19 +653,36 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
                       ),
                     ),
                     // 격자는 항상 오버레이로만 그린다. 원본 픽셀에는 굽지 않는다.
-                    if (_includeGridOnExport || _gridEditing)
-                      Semantics(
-                        identifier: 'records.viewer.export.grid.preview',
-                        label: '격자 미리보기',
-                        child: IgnorePointer(
-                          child: CustomPaint(
-                            key: const ValueKey(
-                              'records.viewer.export.grid.preview',
-                            ),
-                            painter: GridPainter(_grid.copyWith(visible: true)),
+                    PhotoGridOverlay(
+                      settings: _grid,
+                      semanticsIdentifier: 'records.viewer.grid.overlay',
+                    ),
+                    // 격자를 잠깐 걷어내고 사진만 보고 싶을 때를 위한 버튼.
+                    // 사진 위에 두어야 보고 있는 대상과 조작이 붙어 있다.
+                    Positioned(
+                      top: AppSpacing.sp2,
+                      right: AppSpacing.sp2,
+                      child: Semantics(
+                        identifier: 'records.viewer.grid.visibility.button',
+                        button: true,
+                        label: _grid.visible ? '격자 숨기기' : '격자 보기',
+                        child: IconButton.filledTonal(
+                          key: const ValueKey(
+                            'records.viewer.grid.visibility.button',
                           ),
+                          tooltip: _grid.visible ? '격자 숨기기' : '격자 보기',
+                          icon: Icon(
+                            _grid.visible
+                                ? Icons.grid_on
+                                : Icons.grid_off_outlined,
+                          ),
+                          onPressed: () => setState(() {
+                            _grid = _grid.copyWith(visible: !_grid.visible);
+                            _gridState = _OpState.idle;
+                          }),
                         ),
                       ),
+                    ),
                   ],
                 ),
               ),

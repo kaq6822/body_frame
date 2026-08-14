@@ -31,9 +31,7 @@ void main() {
   });
 
   Widget buildApp() {
-    final router = createCompareTestRouter(
-      initialLocation: '/compare',
-    );
+    final router = createCompareTestRouter(initialLocation: '/compare');
     return ProviderScope(
       overrides: [
         photoRecordRepositoryProvider.overrideWithValue(records),
@@ -91,6 +89,54 @@ void main() {
     );
     expect(unavailableTile.enabled, isFalse);
     expect(unavailableTile.onTap, isNull);
+  });
+
+  testWidgets('같은 날 기록이 여러 건이면 목록에서 등록 시각으로 구분한다', (tester) async {
+    // 촬영 한 건이 기록 하나라 같은 날 여러 건이 생길 수 있다.
+    records.records['r3'] = PhotoRecord(
+      id: 'r3',
+      shotAt: DateTime(2026, 3, 1),
+      createdAt: DateTime(2026, 3, 1, 18, 40),
+      updatedAt: DateTime(2026, 3, 1, 18, 40),
+    );
+
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('compare.after.date.button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('18:40 등록'), findsOneWidget);
+    // 촬영일이 겹치지 않는 기록에는 시각을 덧붙이지 않는다.
+    final unique = tester.widget<ListTile>(
+      find.byKey(const ValueKey('compare.after.date.option.r1')),
+    );
+    expect(unique.subtitle, isNull);
+  });
+
+  test('촬영일이 겹치는 기록만 골라낸다', () {
+    final duplicated = duplicatedDateRecordIds([
+      PhotoRecord(
+        id: 'a',
+        shotAt: DateTime(2026, 3, 1, 9),
+        createdAt: DateTime(2026, 3, 1, 9),
+        updatedAt: DateTime(2026, 3, 1, 9),
+      ),
+      PhotoRecord(
+        id: 'b',
+        shotAt: DateTime(2026, 3, 1, 21),
+        createdAt: DateTime(2026, 3, 1, 21),
+        updatedAt: DateTime(2026, 3, 1, 21),
+      ),
+      PhotoRecord(
+        id: 'c',
+        shotAt: DateTime(2026, 2, 1),
+        createdAt: DateTime(2026, 2, 1),
+        updatedAt: DateTime(2026, 2, 1),
+      ),
+    ]);
+
+    expect(duplicated, {'a', 'b'});
   });
 
   testWidgets('촬영 기록이 1개뿐이면 다음으로 진행할 수 없고 안내가 표시된다', (tester) async {

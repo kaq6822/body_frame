@@ -7,13 +7,16 @@ class ExportImageOptions {
   final bool includeShotDate;
   final bool includeLabel;
   final bool includeMemo;
+
+  /// 격자 무늬를 이미지에 합성할지. 앱 안에서 사진을 항상 격자와 함께 보므로
+  /// 내보낸 이미지도 같은 모습이 기본이다.
   final bool includeGrid;
 
   const ExportImageOptions({
     this.includeShotDate = true,
     this.includeLabel = true,
     this.includeMemo = false,
-    this.includeGrid = false,
+    this.includeGrid = true,
   });
 
   static const ExportImageOptions defaults = ExportImageOptions();
@@ -44,7 +47,7 @@ class ExportImageOptions {
       includeShotDate: (map['includeShotDate'] as bool?) ?? true,
       includeLabel: (map['includeLabel'] as bool?) ?? true,
       includeMemo: (map['includeMemo'] as bool?) ?? false,
-      includeGrid: (map['includeGrid'] as bool?) ?? false,
+      includeGrid: (map['includeGrid'] as bool?) ?? true,
     );
   }
 }

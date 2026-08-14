@@ -68,8 +68,9 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
           extra.beforeMatrix.clone(),
         );
         _previewAfterCtrl = TransformationController(extra.afterMatrix.clone());
-        if (_settingsInitialized && extra.showGrid) {
-          _options = _options.copyWith(includeGrid: true);
+        final choice = extra.showGrid;
+        if (_settingsInitialized && choice != null) {
+          _options = _options.copyWith(includeGrid: choice);
         }
       }
     }
@@ -85,8 +86,10 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
   void _initializeSettings(AppSettings settings) {
     if (_settingsInitialized) return;
     _options = settings.defaultExportOptions;
-    if (_request?.showGrid ?? false) {
-      _options = _options.copyWith(includeGrid: true);
+    // 비교 화면에서 격자를 직접 켜거나 끈 경우에만 그 선택을 따른다.
+    final choice = _request?.showGrid;
+    if (choice != null) {
+      _options = _options.copyWith(includeGrid: choice);
     }
     _settingsInitialized = true;
   }

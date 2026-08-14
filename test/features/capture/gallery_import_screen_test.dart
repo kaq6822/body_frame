@@ -175,6 +175,77 @@ void main() {
     expect(secondImage.existsSync(), isTrue);
   });
 
+  testWidgets('촬영일이 같은 기존 기록이 있어도 이 등록 건은 새 기록으로 만든다', (tester) async {
+    final picker = _FakeAppImagePicker(
+      LostDataResponse.empty(),
+      supportsLostDataRecovery: false,
+      pickedFiles: [XFile(recoveredImage.path)],
+    );
+    final coordinator = AppImagePickerCoordinator(
+      picker: picker,
+      requestStore: _MemoryImagePickerRequestStore(null),
+    );
+    await coordinator.initialize();
+    final records = _FakePhotoRecordRepository();
+    final ingest = _FakePhotoIngestRepository(records);
+    final storage = _FakePhotoStorageService(tempDir);
+    // 화면이 제안하는 촬영일은 EXIF가 없으면 오늘이다. 같은 날 기존 기록을 둔다.
+    final today = DateTime.now();
+    records.records.add(
+      PhotoRecord(
+        id: 'r-existing',
+        shotAt: DateTime(today.year, today.month, today.day),
+        createdAt: today,
+        updatedAt: today,
+      ),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        appImagePickerCoordinatorProvider.overrideWith((ref) => coordinator),
+        photoRecordRepositoryProvider.overrideWithValue(records),
+        photoIngestRepositoryProvider.overrideWithValue(ingest),
+        photoStorageServiceProvider.overrideWithValue(storage),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: GalleryImportScreen()),
+      ),
+    );
+    await pumpUntil(
+      tester,
+      () => find
+          .byKey(const ValueKey('capture.import.pick.button'))
+          .evaluate()
+          .isNotEmpty,
+    );
+    await tester.tap(find.byKey(const ValueKey('capture.import.pick.button')));
+    await pumpUntil(
+      tester,
+      () => find
+          .byKey(const ValueKey('capture.import.item.0.card'))
+          .evaluate()
+          .isNotEmpty,
+    );
+    final direction = find.byKey(
+      const ValueKey('capture.import.item.0.direction.front.button'),
+    );
+    await tester.ensureVisible(direction);
+    await tester.tap(direction);
+    await tester.pump();
+    final save = find.byKey(const ValueKey('capture.import.save.button'));
+    await tester.ensureVisible(save);
+    await tester.tap(save);
+    await pumpUntil(tester, () => ingest.calls == 1);
+
+    expect(ingest.lastNewRecords, hasLength(1));
+    expect(ingest.lastNewRecords.single.id, isNot('r-existing'));
+    expect(ingest.photos.single.recordId, ingest.lastNewRecords.single.id);
+  });
+
   testWidgets('ingest 실패 시 준비한 모든 관리 파일을 정리하고 DB fake를 변경하지 않는다', (
     tester,
   ) async {
@@ -397,7 +468,6 @@ class _FakePhotoStorageService implements PhotoStorageService {
     final file = File(await resolvePath(filePath));
     if (await file.exists()) await file.delete();
   }
-
 }
 
 class _MemoryImagePickerRequestStore implements ImagePickerRequestStore {

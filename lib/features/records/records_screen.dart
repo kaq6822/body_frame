@@ -9,6 +9,7 @@ import '../../core/router/app_routes.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/async_value_view.dart';
 import '../../core/widgets/brand_symbol.dart';
+import '../../core/widgets/photo_grid_overlay.dart';
 import '../compare/compare_dates_screen.dart' show CompareQueryKeys;
 import 'providers/records_providers.dart';
 import 'records_timeline_logic.dart';
@@ -315,6 +316,11 @@ class _RecordCard extends StatelessWidget {
     final dateLabel = formatDayLabel(record.shotAt);
     final compareTarget = findCompareTarget(entries, record.id);
 
+    final ordinal = row.sameDayOrdinal;
+    final ordinalLabel = ordinal == null
+        ? null
+        : '$ordinal/${row.sameDayTotal}번째';
+
     return Card(
       key: ValueKey('records.item.$index'),
       margin: const EdgeInsets.fromLTRB(
@@ -327,7 +333,9 @@ class _RecordCard extends StatelessWidget {
       child: Semantics(
         identifier: 'records.item.$index',
         button: true,
-        label: '$dateLabel 촬영 기록, 사진 ${photos.length}장',
+        label: ordinalLabel == null
+            ? '$dateLabel 촬영 기록, 사진 ${photos.length}장'
+            : '$dateLabel $ordinalLabel 촬영 기록, 사진 ${photos.length}장',
         child: InkWell(
           onTap: () => context.pushNamed(
             AppRoutes.recordDetail,
@@ -346,7 +354,18 @@ class _RecordCard extends StatelessWidget {
                 child: Row(
                   children: [
                     Text(dateLabel, style: context.numericTexts.titleMedium),
-                    if (row.daysSincePrevious != null) ...[
+                    // 같은 날 여러 건이면 제목이 같아지므로 촬영 회차를 붙인다.
+                    if (ordinalLabel != null) ...[
+                      const SizedBox(width: AppSpacing.sp2),
+                      Text(
+                        ordinalLabel,
+                        style: context.numericTexts.bodySmall.copyWith(
+                          color: context.colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                    // 같은 날 기록끼리는 간격이 0이라 알릴 것이 없다.
+                    if ((row.daysSincePrevious ?? 0) > 0) ...[
                       const SizedBox(width: AppSpacing.sp2),
                       _ElapsedBadge(days: row.daysSincePrevious!),
                     ],
@@ -524,6 +543,11 @@ class _StripCell extends StatelessWidget {
                     color: context.photoColors.onChrome.withValues(alpha: 0.7),
                   ),
                 ),
+                PhotoGridOverlay(
+                  settings: current.gridSettings,
+                  semanticsIdentifier:
+                      'records.strip.${direction.key}.grid.overlay',
+                ),
                 Positioned(
                   left: 0,
                   right: 0,
@@ -654,6 +678,11 @@ class _DirectionTile extends StatelessWidget {
                       ),
                     ),
                   ),
+                  PhotoGridOverlay(
+                    settings: row.photo.gridSettings,
+                    semanticsIdentifier:
+                        'records.direction.item.$index.grid.overlay',
+                  ),
                   Positioned(
                     left: 0,
                     right: 0,
@@ -686,7 +715,7 @@ class _DirectionTile extends StatelessWidget {
                               ),
                             ),
                             const Spacer(),
-                            if (row.daysSincePrevious != null)
+                            if ((row.daysSincePrevious ?? 0) > 0)
                               Text(
                                 '+${row.daysSincePrevious}일',
                                 style: context.numericTexts.bodySmall.copyWith(

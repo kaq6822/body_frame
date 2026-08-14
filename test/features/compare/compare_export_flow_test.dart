@@ -265,6 +265,54 @@ void main() {
     );
   });
 
+  testWidgets('비교 화면 격자를 건드리지 않으면 저장된 기본 옵션을 그대로 쓴다', (tester) async {
+    // 비교 화면은 격자를 켠 상태로 시작하지만, 그 기본값만으로 사용자가 저장해 둔
+    // 격자 없이 내보내기 설정을 덮어쓰면 안 된다.
+    const settings = AppSettings(
+      defaultExportOptions: ExportImageOptions(includeGrid: false),
+    );
+    SharedPreferences.setMockInitialValues({'app_settings': settings.toJson()});
+
+    await openExport(tester);
+
+    expect(
+      tester
+          .widget<SwitchListTile>(
+            find.byKey(const ValueKey('compare.export.grid.toggle')),
+          )
+          .value,
+      isFalse,
+    );
+  });
+
+  testWidgets('비교 화면에서 격자를 직접 끄면 생성 화면도 끈 상태로 시작한다', (tester) async {
+    const settings = AppSettings(
+      defaultExportOptions: ExportImageOptions(includeGrid: true),
+    );
+    SharedPreferences.setMockInitialValues({'app_settings': settings.toJson()});
+
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    // 비교 화면의 격자 표시 토글을 직접 끈다.
+    final viewGridToggle = find.byKey(const ValueKey('compare.grid.toggle'));
+    await tester.ensureVisible(viewGridToggle);
+    await tester.tap(viewGridToggle);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('compare.export.button')));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<SwitchListTile>(
+            find.byKey(const ValueKey('compare.export.grid.toggle')),
+          )
+          .value,
+      isFalse,
+    );
+  });
+
   testWidgets('포함 옵션이 바뀌면 기존 생성 결과를 저장하거나 공유할 수 없다', (tester) async {
     await openExport(tester);
     await generateImage(tester);
@@ -359,10 +407,7 @@ void main() {
 
     expect(find.text('기본 내보내기 옵션으로 저장했습니다.'), findsOneWidget);
     expect(settingsService.saveAttempts, 1);
-    expect(
-      settingsService.current.defaultExportOptions.includeLabel,
-      isFalse,
-    );
+    expect(settingsService.current.defaultExportOptions.includeLabel, isFalse);
     expect(settingsService.current.defaultExportOptions.includeMemo, isTrue);
     // 내보내기 옵션 외의 설정은 건드리지 않는다.
     expect(settingsService.current.defaultGrid.spacing, 55);
@@ -399,9 +444,7 @@ void main() {
 
   testWidgets('필요한 컨텍스트 없이 진입하면 안내 화면을 보여준다', (tester) async {
     // 쿼리 파라미터조차 없으면 복구가 불가능하므로 안내 화면을 보여준다.
-    final router = createCompareTestRouter(
-      initialLocation: '/compare/export',
-    );
+    final router = createCompareTestRouter(initialLocation: '/compare/export');
     await tester.pumpWidget(
       ProviderScope(
         overrides: [

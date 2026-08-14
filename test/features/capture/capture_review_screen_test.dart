@@ -157,6 +157,15 @@ void main() {
       find.byKey(const ValueKey('capture.review.shot.leftSide')),
       findsOneWidget,
     );
+    // 찍은 컷은 촬영 당시 격자와 함께 보여준다. 건너뛴 컷에는 얹을 사진이 없다.
+    expect(
+      find.byKey(const ValueKey('capture.review.shot.front.grid.overlay')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('capture.review.shot.leftSide.grid.overlay')),
+      findsNothing,
+    );
 
     await tester.ensureVisible(
       find.byKey(const ValueKey('capture.save.button')),
@@ -213,7 +222,7 @@ void main() {
     expect(record.memo, '체중 감량 시작');
   });
 
-  testWidgets('같은 촬영일 기록이 이미 있으면 새로 만들지 않고 사진만 추가한다', (tester) async {
+  testWidgets('촬영일이 같은 기록이 이미 있어도 이 촬영은 별개의 기록으로 저장한다', (tester) async {
     final recordRepo = _FakePhotoRecordRepository();
     final ingestRepo = _FakePhotoIngestRepository(recordRepo);
     final container = buildContainer(
@@ -243,8 +252,13 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('capture.save.button')));
     await pumpUntil(tester, () => ingestRepo.photos.isNotEmpty);
 
-    expect(ingestRepo.lastNewRecords, isEmpty);
-    expect(ingestRepo.photos.single.recordId, 'r-existing');
+    // 촬영 한 건이 기록 하나다. 같은 날 기록에 합치면 촬영 횟수가 사라진다.
+    expect(ingestRepo.lastNewRecords, hasLength(1));
+    expect(ingestRepo.lastNewRecords.single.id, isNot('r-existing'));
+    expect(
+      ingestRepo.photos.single.recordId,
+      ingestRepo.lastNewRecords.single.id,
+    );
   });
 
   testWidgets('transaction 실패 시 준비 파일을 정리하고 재시도할 수 있다', (tester) async {

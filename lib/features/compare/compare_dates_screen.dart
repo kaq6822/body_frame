@@ -17,6 +17,34 @@ class CompareQueryKeys {
 }
 
 final _dateFormat = DateFormat('yyyy.MM.dd');
+final _timeFormat = DateFormat('HH:mm');
+
+/// 촬영일이 겹치는 기록의 id.
+///
+/// 촬영 한 건이 기록 하나라 같은 날 여러 건이 있을 수 있다. 목록에서 날짜만
+/// 보여주면 어느 촬영분인지 고를 수 없으므로 등록 시각을 함께 붙일 대상을 고른다.
+Set<String> duplicatedDateRecordIds(List<PhotoRecord> records) {
+  final countByDay = <DateTime, int>{};
+  for (final record in records) {
+    final day = DateTime(
+      record.shotAt.year,
+      record.shotAt.month,
+      record.shotAt.day,
+    );
+    countByDay[day] = (countByDay[day] ?? 0) + 1;
+  }
+  return {
+    for (final record in records)
+      if ((countByDay[DateTime(
+                record.shotAt.year,
+                record.shotAt.month,
+                record.shotAt.day,
+              )] ??
+              0) >
+          1)
+        record.id,
+  };
+}
 
 /// 비교 날짜 선택 화면.
 ///
@@ -52,17 +80,24 @@ class _CompareDatesScreenState extends ConsumerState<CompareDatesScreen> {
       context: context,
       builder: (context) {
         final unavailableRecordId = isBefore ? _afterRecordId : _beforeRecordId;
+        final duplicated = duplicatedDateRecordIds(records);
         return SafeArea(
           child: ListView(
             shrinkWrap: true,
             children: records.map((record) {
               final isUnavailable = record.id == unavailableRecordId;
+              // 같은 날 여러 건이면 등록 시각으로 구분한다.
+              final subtitle = [
+                if (duplicated.contains(record.id))
+                  '${_timeFormat.format(record.createdAt)} 등록',
+                if (record.memo != null) record.memo!,
+              ].join(' · ');
               return ListTile(
                 key: ValueKey(
                   'compare.${isBefore ? 'before' : 'after'}.date.option.${record.id}',
                 ),
                 title: Text(_dateFormat.format(record.shotAt)),
-                subtitle: record.memo == null ? null : Text(record.memo!),
+                subtitle: subtitle.isEmpty ? null : Text(subtitle),
                 enabled: !isUnavailable,
                 onTap: isUnavailable
                     ? null

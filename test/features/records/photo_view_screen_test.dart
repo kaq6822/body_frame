@@ -296,6 +296,57 @@ void main() {
     });
   });
 
+  testWidgets('격자는 기본으로 보이고 격자 버튼으로 끄고 다시 켤 수 있다', (tester) async {
+    await tester.runAsync(() async {
+      // 기본 격자 설정으로 저장된 사진. 촬영 화면에서 격자를 숨겼던 사진과
+      // 구분하기 위해 별도로 넣는다.
+      const gridPhotoId = 'photo-with-grid';
+      final gridPhotoPath = await storage.saveBytes(
+        shotAt: shotAt,
+        bytes: await _solidPngBytes(4, 3),
+        fileName: 'front_grid.png',
+      );
+      await photos.insert(
+        BodyPhoto(
+          id: gridPhotoId,
+          recordId: recordId,
+          filePath: gridPhotoPath,
+          direction: BodyDirection.front,
+          width: 4,
+          height: 3,
+          createdAt: shotAt,
+        ),
+      );
+
+      await tester.pumpWidget(buildApp(routePhotoId: gridPhotoId));
+      await pumpUntil(
+        tester,
+        () => find
+            .byKey(const ValueKey('records.viewer.grid.visibility.button'))
+            .evaluate()
+            .isNotEmpty,
+      );
+
+      final overlay = find.byKey(const ValueKey('records.viewer.grid.overlay'));
+      final toggle = find.byKey(
+        const ValueKey('records.viewer.grid.visibility.button'),
+      );
+
+      expect(overlay, findsOneWidget);
+
+      await tester.tap(toggle);
+      await tester.pump();
+      expect(overlay, findsNothing);
+
+      await tester.tap(toggle);
+      await tester.pump();
+      expect(overlay, findsOneWidget);
+
+      // 보기 토글만으로는 저장된 격자 설정을 바꾸지 않는다.
+      expect((await photos.getById(gridPhotoId))!.gridSettings.visible, isTrue);
+    });
+  });
+
   /// 격자 조정 패널을 열고 표시 스위치를 토글한 뒤 적용까지 수행한다.
   Future<void> toggleGridAndApply(WidgetTester tester) async {
     final expand = find.byKey(
@@ -399,10 +450,18 @@ void main() {
       await pumpUntil(
         tester,
         () => find
-            .byKey(const ValueKey('records.viewer.export.button'))
+            .byKey(const ValueKey('records.viewer.export.grid.toggle'))
             .evaluate()
             .isNotEmpty,
       );
+
+      // 격자 합성은 기본으로 켜져 있다. 원본 내보내기를 보려면 직접 끈다.
+      final gridToggle = find.byKey(
+        const ValueKey('records.viewer.export.grid.toggle'),
+      );
+      await tester.ensureVisible(gridToggle);
+      await tester.tap(gridToggle);
+      await tester.pump();
 
       final exportButton = find.byKey(
         const ValueKey('records.viewer.export.button'),
@@ -425,7 +484,7 @@ void main() {
     });
   });
 
-  testWidgets('격자 옵션은 원본을 유지하고 격자가 합성된 별도 PNG를 내보낸다', (tester) async {
+  testWidgets('기본 격자 옵션은 원본을 유지하고 격자가 합성된 별도 PNG를 내보낸다', (tester) async {
     await tester.runAsync(() async {
       final photo = (await photos.getById(photoId))!;
       final originalFile = File(photo.filePath);
@@ -440,15 +499,11 @@ void main() {
             .isNotEmpty,
       );
 
-      final gridToggle = find.byKey(
-        const ValueKey('records.viewer.export.grid.toggle'),
-      );
-      await tester.ensureVisible(gridToggle);
-      await tester.tap(gridToggle);
-      await tester.pump();
+      // 내보내기 옵션은 화면 격자 표시와 별개다. 이 사진은 격자를 숨긴 상태라
+      // 화면에는 격자가 없지만, 내보내기 기본값은 격자 합성이다.
       expect(
-        find.byKey(const ValueKey('records.viewer.export.grid.preview')),
-        findsOneWidget,
+        find.byKey(const ValueKey('records.viewer.grid.overlay')),
+        findsNothing,
       );
 
       final exportButton = find.byKey(

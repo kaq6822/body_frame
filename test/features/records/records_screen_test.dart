@@ -176,6 +176,37 @@ void main() {
       find.bySemanticsIdentifier('records.strip.leftSide.empty'),
       findsNWidgets(2),
     );
+    // 스트립 썸네일도 기본적으로 정렬 격자를 함께 보여준다.
+    expect(
+      find.byKey(const ValueKey('records.strip.front.grid.overlay')),
+      findsWidgets,
+    );
+  });
+
+  testWidgets('같은 날 촬영이 여러 건이면 회차로 구분하고 0일 배지는 붙이지 않는다', (tester) async {
+    await tester.pumpWidget(
+      buildApp(
+        records: [
+          record('r2', DateTime(2026, 8, 8)),
+          record('r1', DateTime(2026, 8, 8)),
+          record('r0', DateTime(2026, 8, 1)),
+        ],
+        photos: [
+          photo('r2', BodyDirection.front),
+          photo('r1', BodyDirection.front),
+          photo('r0', BodyDirection.front),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 같은 날 두 건이므로 회차가 붙고, 8/1 기록은 단독이라 붙지 않는다.
+    expect(find.text('2/2번째'), findsOneWidget);
+    expect(find.text('1/2번째'), findsOneWidget);
+    expect(find.text('8월 8일 (토)'), findsNWidgets(2));
+    // 같은 날 기록끼리는 간격이 0이라 알릴 것이 없다.
+    expect(find.text('+0일'), findsNothing);
+    expect(find.text('+7일'), findsOneWidget);
   });
 
   testWidgets('대상 라벨이 다른 기록은 경과일 계산에 끼어들지 않는다', (tester) async {
@@ -228,6 +259,10 @@ void main() {
     expect(
       find.byKey(const ValueKey('records.direction.item.1')),
       findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('records.direction.item.0.grid.overlay')),
+      findsOneWidget,
     );
 
     // 전체로 돌아오면 카드 목록이 다시 보인다.

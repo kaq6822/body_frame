@@ -11,10 +11,19 @@ class TimelineRow {
   /// 이 행 위에 붙일 월 헤더. 같은 달이 이어지면 null.
   final String? monthHeader;
 
+  /// 같은 촬영일에 기록이 여러 건일 때 이 기록이 그중 몇 번째 촬영인지
+  /// (오래된 것부터 1). 그날 기록이 하나뿐이면 null.
+  final int? sameDayOrdinal;
+
+  /// 같은 촬영일의 총 기록 수. [sameDayOrdinal]이 null이면 null.
+  final int? sameDayTotal;
+
   const TimelineRow({
     required this.entry,
     this.daysSincePrevious,
     this.monthHeader,
+    this.sameDayOrdinal,
+    this.sameDayTotal,
   });
 
   PhotoRecord get record => entry.record;
@@ -55,8 +64,18 @@ int daysBetween(DateTime older, DateTime newer) =>
 /// [entries]는 촬영일 최신순으로 정렬돼 있다고 가정한다([timelineProvider]가
 /// 그렇게 준다). 경과일은 **같은 대상 라벨끼리만** 계산한다. 본인 기록 사이에
 /// 다른 사람 기록이 끼어도 간격이 어긋나지 않아야 하기 때문이다.
+///
+/// 촬영 한 건이 기록 하나이므로 같은 날 여러 건이 나란히 놓일 수 있다. 그때는
+/// 카드 제목이 똑같아지므로 몇 번째 촬영인지 함께 세어 둔다.
 List<TimelineRow> buildTimelineRows(List<RecordWithPhotos> entries) {
   final rows = <TimelineRow>[];
+
+  final totalsByDay = <DateTime, int>{};
+  for (final entry in entries) {
+    final day = _dateOnly(entry.record.shotAt);
+    totalsByDay[day] = (totalsByDay[day] ?? 0) + 1;
+  }
+  final seenByDay = <DateTime, int>{};
 
   for (var i = 0; i < entries.length; i++) {
     final entry = entries[i];
@@ -77,11 +96,19 @@ List<TimelineRow> buildTimelineRows(List<RecordWithPhotos> entries) {
         previousShotAt.year != shotAt.year ||
         previousShotAt.month != shotAt.month;
 
+    // 최신순으로 훑고 있으므로 오래된 촬영이 1번이 되도록 뒤집어 센다.
+    final day = _dateOnly(shotAt);
+    final sameDayTotal = totalsByDay[day] ?? 1;
+    final seen = (seenByDay[day] ?? 0) + 1;
+    seenByDay[day] = seen;
+
     rows.add(
       TimelineRow(
         entry: entry,
         daysSincePrevious: days,
         monthHeader: startsMonth ? formatMonthHeader(shotAt) : null,
+        sameDayOrdinal: sameDayTotal > 1 ? sameDayTotal - seen + 1 : null,
+        sameDayTotal: sameDayTotal > 1 ? sameDayTotal : null,
       ),
     );
   }

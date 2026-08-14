@@ -88,6 +88,35 @@ void main() {
       expect(rows[0].daysSincePrevious, 1);
     });
 
+    test('같은 날 기록이 여러 건이면 오래된 촬영부터 회차를 센다', () {
+      // listAll은 shot_at DESC, created_at DESC라 같은 날 안에서는 나중에 등록한
+      // 기록이 먼저 온다. 회차는 오래된 촬영이 1번이어야 한다.
+      final rows = buildTimelineRows([
+        _entry(id: 'a2', shotAt: DateTime(2026, 8, 8)),
+        _entry(id: 'a1', shotAt: DateTime(2026, 8, 8)),
+        _entry(id: 'b', shotAt: DateTime(2026, 8, 1)),
+      ]);
+
+      expect(rows[0].sameDayOrdinal, 2);
+      expect(rows[0].sameDayTotal, 2);
+      expect(rows[1].sameDayOrdinal, 1);
+      expect(rows[1].sameDayTotal, 2);
+      // 그날 기록이 하나뿐이면 회차를 붙일 이유가 없다.
+      expect(rows[2].sameDayOrdinal, isNull);
+      expect(rows[2].sameDayTotal, isNull);
+    });
+
+    test('같은 날 기록끼리의 간격은 0일로 센다', () {
+      final rows = buildTimelineRows([
+        _entry(id: 'a2', shotAt: DateTime(2026, 8, 8)),
+        _entry(id: 'a1', shotAt: DateTime(2026, 8, 8)),
+        _entry(id: 'b', shotAt: DateTime(2026, 8, 1)),
+      ]);
+
+      expect(rows[0].daysSincePrevious, 0);
+      expect(rows[1].daysSincePrevious, 7);
+    });
+
     test('빈 목록은 빈 결과를 준다', () {
       expect(buildTimelineRows(const []), isEmpty);
     });

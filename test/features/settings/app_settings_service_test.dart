@@ -16,7 +16,8 @@ void main() {
       expect(settings.defaultExportOptions.includeShotDate, isTrue);
       expect(settings.defaultExportOptions.includeLabel, isTrue);
       expect(settings.defaultExportOptions.includeMemo, isFalse);
-      expect(settings.defaultExportOptions.includeGrid, isFalse);
+      // 앱 안에서 사진을 늘 격자와 함께 보므로 내보낼 때도 격자가 기본이다.
+      expect(settings.defaultExportOptions.includeGrid, isTrue);
     });
 
     test('저장한 설정을 그대로 다시 읽는다', () async {

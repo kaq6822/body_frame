@@ -12,6 +12,7 @@ import 'package:body_frame/core/providers.dart';
 import 'package:body_frame/core/services/app_logger.dart';
 import 'package:body_frame/core/services/photo_storage_service.dart';
 import 'package:body_frame/core/theme/app_tokens.dart';
+import 'package:body_frame/core/widgets/photo_grid_overlay.dart';
 import '../records/providers/records_providers.dart';
 import 'providers/capture_session_provider.dart';
 import 'utils/image_meta.dart';
@@ -20,7 +21,8 @@ import 'widgets/async_status_indicator.dart';
 /// 연속 촬영 결과 일괄 확인 화면.
 ///
 /// 세션에서 찍은 컷을 한눈에 보여주고, 촬영일·라벨·메모를 지정해 **하나의
-/// [PhotoRecord]로** 저장한다. 같은 촬영일의 기록이 이미 있으면 재사용한다.
+/// [PhotoRecord]로** 저장한다. 촬영 한 건이 기록 하나이므로 촬영일이 같은 기존
+/// 기록에 합치지 않는다 — 같은 날 두 번 찍으면 기록도 두 개다.
 class CaptureReviewScreen extends ConsumerStatefulWidget {
   static const screenId = 'screen.capture.review';
 
@@ -51,9 +53,6 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
     _memoController.dispose();
     super.dispose();
   }
-
-  bool _isSameDate(DateTime a, DateTime b) =>
-      a.year == b.year && a.month == b.month && a.day == b.day;
 
   Future<void> _pickDate(DateTime current) async {
     final picked = await showDatePicker(
@@ -127,27 +126,18 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
       );
       final now = DateTime.now();
 
-      final existing = await ref.read(photoRecordRepositoryProvider).listAll();
-      PhotoRecord? matched;
-      for (final record in existing) {
-        if (_isSameDate(record.shotAt, shotDate)) {
-          matched = record;
-          break;
-        }
-      }
-
       final label = _labelController.text.trim();
       final memo = _memoController.text.trim();
-      final record =
-          matched ??
-          PhotoRecord(
-            id: const Uuid().v4(),
-            shotAt: shotDate,
-            label: label.isEmpty ? null : label,
-            memo: memo.isEmpty ? null : memo,
-            createdAt: now,
-            updatedAt: now,
-          );
+      // 촬영 한 건은 언제나 자기 기록을 갖는다. 같은 날 여러 번 찍으면 그 횟수가
+      // 그대로 남아야 하므로 촬영일이 같은 기존 기록에 합치지 않는다.
+      final record = PhotoRecord(
+        id: const Uuid().v4(),
+        shotAt: shotDate,
+        label: label.isEmpty ? null : label,
+        memo: memo.isEmpty ? null : memo,
+        createdAt: now,
+        updatedAt: now,
+      );
 
       final photos = <BodyPhoto>[];
       for (final shot in captured) {
@@ -174,10 +164,7 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
 
       await ref
           .read(photoIngestRepositoryProvider)
-          .insertPrepared(
-            newRecords: matched == null ? [record] : const [],
-            photos: photos,
-          );
+          .insertPrepared(newRecords: [record], photos: photos);
       databaseCommitted = true;
 
       logger.phase(
@@ -367,7 +354,24 @@ class _ShotPreview extends StatelessWidget {
               child: Container(
                 color: context.photoColors.backdrop,
                 child: shot.isCaptured
-                    ? Image.file(File(shot.imagePath!), fit: BoxFit.contain)
+                    // 촬영 당시와 같은 격자를 겹쳐 보여준다. 격자 없이 보이면
+                    // 정렬이 맞는지 확인할 수 없어 다시 찍을 판단이 어렵다.
+                    ? Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          Image.file(
+                            File(shot.imagePath!),
+                            fit: BoxFit.contain,
+                          ),
+                          PhotoGridOverlay(
+                            settings:
+                                shot.gridSettingsAtCapture ??
+                                GridSettings.defaults,
+                            semanticsIdentifier:
+                                'capture.review.shot.${shot.direction.key}.grid.overlay',
+                          ),
+                        ],
+                      )
                     : const Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
