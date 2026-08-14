@@ -11,7 +11,8 @@ import 'package:body_frame/core/models/models.dart';
 import 'package:body_frame/core/providers.dart';
 import 'package:body_frame/core/services/app_logger.dart';
 import 'package:body_frame/core/services/photo_storage_service.dart';
-import '../home/providers/home_providers.dart';
+import 'package:body_frame/core/theme/app_tokens.dart';
+import '../records/providers/records_providers.dart';
 import 'providers/capture_session_provider.dart';
 import 'utils/image_meta.dart';
 import 'widgets/async_status_indicator.dart';
@@ -364,7 +365,7 @@ class _ShotPreview extends StatelessWidget {
             const SizedBox(height: 6),
             Expanded(
               child: Container(
-                color: Colors.black12,
+                color: context.photoColors.backdrop,
                 child: shot.isCaptured
                     ? Image.file(File(shot.imagePath!), fit: BoxFit.contain)
                     : const Center(
@@ -383,7 +384,8 @@ class _ShotPreview extends StatelessWidget {
             Semantics(
               identifier: 'capture.review.retake.${shot.direction.key}',
               button: true,
-              label: '${shot.direction.label} ${shot.isCaptured ? '다시' : ''} 촬영',
+              label:
+                  '${shot.direction.label} ${shot.isCaptured ? '다시' : ''} 촬영',
               child: OutlinedButton(
                 key: ValueKey('capture.review.retake.${shot.direction.key}'),
                 onPressed: onRetake,

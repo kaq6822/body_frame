@@ -14,7 +14,10 @@ import '../services/app_logger.dart';
 /// 테스트에서는 [AppDatabase.forTesting]으로 인메모리 DB를 주입한다.
 class AppDatabase {
   static const String dbName = 'body_frame.db';
-  static const int schemaVersion = 1;
+
+  /// 2: body_photos.capture_grid_settings 추가. 격자를 촬영 후에도 수정할 수
+  /// 있게 되면서 "촬영 당시 설정"을 되돌리기 기준점으로 따로 보존한다.
+  static const int schemaVersion = 2;
 
   static const String tablePhotoRecords = 'photo_records';
   static const String tableBodyPhotos = 'body_photos';
@@ -89,6 +92,7 @@ class AppDatabase {
         height INTEGER NOT NULL DEFAULT 0,
         orientation INTEGER NOT NULL DEFAULT 1,
         grid_settings TEXT,
+        capture_grid_settings TEXT,
         memo TEXT,
         created_at INTEGER NOT NULL,
         FOREIGN KEY (record_id) REFERENCES $tablePhotoRecords (id) ON DELETE CASCADE
@@ -105,12 +109,26 @@ class AppDatabase {
     await batch.commit(noResult: true);
   }
 
-  /// 마이그레이션 훅. 스키마 버전이 오르면 여기에 단계별 변경을 추가한다.
+  /// 마이그레이션 훅. 스키마 버전이 오르면 여기에 단계별 변경을 누적한다.
+  ///
+  /// 각 단계는 이전 버전에서 올라오는 모든 경로에서 한 번씩 실행되도록
+  /// `oldVersion < N` 조건으로 쌓는다.
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     _logger.info(
       'database.upgrade',
       context: {'from': oldVersion, 'to': newVersion},
     );
+
+    if (oldVersion < 2) {
+      // 격자를 촬영 후에도 수정할 수 있게 되면서 촬영 당시 설정을 따로 보존한다.
+      // 기존 행은 아직 수정된 적이 없으므로 현재 값이 곧 촬영 당시 값이다.
+      await db.execute(
+        'ALTER TABLE $tableBodyPhotos ADD COLUMN capture_grid_settings TEXT',
+      );
+      await db.execute(
+        'UPDATE $tableBodyPhotos SET capture_grid_settings = grid_settings',
+      );
+    }
   }
 
   Future<void> close() async {

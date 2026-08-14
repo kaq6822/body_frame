@@ -11,7 +11,8 @@ import 'package:body_frame/core/models/models.dart';
 import 'package:body_frame/core/providers.dart';
 import 'package:body_frame/core/services/app_image_picker.dart';
 import 'package:body_frame/core/services/app_logger.dart';
-import '../home/providers/home_providers.dart';
+import 'package:body_frame/core/theme/app_tokens.dart';
+import '../records/providers/records_providers.dart';
 import 'utils/image_meta.dart';
 import 'widgets/async_status_indicator.dart';
 import 'widgets/direction_selector.dart';
@@ -292,9 +293,7 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              const Expanded(
-                child: Text('여러 사진을 선택해 방향과 촬영일을 지정하세요.'),
-              ),
+              const Expanded(child: Text('여러 사진을 선택해 방향과 촬영일을 지정하세요.')),
               const SizedBox(width: 8),
               Semantics(
                 identifier: 'capture.import.pick.button',
@@ -334,11 +333,11 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
                 ),
         ),
         if (_items.isNotEmpty && !_allDirectionsAssigned)
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Text(
               '모든 사진에 촬영 방향을 지정해주세요.',
-              style: TextStyle(color: Colors.red),
+              style: TextStyle(color: context.colors.error),
             ),
           ),
         Padding(

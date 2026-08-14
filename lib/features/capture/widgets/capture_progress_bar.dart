@@ -17,7 +17,7 @@ class CaptureProgressBar extends StatelessWidget {
     required this.shots,
     required this.currentIndex,
     required this.onStepSelected,
-    this.foreground = Colors.white,
+    required this.foreground,
   });
 
   @override

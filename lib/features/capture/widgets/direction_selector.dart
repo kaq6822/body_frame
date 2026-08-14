@@ -37,6 +37,9 @@ class DirectionSelector extends StatelessWidget {
             label: Text(direction.label),
             selected: isSelected,
             onSelected: (_) => onSelected(direction),
+            // 칩 기본값은 터치 타겟을 줄인다. 방향 선택은 오조작이 잦은 지점이라
+            // 최소 터치 타겟을 확보한다.
+            materialTapTargetSize: MaterialTapTargetSize.padded,
           ),
         );
       }).toList(),

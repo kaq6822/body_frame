@@ -61,13 +61,16 @@ class BodyPhotoRepositoryImpl implements BodyPhotoRepository {
   @override
   Future<List<BodyPhoto>> listByDirection(BodyDirection direction) async {
     final db = await _db.database;
-    final rows = await db.rawQuery('''
+    final rows = await db.rawQuery(
+      '''
       SELECT bp.*
       FROM ${AppDatabase.tableBodyPhotos} bp
       JOIN ${AppDatabase.tablePhotoRecords} r ON r.id = bp.record_id
       WHERE bp.direction = ?
       ORDER BY r.shot_at DESC
-    ''', [direction.key]);
+    ''',
+      [direction.key],
+    );
     return Future.wait(rows.map(_photoFromRow));
   }
 
@@ -114,7 +117,7 @@ class BodyPhotoRepositoryImpl implements BodyPhotoRepository {
     final db = await _db.database;
     final existingRows = await db.query(
       AppDatabase.tableBodyPhotos,
-      columns: ['file_path', 'record_id'],
+      columns: ['file_path', 'record_id', 'capture_grid_settings'],
       where: 'id = ?',
       whereArgs: [photo.id],
       limit: 1,
@@ -127,6 +130,13 @@ class BodyPhotoRepositoryImpl implements BodyPhotoRepository {
     }
 
     final map = await _storedPhotoMap(photo);
+
+    // 촬영 당시 격자 설정은 되돌리기의 기준점이다. 모델이 무엇을 들고 왔든
+    // 저장된 값을 그대로 유지해, 수정 경로에서 기준점이 밀리지 않게 한다.
+    final storedCaptureGrid = existingRows.single['capture_grid_settings'];
+    if (storedCaptureGrid != null) {
+      map['capture_grid_settings'] = storedCaptureGrid;
+    }
     final oldPath = existingRows.single['file_path'] as String;
     final newPath = map['file_path'] as String;
 

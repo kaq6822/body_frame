@@ -1,15 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/models/models.dart';
-import '../../core/providers.dart';
 import '../../core/router/app_routes.dart';
+import '../../core/theme/app_tokens.dart';
 import 'providers/settings_providers.dart';
 
-/// 앱 설정 화면.
+/// 전체 설정 화면.
 ///
-/// 기본 격자 설정과 저장 공간 관리로 진입하는 홈 화면.
+/// 격자와 이전 사진 가이드는 촬영 화면의 퀵 패널에서 뷰파인더를 보면서 바로
+/// 조절한다. 이 화면에는 뷰파인더가 필요 없는 설정만 남는다.
 class SettingsScreen extends ConsumerWidget {
   static const screenId = 'screen.settings.home';
 
@@ -50,112 +53,58 @@ class _SettingsBody extends ConsumerStatefulWidget {
 }
 
 class _SettingsBodyState extends ConsumerState<_SettingsBody> {
-  Future<void> _showDefaultGridDialog() async {
-    final service = ref.read(gridSettingsServiceProvider);
-    var current = await service.load();
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (dialogContext, setDialogState) {
-            return AlertDialog(
-              title: const Text('기본 격자 설정'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SwitchListTile(
-                      key: const ValueKey('settings.grid.visible.switch'),
-                      title: const Text('격자 표시'),
-                      value: current.visible,
-                      onChanged: (v) {
-                        current = current.copyWith(visible: v);
-                        setDialogState(() {});
-                      },
-                    ),
-                    Text('투명도: ${current.opacity.toStringAsFixed(2)}'),
-                    Slider(
-                      key: const ValueKey('settings.grid.opacity.slider'),
-                      value: current.opacity,
-                      min: 0.1,
-                      max: 1.0,
-                      onChanged: (v) {
-                        current = current.copyWith(opacity: v);
-                        setDialogState(() {});
-                      },
-                    ),
-                    Text('선 굵기: ${current.lineWidth.toStringAsFixed(1)}'),
-                    Slider(
-                      key: const ValueKey('settings.grid.lineWidth.slider'),
-                      value: current.lineWidth,
-                      min: 0.5,
-                      max: 4.0,
-                      onChanged: (v) {
-                        current = current.copyWith(lineWidth: v);
-                        setDialogState(() {});
-                      },
-                    ),
-                    Text('간격: ${current.spacing.toStringAsFixed(0)}'),
-                    Slider(
-                      key: const ValueKey('settings.grid.spacing.slider'),
-                      value: current.spacing,
-                      min: 10,
-                      max: 120,
-                      onChanged: (v) {
-                        current = current.copyWith(spacing: v);
-                        setDialogState(() {});
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  key: const ValueKey('settings.grid.reset.button'),
-                  onPressed: () async {
-                    await service.reset();
-                    current = GridSettings.defaults;
-                    setDialogState(() {});
-                  },
-                  child: const Text('초기화'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: const Text('취소'),
-                ),
-                FilledButton(
-                  key: const ValueKey('settings.grid.save.button'),
-                  onPressed: () async {
-                    await service.save(current);
-                    if (dialogContext.mounted) {
-                      Navigator.of(dialogContext).pop();
-                    }
-                  },
-                  child: const Text('저장'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
+    final settings =
+        ref.watch(appSettingsControllerProvider).valueOrNull ??
+        AppSettings.defaults;
+    final capture = settings.capture;
+
     return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.only(bottom: AppSpacing.sp6),
       children: [
-        ListTile(
-          key: const ValueKey('settings.grid.item'),
-          leading: const Icon(Icons.grid_on),
-          title: const Text('기본 격자 설정'),
-          subtitle: const Text('촬영 화면의 기본 격자 표시/투명도/굵기/간격'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: _showDefaultGridDialog,
+        const _SectionHeader('촬영'),
+        Semantics(
+          identifier: 'settings.capture.timer.field',
+          label: '셀프 타이머 기본값',
+          value: _timerLabel(capture.timerSeconds),
+          child: ListTile(
+            key: const ValueKey('settings.capture.timer.field'),
+            leading: const Icon(Icons.timer_outlined),
+            title: const Text('셀프 타이머 기본값'),
+            subtitle: const Text('새 촬영 세션을 시작할 때의 값'),
+            trailing: DropdownButton<int>(
+              key: const ValueKey('settings.capture.timer.dropdown'),
+              value: CaptureOptions.normalizeTimer(capture.timerSeconds),
+              onChanged: (value) {
+                if (value == null) return;
+                _updateCapture(capture.copyWith(timerSeconds: value));
+              },
+              items: [
+                for (final seconds in CaptureOptions.timerChoices)
+                  DropdownMenuItem(
+                    value: seconds,
+                    child: Text(_timerLabel(seconds)),
+                  ),
+              ],
+            ),
+          ),
         ),
+        Semantics(
+          identifier: 'settings.capture.countdownFeedback.switch',
+          label: '카운트다운 소리와 진동',
+          value: capture.countdownFeedback ? '켜짐' : '꺼짐',
+          child: SwitchListTile(
+            key: const ValueKey('settings.capture.countdownFeedback.switch'),
+            secondary: const Icon(Icons.volume_up_outlined),
+            title: const Text('카운트다운 소리와 진동'),
+            subtitle: const Text('마지막 2초는 더 강하게 알립니다'),
+            value: capture.countdownFeedback,
+            onChanged: (value) =>
+                _updateCapture(capture.copyWith(countdownFeedback: value)),
+          ),
+        ),
+        const _SectionHeader('데이터'),
         ListTile(
           key: const ValueKey('settings.storage.item'),
           leading: const Icon(Icons.storage_outlined),
@@ -164,16 +113,79 @@ class _SettingsBodyState extends ConsumerState<_SettingsBody> {
           trailing: const Icon(Icons.chevron_right),
           onTap: () => context.pushNamed(AppRoutes.storage),
         ),
-        const Divider(height: 32),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: Text(
-            '기록은 이 기기의 앱 저장소에 보관되며, 새 기기로 옮길 때 시스템의 '
-            '기기 간 전송으로 함께 이동합니다.',
-            style: TextStyle(fontSize: 12),
+        const _SectionHeader('정보'),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.sp4,
+            0,
+            AppSpacing.sp4,
+            AppSpacing.sp4,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '기록은 이 기기의 앱 저장소에 보관되며, 새 기기로 옮길 때 시스템의 '
+                '기기 간 전송으로 함께 이동합니다.',
+                style: context.texts.bodySmall?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sp2),
+              Text(
+                '격자는 원본 사진에 저장되지 않습니다. 촬영 후에도 사진마다 바꿀 수 있고, '
+                '내보내거나 공유할 때만 이미지에 합쳐집니다.',
+                style: context.texts.bodySmall?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sp2),
+              Text(
+                '격자 표시와 이전 사진 가이드는 촬영 화면에서 바로 조절합니다.',
+                style: context.texts.bodySmall?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
+              ),
+            ],
           ),
         ),
       ],
+    );
+  }
+
+  static String _timerLabel(int seconds) => seconds == 0 ? '끔' : '$seconds초';
+
+  void _updateCapture(CaptureOptions next) {
+    // 조작하는 즉시 저장한다. 저장 버튼을 따로 두지 않는다.
+    unawaited(
+      ref
+          .read(appSettingsControllerProvider.notifier)
+          .updateSettings((current) => current.copyWith(capture: next)),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  final String label;
+
+  const _SectionHeader(this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sp4,
+        AppSpacing.sp4,
+        AppSpacing.sp4,
+        AppSpacing.sp1,
+      ),
+      child: Text(
+        label,
+        style: context.texts.labelMedium?.copyWith(
+          color: context.colors.primary,
+          letterSpacing: 0.6,
+        ),
+      ),
     );
   }
 }

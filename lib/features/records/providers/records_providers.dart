@@ -11,10 +11,12 @@ final allRecordsProvider = FutureProvider.autoDispose<List<PhotoRecord>>((
 });
 
 /// 단일 촬영 기록 조회.
-final recordProvider = FutureProvider.autoDispose
-    .family<PhotoRecord?, String>((ref, recordId) async {
-      return ref.watch(photoRecordRepositoryProvider).getById(recordId);
-    });
+final recordProvider = FutureProvider.autoDispose.family<PhotoRecord?, String>((
+  ref,
+  recordId,
+) async {
+  return ref.watch(photoRecordRepositoryProvider).getById(recordId);
+});
 
 /// 촬영 기록에 속한 사진(대표 사진/방향/개수 표시용).
 ///
@@ -36,9 +38,7 @@ class RecordWithPhotos {
   /// 기록에 담긴 방향을 촬영 순서(정면→좌→우→후→기타)로 정렬해 반환한다.
   List<BodyPhoto> get orderedPhotos {
     final sorted = [...photos];
-    sorted.sort(
-      (a, b) => a.direction.index.compareTo(b.direction.index),
-    );
+    sorted.sort((a, b) => a.direction.index.compareTo(b.direction.index));
     return sorted;
   }
 }
@@ -62,10 +62,7 @@ final timelineProvider = FutureProvider.autoDispose<List<RecordWithPhotos>>((
 
   return records
       .map(
-        (r) => RecordWithPhotos(
-          record: r,
-          photos: byRecord[r.id] ?? const [],
-        ),
+        (r) => RecordWithPhotos(record: r, photos: byRecord[r.id] ?? const []),
       )
       .toList();
 });

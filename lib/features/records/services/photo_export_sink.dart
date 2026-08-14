@@ -6,6 +6,8 @@ import 'package:gal/gal.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../../../core/export_album.dart';
+
 /// 단일 사진을 사진 보관함으로 내보내는 플랫폼 경계.
 ///
 /// 테스트에서는 이 provider를 fake로 바꿔 원본 파일과 파생 PNG 중 어떤
@@ -38,7 +40,7 @@ class PhotoExportSinkImpl implements PhotoExportSink {
     );
     final tempFile = await source.copy(tempPath);
     try {
-      await Gal.putImage(tempFile.path, album: 'BodyFrame');
+      await Gal.putImage(tempFile.path, album: kExportAlbumName);
     } finally {
       if (await tempFile.exists()) {
         await tempFile.delete();
@@ -49,7 +51,7 @@ class PhotoExportSinkImpl implements PhotoExportSink {
   @override
   Future<void> savePng(Uint8List bytes, {required String name}) async {
     await _ensureAccess();
-    await Gal.putImageBytes(bytes, name: name);
+    await Gal.putImageBytes(bytes, name: name, album: kExportAlbumName);
   }
 }
 

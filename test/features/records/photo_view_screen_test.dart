@@ -110,10 +110,7 @@ void main() {
           ),
       ],
       child: MaterialApp(
-        home: PhotoViewScreen(
-          recordId: routeRecordId,
-          photoId: routePhotoId,
-        ),
+        home: PhotoViewScreen(recordId: routeRecordId, photoId: routePhotoId),
       ),
     );
   }
@@ -296,6 +293,103 @@ void main() {
         await File(replaced!.filePath).readAsBytes(),
         orderedEquals(replacementBytes),
       );
+    });
+  });
+
+  /// 격자 조정 패널을 열고 표시 스위치를 토글한 뒤 적용까지 수행한다.
+  Future<void> toggleGridAndApply(WidgetTester tester) async {
+    final expand = find.byKey(
+      const ValueKey('records.viewer.grid.expand.button'),
+    );
+    await tester.ensureVisible(expand);
+    await tester.tap(expand);
+    await tester.pump();
+
+    final visibleSwitch = find.byKey(
+      const ValueKey('records.viewer.grid.visible.switch'),
+    );
+    await tester.ensureVisible(visibleSwitch);
+    await tester.tap(visibleSwitch);
+    await tester.pump();
+
+    final apply = find.byKey(
+      const ValueKey('records.viewer.grid.apply.button'),
+    );
+    await tester.ensureVisible(apply);
+    await tester.tap(apply);
+    await tester.pump();
+  }
+
+  testWidgets('격자를 조정해 적용하면 메타데이터만 바뀌고 원본 파일은 그대로다', (tester) async {
+    await tester.runAsync(() async {
+      final before = (await photos.getById(photoId))!;
+      final originalBytes = await File(before.filePath).readAsBytes();
+
+      await tester.pumpWidget(buildApp());
+      await pumpUntil(
+        tester,
+        () => find
+            .byKey(const ValueKey('records.viewer.grid.expand.button'))
+            .evaluate()
+            .isNotEmpty,
+      );
+
+      await toggleGridAndApply(tester);
+
+      BodyPhoto? after;
+      for (var i = 0; i < 40; i++) {
+        after = await photos.getById(photoId);
+        if (after!.gridSettings.visible != before.gridSettings.visible) break;
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+        await tester.pump(const Duration(milliseconds: 25));
+      }
+
+      // 격자 표시 여부만 바뀌어야 한다.
+      expect(after!.gridSettings.visible, !before.gridSettings.visible);
+      // 촬영 당시 값은 되돌리기 기준점이므로 보존된다.
+      expect(after.captureGridSettings, before.captureGridSettings);
+      expect(after.isGridEdited, isTrue);
+      // 원본 픽셀에는 격자를 굽지 않는다.
+      expect(await File(after.filePath).readAsBytes(), originalBytes);
+    });
+  });
+
+  testWidgets('촬영 당시와 달라지면 되돌리기가 나타나고 누르면 원래 설정으로 돌아간다', (tester) async {
+    await tester.runAsync(() async {
+      final before = (await photos.getById(photoId))!;
+
+      await tester.pumpWidget(buildApp());
+      await pumpUntil(
+        tester,
+        () => find
+            .byKey(const ValueKey('records.viewer.grid.expand.button'))
+            .evaluate()
+            .isNotEmpty,
+      );
+
+      final revert = find.byKey(
+        const ValueKey('records.viewer.grid.revert.button'),
+      );
+      // 촬영 당시 설정과 같은 상태에서는 되돌릴 것이 없다.
+      expect(revert, findsNothing);
+
+      await toggleGridAndApply(tester);
+      await pumpUntil(tester, () => revert.evaluate().isNotEmpty);
+
+      await tester.ensureVisible(revert);
+      await tester.tap(revert);
+      await tester.pump();
+
+      BodyPhoto? restored;
+      for (var i = 0; i < 40; i++) {
+        restored = await photos.getById(photoId);
+        if (!restored!.isGridEdited) break;
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+        await tester.pump(const Duration(milliseconds: 25));
+      }
+
+      expect(restored!.gridSettings, before.captureGridSettings);
+      expect(restored.isGridEdited, isFalse);
     });
   });
 

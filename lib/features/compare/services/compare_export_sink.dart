@@ -8,6 +8,8 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../../core/export_album.dart';
+
 typedef CompareShareDirectoryProvider = Future<Directory> Function();
 typedef CompareShareInvoker =
     Future<void> Function(
@@ -53,7 +55,7 @@ class CompareExportSinkImpl implements CompareExportSink {
 
   @override
   Future<void> saveToGallery(Uint8List bytes, {required String name}) {
-    return Gal.putImageBytes(bytes, name: name);
+    return Gal.putImageBytes(bytes, name: name, album: kExportAlbumName);
   }
 
   @override

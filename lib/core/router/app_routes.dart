@@ -5,20 +5,22 @@
 class AppRoutes {
   AppRoutes._();
 
-  /// 1. 홈 타임라인 화면.
+  /// 1. 홈 = 연속 세션 촬영 화면.
+  ///
+  /// 앱을 열면 곧바로 카메라다. 기록과 설정은 이 화면에서 진입한다.
   static const home = 'home';
 
   // --- 사진 등록 ---
-  /// 2. 연속 세션 촬영 화면.
-  static const captureSession = 'capture.session';
-
-  /// 3. 촬영 결과 일괄 확인 화면.
+  /// 2. 촬영 결과 일괄 확인 화면.
   static const captureReview = 'capture.review';
 
-  /// 4. 갤러리 사진 등록 화면.
+  /// 3. 갤러리 사진 등록 화면.
   static const galleryImport = 'capture.import';
 
   // --- 기록 ---
+  /// 4. 촬영 기록 타임라인 화면.
+  static const records = 'records';
+
   /// 5. 촬영 기록 상세 화면.
   static const recordDetail = 'records.detail';
 

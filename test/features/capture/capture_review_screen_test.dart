@@ -102,32 +102,23 @@ void main() {
   // capture_review_screen은 저장 성공 시 context.go('/')로 홈에 돌아간다.
   // go_router 없이 순수 MaterialApp만 두면 이동 시 예외가 나며 위젯이
   // settle되지 않으므로, 실제 라우팅과 동일하게 최소 GoRouter로 감싼다.
+  // 홈이 촬영 화면이므로 리뷰는 홈의 직접 하위 라우트다.
   Widget wrapWithRouter(ProviderContainer container) {
     final router = GoRouter(
-      initialLocation: '/capture/review',
+      initialLocation: '/review',
       routes: [
         GoRoute(
           path: '/',
           name: AppRoutes.home,
           builder: (context, state) => const Scaffold(
-            key: ValueKey('screen.home.stub'),
-            body: Text('home stub'),
+            key: ValueKey('screen.capture.camera.stub'),
+            body: Text('camera stub'),
           ),
           routes: [
             GoRoute(
-              path: 'capture',
-              name: AppRoutes.captureSession,
-              builder: (context, state) => const Scaffold(
-                key: ValueKey('screen.capture.camera.stub'),
-                body: Text('camera stub'),
-              ),
-              routes: [
-                GoRoute(
-                  path: 'review',
-                  name: AppRoutes.captureReview,
-                  builder: (context, state) => const CaptureReviewScreen(),
-                ),
-              ],
+              path: 'review',
+              name: AppRoutes.captureReview,
+              builder: (context, state) => const CaptureReviewScreen(),
             ),
           ],
         ),

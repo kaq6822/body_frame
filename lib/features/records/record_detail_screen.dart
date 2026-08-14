@@ -225,7 +225,9 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
       if (context.canPop()) {
         context.pop(true);
       } else {
-        context.goNamed(AppRoutes.home);
+        // 딥링크로 상세에 바로 들어온 경우엔 돌아갈 화면이 없다. 삭제한 기록이
+        // 있던 타임라인으로 보낸다(홈은 촬영 화면이라 결과를 확인할 수 없다).
+        context.goNamed(AppRoutes.records);
       }
     } catch (err) {
       logger.phase(

@@ -6,7 +6,7 @@ import '../../core/providers.dart';
 // allRecordsProvider/recordPhotosProvider는 home feature의 정의를 단일
 // 출처로 재사용한다(중복 정의 시 invalidate가 서로 전파되지 않고 두 파일
 // 동시 import에서 이름이 충돌한다).
-export '../home/providers/home_providers.dart'
+export '../records/providers/records_providers.dart'
     show allRecordsProvider, recordPhotosProvider;
 
 /// compare feature 전용 조회용 provider 모음.

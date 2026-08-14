@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../../core/models/models.dart';
+import '../../../core/photo_frame.dart';
+import '../../../core/theme/app_tokens.dart';
 import 'compare_grid_overlay.dart';
 
 /// 좌우 비교 화면과 비교 이미지 생성 화면이 공용으로 쓰는 사진 표시 영역.
@@ -84,19 +86,19 @@ class ComparePhotoPane extends StatelessWidget {
                   )
                 : LayoutBuilder(
                     builder: (context, constraints) {
-                      const targetAspect = 3 / 4; // width / height
+                      const targetAspect = kPhotoFrameAspect;
                       double width = constraints.maxWidth;
                       double height = width / targetAspect;
-                      if (!height.isFinite ||
-                          height > constraints.maxHeight) {
+                      if (!height.isFinite || height > constraints.maxHeight) {
                         height = constraints.maxHeight;
                         width = height * targetAspect;
                       }
                       final size = Size(width, height);
                       final report = onPhotoBoxSize;
                       if (report != null) {
-                        WidgetsBinding.instance
-                            .addPostFrameCallback((_) => report(size));
+                        WidgetsBinding.instance.addPostFrameCallback(
+                          (_) => report(size),
+                        );
                       }
                       return Center(
                         child: SizedBox(
@@ -118,7 +120,7 @@ class ComparePhotoPane extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          const ColoredBox(color: Color(0x14000000)),
+          ColoredBox(color: context.photoColors.inset),
           Semantics(
             identifier: '$paneIdentifier.viewer',
             label: interactive ? '$label 사진, 확대 및 이동 가능' : '$label 사진 미리보기',
@@ -133,9 +135,8 @@ class ComparePhotoPane extends StatelessWidget {
               child: Image.file(
                 File(photo.filePath),
                 fit: BoxFit.contain,
-                errorBuilder: (context, error, stack) => const Center(
-                  child: Icon(Icons.broken_image_outlined),
-                ),
+                errorBuilder: (context, error, stack) =>
+                    const Center(child: Icon(Icons.broken_image_outlined)),
               ),
             ),
           ),
