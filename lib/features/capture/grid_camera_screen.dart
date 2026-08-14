@@ -15,10 +15,12 @@ import 'package:body_frame/core/theme/app_tokens.dart';
 import 'package:body_frame/features/records/providers/records_providers.dart';
 import 'package:body_frame/features/settings/providers/settings_providers.dart';
 import 'camera/capture_camera_controller.dart';
+import 'camera_permission_guide.dart';
 import 'providers/capture_providers.dart';
 import 'providers/capture_session_provider.dart';
 import 'utils/capture_guides.dart';
 import 'widgets/async_status_indicator.dart';
+import 'widgets/camera_notice_card.dart';
 import 'widgets/capture_progress_bar.dart';
 import 'widgets/grid_overlay.dart';
 import 'widgets/grid_settings_panel.dart';
@@ -47,7 +49,7 @@ class GridCameraScreen extends ConsumerStatefulWidget {
   ConsumerState<GridCameraScreen> createState() => _GridCameraScreenState();
 }
 
-enum _CameraStatus { initializing, ready, error }
+enum _CameraStatus { initializing, ready, error, permissionDenied }
 
 class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
     with WidgetsBindingObserver {
@@ -58,6 +60,14 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
   bool _showQuickPanel = false;
   bool _cameraSuspended = false;
   bool _screenDisposed = false;
+
+  /// 마지막 초기화가 권한 때문에 막혔는지.
+  ///
+  /// 화면 상태와 따로 둔다. 권한 창이 떠 있는 동안에는 앱이 정지 상태여서
+  /// 실패를 화면에 반영하지 못하는데, 그 사실을 잊으면 복귀 직후 같은 초기화를
+  /// 다시 시도해 무한히 반복된다.
+  bool _permissionDenied = false;
+
   bool _showPreviousPhotoGuide = true;
   double _previousPhotoGuideOpacity = 0.35;
   String? _failedPreviousPhotoGuidePath;
@@ -133,6 +143,7 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
     logger.phase('capture.camera.init', LogPhase.start);
     try {
       await _controller.initialize(useFrontLens: _useFrontLens);
+      _permissionDenied = false;
       if (!mounted || _screenDisposed || _cameraSuspended) return;
       setState(() {
         // 요청한 렌즈가 없으면 컨트롤러가 다른 렌즈로 대체한다. 버튼 상태를
@@ -141,13 +152,42 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
         _status = _CameraStatus.ready;
       });
       logger.phase('capture.camera.init', LogPhase.success);
-    } catch (_) {
+    } catch (error) {
+      // 권한 창이 떠 있는 동안 실패하면 아래 setState까지 가지 못한다. 상태
+      // 반영보다 먼저 기록해 복귀 시점에 자동 재시도를 막을 근거로 남긴다.
+      _permissionDenied = isCameraPermissionError(error);
       if (!mounted || _screenDisposed || _cameraSuspended) return;
       // 카메라를 못 쓰는 상태에서 카운트다운이 계속 돌면 0초에 촬영이 실패한다.
       _stopCountdown();
-      setState(() => _status = _CameraStatus.error);
+      setState(() => _status = _failureStatus);
       logger.phase('capture.camera.init', LogPhase.failure);
     }
+  }
+
+  _CameraStatus get _failureStatus =>
+      _permissionDenied ? _CameraStatus.permissionDenied : _CameraStatus.error;
+
+  /// 이 앱의 시스템 설정 화면을 연다.
+  ///
+  /// 실패해도 화면 상태는 건드리지 않는다. 설정 앱이 없거나 열기가 막힌 기기에서도
+  /// 카드에 남아 있는 경로 안내로 사용자가 직접 찾아갈 수 있다.
+  void _openAppSettings() {
+    unawaited(
+      ref.read(openAppSettingsProvider)().catchError((Object error) {
+        ref
+            .read(appLoggerProvider)
+            .phase('capture.camera.settings.open', LogPhase.failure);
+      }),
+    );
+  }
+
+  /// 안내를 보고 사용자가 직접 누르는 재시도.
+  ///
+  /// 권한을 켜고 돌아온 경우가 여기로 온다. 막혔던 기록을 지워 초기화를 처음부터
+  /// 다시 진행한다.
+  void _retryCamera() {
+    _permissionDenied = false;
+    unawaited(_initCamera());
   }
 
   Future<void> _disposeCamera() {
@@ -166,6 +206,15 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
     if (state == AppLifecycleState.resumed) {
       if (!_cameraSuspended) return;
       _cameraSuspended = false;
+      if (_permissionDenied) {
+        // 권한 창은 뜨고 닫힐 때마다 이 콜백을 흔든다. 그때마다 초기화를 다시
+        // 걸면 거부된 권한을 향해 무한히 재시도한다. 안내를 띄우고 사용자의
+        // 재시도를 기다린다.
+        if (mounted) {
+          setState(() => _status = _CameraStatus.permissionDenied);
+        }
+        return;
+      }
       unawaited(_initCamera());
       return;
     }
@@ -176,7 +225,13 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
     // 화면이라 복귀 후 남은 카운트가 이어지면 의도하지 않은 촬영이 된다.
     _stopCountdown();
     if (mounted) {
-      setState(() => _status = _CameraStatus.initializing);
+      // 권한 안내는 유지한다. 준비 중으로 되돌리면 권한 창이 오갈 때마다
+      // 안내가 사라져 사용자가 무엇을 해야 할지 알 수 없다.
+      setState(() {
+        if (_status != _CameraStatus.permissionDenied) {
+          _status = _CameraStatus.initializing;
+        }
+      });
     }
     unawaited(_disposeCamera());
   }
@@ -389,9 +444,16 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
                   left: AppSpacing.sp2,
                   right: AppSpacing.sp2,
                   bottom: 100,
-                  child: _showQuickPanel
-                      ? _buildQuickPanel(previousPhotoGuideAsync)
-                      : _buildAssistPanel(direction),
+                  child: switch (_status) {
+                    _ when _showQuickPanel => _buildQuickPanel(
+                      previousPhotoGuideAsync,
+                    ),
+                    // 미리보기가 없으면 "정면을 바라보고 서세요" 같은 안내는
+                    // 따라 할 수 없다. 그 자리를 비워 안내 카드가 겹치지 않게
+                    // 하고, 사용자가 지금 읽어야 할 것만 남긴다.
+                    _CameraStatus.ready => _buildAssistPanel(direction),
+                    _ => const SizedBox.shrink(),
+                  },
                 ),
                 Positioned(
                   left: 0,
@@ -409,52 +471,68 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
     );
   }
 
+  /// 안내 카드를 미리보기 자리 가운데 놓는다.
+  ///
+  /// 세로가 짧은 기기에서는 카드가 영역보다 높을 수 있다. 그때 잘려 버리면 재시도
+  /// 버튼에 손이 닿지 않으므로 스크롤로 접근하게 한다.
+  Widget _noticeArea(Widget card) =>
+      Center(child: SingleChildScrollView(child: card));
+
+  /// 안내 카드 안의 기록 화면 진입 버튼.
+  ///
+  /// 카드가 밝으므로 사진 위 컨트롤용 흰색(`photoColors.onChrome`)을 쓰지 않고
+  /// 테마 기본 색을 그대로 둔다.
+  Widget _buildRecordsFallbackButton() => Semantics(
+    identifier: 'capture.camera.records.fallback.button',
+    button: true,
+    label: '기록 보기',
+    child: TextButton.icon(
+      key: const ValueKey('capture.camera.records.fallback.button'),
+      onPressed: _openRecords,
+      icon: const Icon(Icons.photo_library_outlined),
+      label: const Text('기록 보기'),
+    ),
+  );
+
   Widget _buildCameraArea(
     GridSettings? gridSettings,
     AsyncValue<String?> previousPhotoGuideAsync,
     BodyDirection direction,
   ) => switch (_status) {
-    _CameraStatus.initializing => const Center(
-      child: AsyncStatusIndicator(
+    _CameraStatus.initializing => _noticeArea(
+      const CameraNoticeCard(
         statusId: 'screen.capture.camera.status',
-        status: AsyncStatus.busy,
-        busyLabel: '카메라를 준비하는 중입니다.',
+        tone: CameraNoticeTone.busy,
+        title: '카메라를 준비하는 중입니다.',
       ),
     ),
     // 홈이 카메라이므로 카메라를 못 쓰면 앱이 빈 화면이 된다. 재시도와 함께
     // 기록으로 빠져나가는 대체 동선을 항상 남긴다.
-    _CameraStatus.error => Center(
-      child: Padding(
-        padding: AppSpacing.content,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AsyncStatusIndicator(
-              statusId: 'screen.capture.camera.status',
-              status: AsyncStatus.failure,
-              failureMessage: '카메라를 사용할 수 없습니다. 권한을 확인해주세요.',
-              onRetry: () => unawaited(_initCamera()),
-            ),
-            const SizedBox(height: AppSpacing.sp3),
-            Semantics(
-              identifier: 'capture.camera.records.fallback.button',
-              button: true,
-              label: '기록 보기',
-              child: TextButton.icon(
-                key: const ValueKey('capture.camera.records.fallback.button'),
-                onPressed: _openRecords,
-                icon: Icon(
-                  Icons.photo_library_outlined,
-                  color: context.photoColors.onChrome,
-                ),
-                label: Text(
-                  '기록 보기',
-                  style: TextStyle(color: context.photoColors.onChrome),
-                ),
-              ),
-            ),
-          ],
-        ),
+    _CameraStatus.error => _noticeArea(
+      CameraNoticeCard(
+        statusId: 'screen.capture.camera.status',
+        tone: CameraNoticeTone.failure,
+        title: '카메라를 사용할 수 없습니다.',
+        description: '다시 시도해도 열리지 않으면 지난 기록을 먼저 확인해보세요.',
+        onRetry: _retryCamera,
+        secondaryAction: _buildRecordsFallbackButton(),
+      ),
+    ),
+    // 권한이 없으면 재시도해도 같은 거부가 돌아온다. 설정으로 곧바로 보내고,
+    // 재시도는 권한을 켜고 돌아온 뒤 사용자가 직접 누르게 한다.
+    _CameraStatus.permissionDenied => _noticeArea(
+      CameraNoticeCard(
+        statusId: 'screen.capture.camera.status',
+        tone: CameraNoticeTone.actionNeeded,
+        title: '카메라 권한이 필요합니다.',
+        description: '촬영을 시작하려면 카메라 접근을 허용해주세요.',
+        onOpenSettings: _openAppSettings,
+        onRetry: _retryCamera,
+        secondaryAction: _buildRecordsFallbackButton(),
+        // 버튼이 열리지 않는 기기도 있어 경로를 함께 남긴다. 플랫폼마다 메뉴
+        // 구조가 달라 실행 중인 OS에 맞는 경로만 보여준다.
+        settingsPath: cameraPermissionSettingsPath(),
+        settingsPathHint: cameraPermissionSettingsHint,
       ),
     ),
     _CameraStatus.ready => Stack(

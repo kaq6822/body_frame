@@ -109,5 +109,83 @@ void main() {
       expect(selected, ResolutionPreset.medium);
       expect(tried, [ResolutionPreset.medium]);
     });
+
+    test('회복할 수 없는 오류는 남은 프리셋을 시도하지 않고 그대로 던진다', () async {
+      // 권한 거부는 해상도와 무관하다. 체인을 계속 돌면 권한 요청이 프리셋
+      // 수만큼 반복되고, 실기기에서 실패 로그만 쌓였다.
+      final tried = <ResolutionPreset>[];
+
+      await expectLater(
+        selectWorkingPreset(
+          presets: kResolutionFallbackChain,
+          attempt: (preset) async {
+            tried.add(preset);
+            throw CameraException(
+              'CameraAccessDenied',
+              'Camera access permission was denied.',
+            );
+          },
+          isUnrecoverable: isCameraPermissionError,
+        ),
+        throwsA(
+          isA<CameraException>().having(
+            (e) => e.code,
+            'code',
+            'CameraAccessDenied',
+          ),
+        ),
+      );
+      expect(tried, [ResolutionPreset.max]);
+    });
+
+    test('회복할 수 있는 오류는 판정기가 있어도 계속 내려간다', () async {
+      final tried = <ResolutionPreset>[];
+
+      final selected = await selectWorkingPreset(
+        presets: kResolutionFallbackChain,
+        attempt: (preset) async {
+          tried.add(preset);
+          if (preset != ResolutionPreset.high) {
+            throw CameraException('resolution', '지원하지 않는 해상도(테스트)');
+          }
+        },
+        isUnrecoverable: isCameraPermissionError,
+      );
+
+      expect(selected, ResolutionPreset.high);
+      expect(tried, [
+        ResolutionPreset.max,
+        ResolutionPreset.veryHigh,
+        ResolutionPreset.high,
+      ]);
+    });
+  });
+
+  group('isCameraPermissionError', () {
+    test('플랫폼별 권한 거부 코드를 모두 권한 문제로 본다', () {
+      // Android는 앞의 둘, iOS는 WithoutPrompt·Restricted 변형을 더 쓴다.
+      for (final code in [
+        'CameraAccessDenied',
+        'AudioAccessDenied',
+        'CameraAccessDeniedWithoutPrompt',
+        'AudioAccessDeniedWithoutPrompt',
+        'CameraAccessRestricted',
+        'CameraPermissionsRequestOngoing',
+      ]) {
+        expect(
+          isCameraPermissionError(CameraException(code, '권한(테스트)')),
+          isTrue,
+          reason: '$code는 권한 문제로 분류해야 한다',
+        );
+      }
+    });
+
+    test('해상도·그 밖의 오류는 권한 문제가 아니다', () {
+      expect(
+        isCameraPermissionError(CameraException('resolution', '해상도(테스트)')),
+        isFalse,
+      );
+      expect(isCameraPermissionError(StateError('카메라 없음(테스트)')), isFalse);
+    });
   });
 }

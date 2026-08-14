@@ -1,5 +1,7 @@
 import 'dart:io';
 
+// 이 앱에도 같은 이름의 설정 모델(core/models/app_settings.dart)이 있어 구분한다.
+import 'package:app_settings/app_settings.dart' as platform_settings;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:body_frame/core/models/models.dart';
@@ -14,6 +16,15 @@ final captureCameraControllerFactoryProvider =
     Provider<CaptureCameraController Function()>(
       (ref) => DeviceCaptureCameraController.new,
     );
+
+/// 이 앱의 시스템 설정 화면을 여는 플랫폼 경계.
+///
+/// 권한을 거부한 사용자가 설정 앱을 직접 헤매지 않게 앱 정보 화면으로 바로
+/// 보낸다. 플러그인 채널을 타므로 위젯 테스트에서는 이 provider를 교체해
+/// "눌렀을 때 열기를 요청하는지"만 확인한다.
+final openAppSettingsProvider = Provider<Future<void> Function()>(
+  (ref) => platform_settings.AppSettings.openAppSettings,
+);
 
 /// 같은 촬영 방향의 사진 중 가장 최근에 저장됐고 실제 파일도 남아 있는
 /// 원본 경로를 찾는다. 최신 행의 파일이 유실됐으면 다음 사진을 확인한다.

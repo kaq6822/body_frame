@@ -64,6 +64,7 @@ dependencies:
 
   # Image metadata (EXIF for capture-date / rotation)
   exif: ^3.3.0
+  app_settings: ^8.0.3
 
 dev_dependencies:
   flutter_test:

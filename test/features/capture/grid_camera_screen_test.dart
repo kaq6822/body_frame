@@ -1,15 +1,18 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:body_frame/core/korean_text.dart';
 import 'package:body_frame/core/models/models.dart';
 import 'package:body_frame/core/photo_frame.dart';
 import 'package:body_frame/core/providers.dart';
 import 'package:body_frame/core/repositories/body_photo_repository.dart';
 import 'package:body_frame/core/router/app_routes.dart';
+import 'package:body_frame/features/capture/camera_permission_guide.dart';
 import 'package:body_frame/features/capture/grid_camera_screen.dart';
 import 'package:body_frame/features/capture/providers/capture_providers.dart';
 import 'package:body_frame/features/capture/providers/capture_session_provider.dart';
 import 'package:body_frame/features/records/providers/records_providers.dart';
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -302,6 +305,147 @@ void main() {
     await tester.tap(fallback);
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('screen.records.stub')), findsOneWidget);
+  });
+
+  group('카메라 권한 거부', () {
+    /// 실기기 권한 거부에서 확인된 문제를 고정한다.
+    ///
+    /// 권한 창이 뜨고 닫힐 때마다 lifecycle이 흔들리는데, 복귀마다 초기화를 다시
+    /// 걸어 거부된 권한을 향해 무한히 재시도했다. 그동안 실패를 화면에 반영하지
+    /// 못해 사용자는 "카메라를 준비하는 중입니다."만 계속 보았다.
+    FakeCaptureCameraController deniedCamera() => FakeCaptureCameraController(
+      initializeError: CameraException(
+        'CameraAccessDenied',
+        'Camera access permission was denied.',
+      ),
+    );
+
+    testWidgets('준비 중 대신 권한 안내를 보여준다', (tester) async {
+      final fake = deniedCamera();
+      await tester.pumpWidget(buildApp(() => fake));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(keepPhrasesWhole('카메라 권한이 필요합니다.')),
+        findsOneWidget,
+      );
+      expect(
+        find.text(keepPhrasesWhole('카메라를 준비하는 중입니다.')),
+        findsNothing,
+      );
+      expect(
+        tester
+            .getSemantics(find.bySemanticsIdentifier('screen.capture.camera.status'))
+            .value,
+        'failure',
+      );
+    });
+
+    testWidgets('앱이 재개될 때마다 초기화를 다시 시도하지 않는다', (tester) async {
+      final fake = deniedCamera();
+      await tester.pumpWidget(buildApp(() => fake));
+      await tester.pumpAndSettle();
+      expect(fake.initializeCalls, 1);
+
+      // 권한 창이 오가는 상황. 이 왕복마다 재시도하면 무한 루프가 된다.
+      for (var i = 0; i < 3; i++) {
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.inactive,
+        );
+        await tester.pumpAndSettle();
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        await tester.pumpAndSettle();
+      }
+
+      expect(fake.initializeCalls, 1);
+      // 안내가 사라지면 사용자가 무엇을 해야 할지 알 수 없다.
+      expect(
+        find.text(keepPhrasesWhole('카메라 권한이 필요합니다.')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('설정 열기를 누르면 시스템 설정 화면 열기를 요청한다', (tester) async {
+      var openCalls = 0;
+      final fake = deniedCamera();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            openAppSettingsProvider.overrideWithValue(() async {
+              openCalls += 1;
+            }),
+          ],
+          child: buildApp(() => fake),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey('screen.capture.camera.status.settings.button'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(openCalls, 1);
+      // 설정을 열어도 카메라를 다시 여는 것은 사용자가 돌아와 재시도할 때다.
+      expect(fake.initializeCalls, 1);
+    });
+
+    testWidgets('설정 열기가 실패해도 안내와 경로가 그대로 남는다', (tester) async {
+      final fake = deniedCamera();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            openAppSettingsProvider.overrideWithValue(
+              () async => throw StateError('설정을 열 수 없음(테스트)'),
+            ),
+          ],
+          child: buildApp(() => fake),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey('screen.capture.camera.status.settings.button'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(
+        find.text(keepPhrasesWhole('카메라 권한이 필요합니다.')),
+        findsOneWidget,
+      );
+      // 버튼이 막힌 기기에서 직접 찾아갈 수 있어야 한다. 화면과 같은 함수로
+      // 경로를 만들어 실행 중인 플랫폼 분기까지 함께 확인한다.
+      expect(
+        find.text(joinBreadcrumb(cameraPermissionSettingsPath())),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('권한을 허용하고 재시도를 누르면 미리보기로 복구된다', (tester) async {
+      final fake = deniedCamera();
+      await tester.pumpWidget(buildApp(() => fake));
+      await tester.pumpAndSettle();
+
+      fake.initializeError = null;
+      await tester.tap(
+        find.byKey(const ValueKey('screen.capture.camera.status.retry.button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(fake.initializeCalls, 2);
+      expect(find.byKey(const ValueKey('fake.camera.preview')), findsOneWidget);
+      expect(
+        find.text(keepPhrasesWhole('카메라 권한이 필요합니다.')),
+        findsNothing,
+      );
+    });
   });
 
   testWidgets('기록 썸네일은 최근 기록의 정면 사진과 건수 배지를 보여준다', (tester) async {

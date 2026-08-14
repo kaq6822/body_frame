@@ -10,6 +10,13 @@ import 'package:flutter/widgets.dart';
 class FakeCaptureCameraController implements CaptureCameraController {
   final bool initializeShouldFail;
 
+  /// [initialize]가 던질 예외. 지정하면 [initializeShouldFail]보다 우선한다.
+  ///
+  /// 권한 거부처럼 화면이 오류 종류에 따라 다르게 반응해야 하는 경우에 쓴다.
+  /// 테스트 중에 바꿀 수 있게 열어 두었다. 권한을 허용하고 돌아온 상황은
+  /// "거부로 실패한 뒤 같은 컨트롤러가 성공하는" 흐름으로만 재현할 수 있다.
+  Object? initializeError;
+
   /// 전면/후면이 모두 있는 기기를 흉내낼지. 기본은 전환 불가.
   @override
   final bool canSwitchLens;
@@ -33,6 +40,7 @@ class FakeCaptureCameraController implements CaptureCameraController {
 
   FakeCaptureCameraController({
     this.initializeShouldFail = false,
+    this.initializeError,
     this.canSwitchLens = false,
     this.sensorAspect = 4 / 3,
   });
@@ -50,6 +58,8 @@ class FakeCaptureCameraController implements CaptureCameraController {
   Future<void> initialize({bool useFrontLens = false}) async {
     initializeCalls += 1;
     requestedFrontLens.add(useFrontLens);
+    final error = initializeError;
+    if (error != null) throw error;
     if (initializeShouldFail) {
       throw StateError('카메라를 사용할 수 없습니다(테스트).');
     }

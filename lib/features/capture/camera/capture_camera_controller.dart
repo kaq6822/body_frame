@@ -59,14 +59,40 @@ const List<ResolutionPreset> kResolutionFallbackChain = [
   ResolutionPreset.medium,
 ];
 
+/// 카메라 권한 때문에 초기화가 막혔는지.
+///
+/// 권한 거부는 해상도와 무관하다. 그런데도 프리셋 체인을 계속 돌면 초기화가
+/// 프리셋 수만큼 반복되고, 권한 요청이 그만큼 다시 나가면서 실패 로그만 쌓인다.
+/// 호출부는 이 오류를 "해상도를 낮춰 볼 문제"가 아니라 "사용자에게 권한을
+/// 안내할 문제"로 다뤄야 한다.
+///
+/// 플러그인이 쓰는 코드는 플랫폼마다 조금씩 다르다. Android는
+/// `CameraAccessDenied`/`AudioAccessDenied`, iOS는 여기에
+/// `...WithoutPrompt`나 `CameraAccessRestricted`가 더 붙는다. 그래서 정확한
+/// 값 목록이 아니라 공통 어간으로 판별한다.
+bool isCameraPermissionError(Object error) {
+  if (error is! CameraException) return false;
+  final code = error.code;
+  return code.contains('AccessDenied') ||
+      code.contains('AccessRestricted') ||
+      // 앞선 권한 요청이 아직 진행 중인 경우. 다음 프리셋으로 넘어가면 요청이
+      // 겹쳐 같은 오류가 반복된다.
+      code == 'CameraPermissionsRequestOngoing';
+}
+
 /// [presets]를 순서대로 시도해 처음 성공한 프리셋을 돌려준다.
 ///
 /// 하나라도 성공하면 그 시점에 멈춘다. 전부 실패하면 **마지막 예외를 그대로**
 /// 던져 호출부가 "카메라를 쓸 수 없다"를 기존과 같은 방식으로 다룰 수 있게 한다.
+///
+/// [isUnrecoverable]이 참을 돌려주는 오류는 남은 프리셋을 시도하지 않고 즉시
+/// 던진다. 프리셋을 바꿔도 결과가 같은 오류(권한 거부 등)를 체인 끝까지
+/// 끌고 가면 실패만 반복된다.
 Future<ResolutionPreset> selectWorkingPreset({
   required List<ResolutionPreset> presets,
   required Future<void> Function(ResolutionPreset preset) attempt,
   void Function(ResolutionPreset preset, Object error)? onFailure,
+  bool Function(Object error)? isUnrecoverable,
 }) async {
   assert(presets.isNotEmpty, '시도할 프리셋이 최소 하나는 있어야 합니다.');
   Object? lastError;
@@ -80,6 +106,7 @@ Future<ResolutionPreset> selectWorkingPreset({
       lastError = error;
       lastStack = stack;
       onFailure?.call(preset, error);
+      if (isUnrecoverable?.call(error) ?? false) rethrow;
     }
   }
 
@@ -142,6 +169,7 @@ class DeviceCaptureCameraController implements CaptureCameraController {
         // 예외 원문은 남기지 않는다(파일 경로 등이 섞일 수 있다).
         debugPrint('capture.camera.preset.fallback: ${preset.name} 실패');
       },
+      isUnrecoverable: isCameraPermissionError,
     );
   }
 
