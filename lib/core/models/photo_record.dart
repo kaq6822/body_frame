@@ -36,6 +36,7 @@ class PhotoRecord {
     String? label,
     bool clearLabel = false,
     String? memo,
+    bool clearMemo = false,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -43,7 +44,8 @@ class PhotoRecord {
       id: id,
       shotAt: shotAt ?? this.shotAt,
       label: clearLabel ? null : (label ?? this.label),
-      memo: memo ?? this.memo,
+      // null은 "바꾸지 않음"이므로 비우려면 clearMemo를 써야 한다.
+      memo: clearMemo ? null : (memo ?? this.memo),
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

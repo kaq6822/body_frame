@@ -9,6 +9,7 @@ import 'package:body_frame/core/repositories/body_photo_repository.dart';
 import 'package:body_frame/core/repositories/photo_record_repository.dart';
 import 'package:body_frame/core/services/photo_storage_service.dart';
 import 'package:body_frame/features/records/record_detail_screen.dart';
+import 'package:body_frame/features/records/providers/records_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -244,6 +245,94 @@ void main() {
       expect(find.byKey(const ValueKey('records.memo.field')), findsNothing);
       expect(find.byKey(const ValueKey('records.delete.button')), findsNothing);
       expect(await records.getById(recordId), isNotNull);
+    });
+  });
+
+  testWidgets('기록 메모를 비워 저장하면 메모가 지워진다', (tester) async {
+    await tester.runAsync(() async {
+      await tester.pumpWidget(buildApp());
+      await pumpUntil(
+        tester,
+        () => find
+            .byKey(const ValueKey('records.memo.field'))
+            .evaluate()
+            .isNotEmpty,
+      );
+
+      // copyWith에 null을 넘기는 것은 "바꾸지 않음"이라 예전 메모가 되살아났다.
+      await tester.enterText(
+        find.byKey(const ValueKey('records.memo.field')),
+        '',
+      );
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('records.memo.save.button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('records.memo.save.button')));
+
+      PhotoRecord? updated;
+      for (var i = 0; i < 40; i++) {
+        updated = await records.getById(recordId);
+        if (updated?.memo == null) break;
+        await Future.delayed(const Duration(milliseconds: 50));
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(updated?.memo, isNull);
+    });
+  });
+
+  testWidgets('기록을 삭제하면 타임라인 목록도 함께 갱신된다', (tester) async {
+    await tester.runAsync(() async {
+      // 기록 목록과 홈 카메라 썸네일이 이 provider를 읽는다. 삭제 후에도 캐시가
+      // 남으면 사라진 기록이 목록에 계속 보인다.
+      final container = ProviderContainer(
+        overrides: [
+          photoRecordRepositoryProvider.overrideWithValue(records),
+          bodyPhotoRepositoryProvider.overrideWithValue(photos),
+        ],
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        timelineProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      expect(await container.read(timelineProvider.future), hasLength(1));
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: RecordDetailScreen(recordId: recordId),
+          ),
+        ),
+      );
+      await pumpUntil(
+        tester,
+        () => find
+            .byKey(const ValueKey('records.record.delete.button'))
+            .evaluate()
+            .isNotEmpty,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey('records.record.delete.button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('records.delete.confirm.button')),
+      );
+      await tester.pump();
+
+      for (var i = 0; i < 40; i++) {
+        if (await records.getById(recordId) == null) break;
+        await Future.delayed(const Duration(milliseconds: 50));
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(await container.read(timelineProvider.future), isEmpty);
     });
   });
 

@@ -410,6 +410,10 @@ class _FakePhotoIngestRepository implements PhotoIngestRepository {
 }
 
 class _FakePhotoStorageService implements PhotoStorageService {
+  /// 실제 staging 디렉터리를 두지 않는 fake다. 정리할 것이 없다.
+  @override
+  Future<int> cleanupStagingLeftovers() async => 0;
+
   final Directory root;
 
   _FakePhotoStorageService(this.root);

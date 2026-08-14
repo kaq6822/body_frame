@@ -128,7 +128,12 @@ class CaptureSessionNotifier extends StateNotifier<CaptureSessionState> {
 
   /// 현재 단계의 촬영 결과를 기록하고 아직 안 찍은 다음 단계로 넘어간다.
   /// 남은 단계가 없으면 현재 단계에 머문다(호출부가 리뷰로 이동시킨다).
-  void captureCurrent(String path, {GridSettings? gridSettings}) {
+  ///
+  /// 이미 찍힌 단계를 다시 찍으면 **밀려난 이전 임시 파일 경로**를 돌려준다.
+  /// 그 파일은 더 이상 세션에 없어 저장 시점의 정리 대상에도 들지 않으므로,
+  /// 호출부가 받아서 지워야 카메라 캐시에 고아 파일이 남지 않는다.
+  String? captureCurrent(String path, {GridSettings? gridSettings}) {
+    final replaced = state.shots[state.currentIndex].imagePath;
     final shots = [...state.shots];
     shots[state.currentIndex] = shots[state.currentIndex].copyWith(
       imagePath: path,
@@ -139,6 +144,7 @@ class CaptureSessionNotifier extends StateNotifier<CaptureSessionState> {
       shots: shots,
       currentIndex: next ?? state.currentIndex,
     );
+    return replaced == path ? null : replaced;
   }
 
   /// 현재 단계를 찍지 않고 넘어간다. 남은 단계가 없으면 그대로 둔다.

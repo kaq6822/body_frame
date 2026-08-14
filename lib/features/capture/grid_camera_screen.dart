@@ -19,6 +19,7 @@ import 'camera_permission_guide.dart';
 import 'providers/capture_providers.dart';
 import 'providers/capture_session_provider.dart';
 import 'utils/capture_guides.dart';
+import 'utils/temporary_capture.dart';
 import 'widgets/async_status_indicator.dart';
 import 'widgets/camera_notice_card.dart';
 import 'widgets/capture_progress_bar.dart';
@@ -334,7 +335,17 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
       final notifier = ref.read(captureSessionProvider.notifier);
       final wasLastRemaining =
           ref.read(captureSessionProvider).nextUncapturedIndex == null;
-      notifier.captureCurrent(path, gridSettings: grid);
+      final replaced = notifier.captureCurrent(path, gridSettings: grid);
+      if (replaced != null) {
+        // 이미 찍은 단계를 다시 찍으면 밀려난 임시 파일은 아무도 참조하지 않는다.
+        unawaited(
+          deleteTemporaryCaptureBestEffort(
+            replaced,
+            storage: ref.read(photoStorageServiceProvider),
+            logger: logger,
+          ),
+        );
+      }
       logger.phase('capture.shot', LogPhase.success);
       if (!mounted) return;
       // 남은 단계가 없으면 세션을 끝내고 일괄 리뷰로 넘어간다.

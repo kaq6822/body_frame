@@ -222,6 +222,31 @@ void main() {
     expect(record.memo, '체중 감량 시작');
   });
 
+  testWidgets('입력한 라벨과 메모는 세션에 남아 다시 촬영 후에도 유지된다', (tester) async {
+    final container = buildContainer();
+    addTearDown(container.dispose);
+
+    captureShots(container, {0: frontFile.path});
+
+    await tester.pumpWidget(wrapWithRouter(container));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('capture.review.label.field')),
+      '동생',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('capture.review.memo.field')),
+      '체중 감량 시작',
+    );
+    await tester.pumpAndSettle();
+
+    // 다시 촬영은 이 화면을 닫는다. 입력이 세션에 없으면 돌아올 때 사라진다.
+    final session = container.read(captureSessionProvider);
+    expect(session.label, '동생');
+    expect(session.memo, '체중 감량 시작');
+  });
+
   testWidgets('촬영일이 같은 기록이 이미 있어도 이 촬영은 별개의 기록으로 저장한다', (tester) async {
     final recordRepo = _FakePhotoRecordRepository();
     final ingestRepo = _FakePhotoIngestRepository(recordRepo);
@@ -399,6 +424,10 @@ class _FakePhotoIngestRepository implements PhotoIngestRepository {
 }
 
 class _FakePhotoStorageService implements PhotoStorageService {
+  /// 실제 staging 디렉터리를 두지 않는 fake다. 정리할 것이 없다.
+  @override
+  Future<int> cleanupStagingLeftovers() async => 0;
+
   final Directory root;
   final List<String> savedFrom = [];
 

@@ -76,6 +76,7 @@ class BodyPhoto {
     int? orientation,
     GridSettings? gridSettings,
     String? memo,
+    bool clearMemo = false,
     DateTime? createdAt,
   }) {
     return BodyPhoto(
@@ -90,7 +91,8 @@ class BodyPhoto {
       // 촬영 당시 값은 copyWith로 바꿀 수 없다. 되돌리기의 기준점이므로
       // 수정 경로에서 잃어버리지 않게 항상 그대로 넘긴다.
       captureGridSettings: _captureGridSettings,
-      memo: memo ?? this.memo,
+      // null은 "바꾸지 않음"이므로 비우려면 clearMemo를 써야 한다.
+      memo: clearMemo ? null : (memo ?? this.memo),
       createdAt: createdAt ?? this.createdAt,
     );
   }

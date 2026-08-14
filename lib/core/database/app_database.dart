@@ -8,16 +8,21 @@ import '../services/app_logger.dart';
 
 /// sqflite 데이터베이스 관리자.
 ///
-/// 스키마 정의와 마이그레이션을 담당한다. 사진 파일 자체는 저장하지 않고
+/// 스키마 정의를 담당한다. 사진 파일 자체는 저장하지 않고
 /// body_photos.file_path에는 앱 저장소 기준 상대경로만 저장한다.
+///
+/// **마이그레이션은 두지 않는다.** 아직 출시하지 않은 앱이라 지켜야 할 사용자
+/// 데이터가 없다. 스키마가 바뀌면 [schemaVersion]을 올리는 대신 이 파일의
+/// [_onCreate]를 고치고 앱을 재설치한다. 다른 스키마로 만들어진 DB 파일이
+/// 남아 있으면 [onDatabaseDowngradeDelete]가 지우고 새로 만든다 — 재설치와 같은
+/// 결과를 자동으로 얻어, 옛 스키마가 남아 조회가 전부 실패하는 상태를 막는다.
 ///
 /// 테스트에서는 [AppDatabase.forTesting]으로 인메모리 DB를 주입한다.
 class AppDatabase {
   static const String dbName = 'body_frame.db';
 
-  /// 2: body_photos.capture_grid_settings 추가. 격자를 촬영 후에도 수정할 수
-  /// 있게 되면서 "촬영 당시 설정"을 되돌리기 기준점으로 따로 보존한다.
-  static const int schemaVersion = 2;
+  /// 스키마 버전. 마이그레이션이 없으므로 항상 1이며 올리지 않는다.
+  static const int schemaVersion = 1;
 
   static const String tablePhotoRecords = 'photo_records';
   static const String tableBodyPhotos = 'body_photos';
@@ -58,7 +63,10 @@ class AppDatabase {
       version: schemaVersion,
       onConfigure: _onConfigure,
       onCreate: _onCreate,
-      onUpgrade: _onUpgrade,
+      // 더 높은 버전으로 만들어진 DB가 남아 있으면 지우고 새로 만든다.
+      // 없으면 sqflite는 아무 일도 하지 않은 채 버전만 덮어써서, 옛 스키마가
+      // 그대로 남아 모든 조회가 실패하는 상태로 굳는다.
+      onDowngrade: onDatabaseDowngradeDelete,
     );
   }
 
@@ -107,28 +115,6 @@ class AppDatabase {
     );
 
     await batch.commit(noResult: true);
-  }
-
-  /// 마이그레이션 훅. 스키마 버전이 오르면 여기에 단계별 변경을 누적한다.
-  ///
-  /// 각 단계는 이전 버전에서 올라오는 모든 경로에서 한 번씩 실행되도록
-  /// `oldVersion < N` 조건으로 쌓는다.
-  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    _logger.info(
-      'database.upgrade',
-      context: {'from': oldVersion, 'to': newVersion},
-    );
-
-    if (oldVersion < 2) {
-      // 격자를 촬영 후에도 수정할 수 있게 되면서 촬영 당시 설정을 따로 보존한다.
-      // 기존 행은 아직 수정된 적이 없으므로 현재 값이 곧 촬영 당시 값이다.
-      await db.execute(
-        'ALTER TABLE $tableBodyPhotos ADD COLUMN capture_grid_settings TEXT',
-      );
-      await db.execute(
-        'UPDATE $tableBodyPhotos SET capture_grid_settings = grid_settings',
-      );
-    }
   }
 
   Future<void> close() async {

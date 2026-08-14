@@ -342,10 +342,25 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
     );
   }
 
+  /// 생성 이미지에 넣을 대상 라벨.
+  ///
+  /// 한쪽 기록에만 라벨이 있을 수 있다(본인 기록은 라벨이 없다). 이전 기록만
+  /// 보면 "라벨 포함"을 켜도 아무것도 나오지 않으므로 양쪽을 함께 본다. 서로
+  /// 다른 대상을 비교한 이미지가 한쪽 이름만 달고 나가지 않게 둘 다 밝힌다.
+  String _labelText(CompareExportRequest req) {
+    final before = req.beforeRecord.label?.trim();
+    final after = req.afterRecord.label?.trim();
+    final beforeLabel = (before == null || before.isEmpty) ? null : before;
+    final afterLabel = (after == null || after.isEmpty) ? null : after;
+    if (beforeLabel == null) return afterLabel ?? '';
+    if (afterLabel == null || afterLabel == beforeLabel) return beforeLabel;
+    return '이전: $beforeLabel · 이후: $afterLabel';
+  }
+
   Widget _buildComposition(CompareExportRequest req) {
     final beforeCtrl = _previewBeforeCtrl!;
     final afterCtrl = _previewAfterCtrl!;
-    final label = req.beforeRecord.label?.trim() ?? '';
+    final label = _labelText(req);
     return RepaintBoundary(
       key: _boundaryKey,
       child: Semantics(

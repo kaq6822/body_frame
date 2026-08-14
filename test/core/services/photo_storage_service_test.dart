@@ -160,6 +160,33 @@ void main() {
     await root.delete(recursive: true);
   });
 
+  test('앱이 죽어 남은 staging 파일을 정리하고 저장된 원본은 건드리지 않는다', () async {
+    final root = await Directory.systemTemp.createTemp(
+      'body_frame_storage_staging_',
+    );
+    final service = PhotoStorageServiceImpl(rootPath: root.path);
+    final saved = await service.saveBytes(
+      shotAt: shotAt,
+      bytes: const [1, 2, 3],
+      fileName: 'front.jpg',
+    );
+
+    // rename으로 확정되기 전에 프로세스가 죽은 상황을 재현한다.
+    final staging = Directory(p.join(root.path, 'photos', '.staging'))
+      ..createSync(recursive: true);
+    final leftover = File(p.join(staging.path, 'abandoned.partial'))
+      ..writeAsBytesSync(const [9, 9, 9]);
+
+    expect(await service.cleanupStagingLeftovers(), 1);
+    expect(leftover.existsSync(), isFalse);
+    // 정리 대상은 staging뿐이다. 관리 저장소의 원본은 그대로 남는다.
+    expect(File(saved).existsSync(), isTrue);
+    // 지울 것이 없으면 0을 돌려주고 조용히 끝난다.
+    expect(await service.cleanupStagingLeftovers(), 0);
+
+    await root.delete(recursive: true);
+  });
+
   test('삭제한 파일은 저장소에서 사라지고 없는 파일 삭제는 무시한다', () async {
     final root = await Directory.systemTemp.createTemp(
       'body_frame_storage_delete_',

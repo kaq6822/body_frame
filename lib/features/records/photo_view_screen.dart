@@ -17,6 +17,7 @@ import '../../core/services/app_image_picker.dart';
 import '../../core/services/app_logger.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/photo_grid_overlay.dart';
+import 'providers/records_providers.dart';
 import 'services/grid_photo_composer.dart';
 import 'services/photo_export_sink.dart';
 
@@ -199,6 +200,9 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
 
   void _invalidate() {
     ref.invalidate(_photoDetailProvider(widget.detailKey));
+    // 기록 목록과 홈 카메라의 썸네일이 같은 provider를 읽는다. 사진을 바꾸거나
+    // 지운 사실을 알리지 않으면 목록이 옛 사진을 계속 그린다.
+    ref.invalidate(timelineProvider);
   }
 
   Future<void> _saveMemo() async {
@@ -207,11 +211,11 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
     final logger = ref.read(appLoggerProvider);
     try {
       final repo = ref.read(bodyPhotoRepositoryProvider);
+      final memo = _memoController.text.trim();
       await repo.update(
         photo.copyWith(
-          memo: _memoController.text.trim().isEmpty
-              ? null
-              : _memoController.text.trim(),
+          memo: memo.isEmpty ? null : memo,
+          clearMemo: memo.isEmpty,
         ),
       );
       logger.phase(
@@ -478,10 +482,16 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
     await _saveGrid();
   }
 
+  /// 내보내기·공유 결과에 격자를 합성할지.
+  ///
+  /// 격자를 숨긴 상태에서는 화면에 없는 격자가 결과물에만 찍혀 나오게 되므로
+  /// 토글이 켜져 있어도 합성하지 않는다(토글 자체도 그때는 잠긴다).
+  bool get _willComposeGrid => _includeGridOnExport && _grid.visible;
+
   Future<void> _export() async {
     setState(() => _exportState = _OpState.running);
     final photo = widget.data.photo;
-    final includeGrid = _includeGridOnExport;
+    final includeGrid = _willComposeGrid;
     final logger = ref.read(appLoggerProvider);
     logger.phase(
       'photo.export',
@@ -522,8 +532,11 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
   Future<void> _share() async {
     setState(() => _shareState = _OpState.running);
     final photo = widget.data.photo;
-    final includeGrid = _includeGridOnExport;
+    final includeGrid = _willComposeGrid;
     final logger = ref.read(appLoggerProvider);
+    // 격자 합성본은 공유 시트에 넘기기 위한 임시 산출물이다. 성공하든 실패하든
+    // 정리해야 캐시에 파생 이미지가 쌓이지 않는다.
+    Directory? shareDir;
     try {
       // 격자 합성은 공유하는 순간에만 일어난다. 앱 안에는 합성본을 남기지 않으므로
       // 임시 파일로 만들어 넘긴다. 토글이 꺼져 있으면 원본을 그대로 공유한다.
@@ -533,8 +546,8 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
         final png = await ref
             .read(gridPhotoComposerProvider)
             .compose(sourceBytes, _grid);
-        final dir = await Directory.systemTemp.createTemp('body_frame_share_');
-        final composed = File('${dir.path}/${photo.id}_grid.png');
+        shareDir = await Directory.systemTemp.createTemp('body_frame_share_');
+        final composed = File('${shareDir.path}/${photo.id}_grid.png');
         await composed.writeAsBytes(png, flush: true);
         file = XFile(composed.path);
       } else {
@@ -552,6 +565,16 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
       logger.phase('photo.share', LogPhase.failure, context: {'id': photo.id});
       if (!mounted) return;
       setState(() => _shareState = _OpState.failure);
+    } finally {
+      if (shareDir != null) {
+        try {
+          if (await shareDir.exists()) {
+            await shareDir.delete(recursive: true);
+          }
+        } catch (_) {
+          logger.warn('photo.share.temp.cleanup.failure');
+        }
+      }
     }
   }
 
@@ -589,6 +612,7 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
       final repo = ref.read(bodyPhotoRepositoryProvider);
       await repo.delete(photo.id);
       logger.phase('photo.delete', LogPhase.success, context: {'id': photo.id});
+      ref.invalidate(timelineProvider);
       if (!mounted) return;
       setState(() => _deleteState = _OpState.success);
       Navigator.of(context).pop(true);
@@ -793,14 +817,20 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
             Semantics(
               identifier: 'records.viewer.export.grid.toggle',
               label: '내보내기에 격자 합성',
-              value: _includeGridOnExport ? '켜짐' : '꺼짐',
+              value: _willComposeGrid ? '켜짐' : '꺼짐',
+              enabled: _grid.visible,
               child: SwitchListTile(
                 key: const ValueKey('records.viewer.export.grid.toggle'),
                 contentPadding: EdgeInsets.zero,
                 title: const Text('내보내기에 격자 합성'),
-                subtitle: const Text('원본은 변경하지 않고 격자가 포함된 새 PNG를 만듭니다.'),
-                value: _includeGridOnExport,
-                onChanged: _exportState == _OpState.running
+                subtitle: Text(
+                  _grid.visible
+                      ? '원본은 변경하지 않고 격자가 포함된 새 PNG를 만듭니다.'
+                      : '격자를 숨긴 상태입니다. 격자를 켜면 합성할 수 있습니다.',
+                ),
+                value: _willComposeGrid,
+                // 격자를 숨긴 채 합성하면 화면에 없는 격자가 결과물에만 찍힌다.
+                onChanged: (_exportState == _OpState.running || !_grid.visible)
                     ? null
                     : (value) => setState(() {
                         _includeGridOnExport = value;
@@ -918,7 +948,7 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
                 ),
                 _ActionButton(
                   id: 'records.viewer.export.button',
-                  label: _includeGridOnExport ? '격자 합성 내보내기' : '내보내기',
+                  label: _willComposeGrid ? '격자 합성 내보내기' : '내보내기',
                   icon: Icons.save_alt_outlined,
                   state: _exportState,
                   onPressed: _export,

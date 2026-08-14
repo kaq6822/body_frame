@@ -47,6 +47,15 @@ abstract class PhotoStorageService {
 
   /// 단일 사진 파일 삭제. 존재하지 않으면 무시한다.
   Future<void> deleteFile(String filePath);
+
+  /// 쓰다 남은 staging 파일을 지우고 지운 개수를 반환한다.
+  ///
+  /// staging 파일은 rename으로 확정되기 전에 프로세스가 죽으면 그대로 남는다.
+  /// [resolvePath]가 staging 경로를 거부하므로 일반 삭제 경로로는 지울 수 없고,
+  /// 저장 공간 통계는 DB가 참조하는 파일만 세므로 실사용량과 어긋난다.
+  ///
+  /// 진행 중인 쓰기까지 지우지 않도록 **앱 시작처럼 쓰기가 없는 시점에만** 부른다.
+  Future<int> cleanupStagingLeftovers();
 }
 
 class PhotoStorageServiceImpl implements PhotoStorageService {
@@ -88,6 +97,24 @@ class PhotoStorageServiceImpl implements PhotoStorageService {
       await dir.create(recursive: true);
     }
     return dir;
+  }
+
+  @override
+  Future<int> cleanupStagingLeftovers() async {
+    final stagingRoot = await _stagingRoot();
+    var removed = 0;
+    await for (final entity in stagingRoot.list(followLinks: false)) {
+      try {
+        await entity.delete(recursive: true);
+        removed += 1;
+      } catch (_) {
+        _logger.warn('storage.staging.cleanup.failure');
+      }
+    }
+    if (removed > 0) {
+      _logger.info('storage.staging.cleanup', context: {'removed': removed});
+    }
+    return removed;
   }
 
   /// 촬영월 버킷 이름. 예: 2026년 8월 → `202608`.

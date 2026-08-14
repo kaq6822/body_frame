@@ -265,6 +265,24 @@ void main() {
     );
   });
 
+  testWidgets('이후 기록에만 라벨이 있어도 생성 이미지에 표시한다', (tester) async {
+    // 본인 기록은 라벨이 없다. 이전 기록만 보면 라벨 포함을 켜도 아무것도 안 나온다.
+    records.records['r1'] = records.records['r1']!.copyWith(clearLabel: true);
+    records.records['r2'] = records.records['r2']!.copyWith(label: '동생');
+
+    await openExport(tester);
+
+    expect(find.text('동생'), findsWidgets);
+  });
+
+  testWidgets('두 기록의 라벨이 다르면 양쪽을 함께 표시한다', (tester) async {
+    records.records['r2'] = records.records['r2']!.copyWith(label: '누나');
+
+    await openExport(tester);
+
+    expect(find.text('이전: 동생 · 이후: 누나'), findsOneWidget);
+  });
+
   testWidgets('비교 화면 격자를 건드리지 않으면 저장된 기본 옵션을 그대로 쓴다', (tester) async {
     // 비교 화면은 격자를 켠 상태로 시작하지만, 그 기본값만으로 사용자가 저장해 둔
     // 격자 없이 내보내기 설정을 덮어쓰면 안 된다.

@@ -11,6 +11,7 @@ import '../../core/providers.dart';
 import '../../core/router/app_routes.dart';
 import '../../core/services/app_logger.dart';
 import '../../core/widgets/photo_grid_overlay.dart';
+import 'providers/records_providers.dart';
 
 /// 촬영 기록 상세 화면.
 ///
@@ -116,6 +117,9 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
 
   void _invalidate() {
     ref.invalidate(_recordDetailProvider(widget.recordId));
+    // 기록 목록과 홈 카메라의 썸네일·건수가 같은 provider를 읽는다. 여기서 바꾼
+    // 내용을 알리지 않으면 삭제한 기록이 목록에 남고 탭하면 오류가 난다.
+    ref.invalidate(timelineProvider);
   }
 
   Future<void> _saveMemo() async {
@@ -123,11 +127,11 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
     try {
       final repo = ref.read(photoRecordRepositoryProvider);
       final record = widget.data.record;
+      final memo = _memoController.text.trim();
       await repo.update(
         record.copyWith(
-          memo: _memoController.text.trim().isEmpty
-              ? null
-              : _memoController.text.trim(),
+          memo: memo.isEmpty ? null : memo,
+          clearMemo: memo.isEmpty,
           updatedAt: DateTime.now(),
         ),
       );
@@ -222,6 +226,7 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
         LogPhase.success,
         context: {'id': widget.recordId},
       );
+      ref.invalidate(timelineProvider);
       if (!mounted) return;
       setState(() => _deleteState = _PaneState.success);
       if (context.canPop()) {

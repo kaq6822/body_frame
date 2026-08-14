@@ -10,12 +10,12 @@ import 'package:uuid/uuid.dart';
 import 'package:body_frame/core/models/models.dart';
 import 'package:body_frame/core/providers.dart';
 import 'package:body_frame/core/services/app_logger.dart';
-import 'package:body_frame/core/services/photo_storage_service.dart';
 import 'package:body_frame/core/theme/app_tokens.dart';
 import 'package:body_frame/core/widgets/photo_grid_overlay.dart';
 import '../records/providers/records_providers.dart';
 import 'providers/capture_session_provider.dart';
 import 'utils/image_meta.dart';
+import 'utils/temporary_capture.dart';
 import 'widgets/async_status_indicator.dart';
 
 /// 연속 촬영 결과 일괄 확인 화면.
@@ -78,26 +78,12 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
     context.pop();
   }
 
-  Future<void> _deleteTemporaryCaptureBestEffort(String path) async {
-    final storage = ref.read(photoStorageServiceProvider);
-    final logger = ref.read(appLoggerProvider);
-    try {
-      // 관리 저장소 안의 파일이면 원본이므로 절대 정리하지 않는다.
-      final stored = await storage.toStoredPath(path);
-      if (stored.startsWith('${PhotoStorageServiceImpl.rootDirName}/')) {
-        return;
-      }
-    } catch (_) {
-      // 카메라가 반환하는 cache/tmp 경로는 변환에 실패하는 것이 정상이다.
-    }
-    try {
-      final source = File(path);
-      if (await source.exists()) {
-        await source.delete();
-      }
-    } catch (_) {
-      logger.warn('capture.source.cleanup.failure');
-    }
+  Future<void> _deleteTemporaryCaptureBestEffort(String path) {
+    return deleteTemporaryCaptureBestEffort(
+      path,
+      storage: ref.read(photoStorageServiceProvider),
+      logger: ref.read(appLoggerProvider),
+    );
   }
 
   Future<void> _save(CaptureSessionState session) async {
@@ -271,6 +257,10 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
             child: TextField(
               key: const ValueKey('capture.review.label.field'),
               controller: _labelController,
+              // 다시 촬영을 누르면 이 화면이 닫히고 새 State로 다시 열린다.
+              // 입력을 세션에 남겨 두지 않으면 그때 조용히 사라진다.
+              onChanged: (value) =>
+                  ref.read(captureSessionProvider.notifier).setLabel(value),
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
                 hintText: '비워두면 내 기록으로 저장됩니다',
@@ -287,6 +277,8 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
               key: const ValueKey('capture.review.memo.field'),
               controller: _memoController,
               maxLines: 3,
+              onChanged: (value) =>
+                  ref.read(captureSessionProvider.notifier).setMemo(value),
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
                 hintText: '기록에 대한 메모(선택)',
