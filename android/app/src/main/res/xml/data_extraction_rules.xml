@@ -21,8 +21,14 @@
         <exclude domain="device_sharedpref" path="." />
     </cloud-backup>
     <device-transfer>
-        <include domain="file" path="." />
-        <include domain="database" path="." />
-        <include domain="sharedpref" path="." />
+        <!--
+          DB(body_frame.db)와 사진(photos/)은 getApplicationDocumentsDirectory()가
+          가리키는 <dataDir>/app_flutter 아래에 있다. domain="file"은
+          <dataDir>/files, domain="database"는 <dataDir>/databases만 덮으므로
+          둘 중 어느 것도 app_flutter를 포함하지 못한다. 인앱 백업이 없는 이 앱은
+          기기 간 전송이 유일한 이전 경로이므로 dataDir 전체를 뜻하는
+          domain="root"로 포함한다. cache/code_cache/no_backup은 OS가 기본 제외한다.
+        -->
+        <include domain="root" path="." />
     </device-transfer>
 </data-extraction-rules>
