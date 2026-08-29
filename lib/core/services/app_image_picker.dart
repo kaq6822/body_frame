@@ -44,73 +44,42 @@ class AppImagePickerImpl implements AppImagePicker {
 }
 
 /// Android Activity가 사진 선택 중 종료되었을 때 결과를 돌려받을 기능 구분.
-enum ImagePickerOperation {
-  galleryImport,
-  newMemberAvatar,
-  memberAvatar,
-  photoReplacement,
-  studioLogo,
-}
+enum ImagePickerOperation { galleryImport, photoReplacement }
 
 /// picker 실행 전에 남기는 비식별 작업 문맥.
 ///
 /// 화면 문구나 이름 같은 PII 대신 소유관계 확인에 필요한 ID만 저장한다.
 class ImagePickerRequestContext {
   final ImagePickerOperation operation;
-  final String? memberId;
   final String? recordId;
   final String? photoId;
 
   const ImagePickerRequestContext._({
     required this.operation,
-    this.memberId,
     this.recordId,
     this.photoId,
   });
 
-  factory ImagePickerRequestContext.galleryImport(String memberId) {
-    return ImagePickerRequestContext._(
-      operation: ImagePickerOperation.galleryImport,
-      memberId: _requiredId(memberId, 'memberId'),
-    );
-  }
-
-  factory ImagePickerRequestContext.memberAvatar(String memberId) {
-    return ImagePickerRequestContext._(
-      operation: ImagePickerOperation.memberAvatar,
-      memberId: _requiredId(memberId, 'memberId'),
-    );
-  }
-
-  factory ImagePickerRequestContext.newMemberAvatar() {
+  factory ImagePickerRequestContext.galleryImport() {
     return const ImagePickerRequestContext._(
-      operation: ImagePickerOperation.newMemberAvatar,
+      operation: ImagePickerOperation.galleryImport,
     );
   }
 
   factory ImagePickerRequestContext.photoReplacement({
-    required String memberId,
     required String recordId,
     required String photoId,
   }) {
     return ImagePickerRequestContext._(
       operation: ImagePickerOperation.photoReplacement,
-      memberId: _requiredId(memberId, 'memberId'),
       recordId: _requiredId(recordId, 'recordId'),
       photoId: _requiredId(photoId, 'photoId'),
     );
   }
 
-  factory ImagePickerRequestContext.studioLogo() {
-    return const ImagePickerRequestContext._(
-      operation: ImagePickerOperation.studioLogo,
-    );
-  }
-
   factory ImagePickerRequestContext.fromJson(Map<String, Object?> json) {
     if (json.keys.any(
-      (key) =>
-          !const {'operation', 'memberId', 'recordId', 'photoId'}.contains(key),
+      (key) => !const {'operation', 'recordId', 'photoId'}.contains(key),
     )) {
       throw const FormatException('알 수 없는 picker 문맥 필드입니다.');
     }
@@ -134,31 +103,20 @@ class ImagePickerRequestContext {
       return value;
     }
 
-    final memberId = optionalId('memberId');
     final recordId = optionalId('recordId');
     final photoId = optionalId('photoId');
     switch (operation) {
       case ImagePickerOperation.galleryImport:
-      case ImagePickerOperation.memberAvatar:
-        if (memberId == null || recordId != null || photoId != null) {
-          throw const FormatException('회원 picker 문맥이 올바르지 않습니다.');
-        }
-      case ImagePickerOperation.newMemberAvatar:
-        if (memberId != null || recordId != null || photoId != null) {
-          throw const FormatException('신규 회원 picker 문맥이 올바르지 않습니다.');
+        if (recordId != null || photoId != null) {
+          throw const FormatException('갤러리 등록 picker 문맥이 올바르지 않습니다.');
         }
       case ImagePickerOperation.photoReplacement:
-        if (memberId == null || recordId == null || photoId == null) {
+        if (recordId == null || photoId == null) {
           throw const FormatException('사진 교체 picker 문맥이 올바르지 않습니다.');
-        }
-      case ImagePickerOperation.studioLogo:
-        if (memberId != null || recordId != null || photoId != null) {
-          throw const FormatException('로고 picker 문맥이 올바르지 않습니다.');
         }
     }
     return ImagePickerRequestContext._(
       operation: operation,
-      memberId: memberId,
       recordId: recordId,
       photoId: photoId,
     );
@@ -166,7 +124,6 @@ class ImagePickerRequestContext {
 
   Map<String, Object?> toJson() => {
     'operation': operation.name,
-    if (memberId != null) 'memberId': memberId,
     if (recordId != null) 'recordId': recordId,
     if (photoId != null) 'photoId': photoId,
   };
@@ -175,13 +132,12 @@ class ImagePickerRequestContext {
   bool operator ==(Object other) {
     return other is ImagePickerRequestContext &&
         operation == other.operation &&
-        memberId == other.memberId &&
         recordId == other.recordId &&
         photoId == other.photoId;
   }
 
   @override
-  int get hashCode => Object.hash(operation, memberId, recordId, photoId);
+  int get hashCode => Object.hash(operation, recordId, photoId);
 
   static String _requiredId(String value, String name) {
     if (value.trim().isEmpty) {

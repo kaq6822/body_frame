@@ -8,6 +8,8 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../../core/export_album.dart';
+
 typedef CompareShareDirectoryProvider = Future<Directory> Function();
 typedef CompareShareInvoker =
     Future<void> Function(
@@ -53,7 +55,7 @@ class CompareExportSinkImpl implements CompareExportSink {
 
   @override
   Future<void> saveToGallery(Uint8List bytes, {required String name}) {
-    return Gal.putImageBytes(bytes, name: name);
+    return Gal.putImageBytes(bytes, name: name, album: kExportAlbumName);
   }
 
   @override
@@ -63,8 +65,7 @@ class CompareExportSinkImpl implements CompareExportSink {
     String? text,
     Rect? sharePositionOrigin,
   }) async {
-    // Application Support는 iOS 시작 시 백업 제외와 완전 파일 보호가
-    // 적용된다. 공유가 성공하거나 실패한 뒤에는 파생 평문을 즉시 정리한다.
+    // 공유용 파생 이미지는 임시 산출물이므로 성공하든 실패하든 즉시 정리한다.
     final support = await _supportDirectoryProvider();
     final shareDir = Directory(p.join(support.path, 'compare_share'));
     if (await shareDir.exists()) {

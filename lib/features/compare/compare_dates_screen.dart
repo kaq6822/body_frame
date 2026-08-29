@@ -17,16 +17,42 @@ class CompareQueryKeys {
 }
 
 final _dateFormat = DateFormat('yyyy.MM.dd');
+final _timeFormat = DateFormat('HH:mm');
+
+/// 촬영일이 겹치는 기록의 id.
+///
+/// 촬영 한 건이 기록 하나라 같은 날 여러 건이 있을 수 있다. 목록에서 날짜만
+/// 보여주면 어느 촬영분인지 고를 수 없으므로 등록 시각을 함께 붙일 대상을 고른다.
+Set<String> duplicatedDateRecordIds(List<PhotoRecord> records) {
+  final countByDay = <DateTime, int>{};
+  for (final record in records) {
+    final day = DateTime(
+      record.shotAt.year,
+      record.shotAt.month,
+      record.shotAt.day,
+    );
+    countByDay[day] = (countByDay[day] ?? 0) + 1;
+  }
+  return {
+    for (final record in records)
+      if ((countByDay[DateTime(
+                record.shotAt.year,
+                record.shotAt.month,
+                record.shotAt.day,
+              )] ??
+              0) >
+          1)
+        record.id,
+  };
+}
 
 /// 비교 날짜 선택 화면.
 ///
-/// 같은 회원의 이전/이후 촬영일(=촬영 기록)을 고르고 위치를 교환할 수 있다.
+/// 이전/이후 촬영일(=촬영 기록)을 고르고 위치를 교환할 수 있다.
 class CompareDatesScreen extends ConsumerStatefulWidget {
   static const screenId = 'screen.compare.dates';
 
-  final String memberId;
-
-  const CompareDatesScreen({super.key, required this.memberId});
+  const CompareDatesScreen({super.key});
 
   @override
   ConsumerState<CompareDatesScreen> createState() => _CompareDatesScreenState();
@@ -39,7 +65,7 @@ class _CompareDatesScreenState extends ConsumerState<CompareDatesScreen> {
 
   void _applyDefaults(List<PhotoRecord> records) {
     if (_defaultsApplied || records.length < 2) return;
-    // listByMember는 최신 촬영일이 먼저 온다.
+    // listAll은 최신 촬영일이 먼저 온다.
     // 이후=가장 최근, 이전=그다음으로 최근인 기록을 기본값으로 제안한다.
     _afterRecordId = records.first.id;
     _beforeRecordId = records[1].id;
@@ -54,17 +80,24 @@ class _CompareDatesScreenState extends ConsumerState<CompareDatesScreen> {
       context: context,
       builder: (context) {
         final unavailableRecordId = isBefore ? _afterRecordId : _beforeRecordId;
+        final duplicated = duplicatedDateRecordIds(records);
         return SafeArea(
           child: ListView(
             shrinkWrap: true,
             children: records.map((record) {
               final isUnavailable = record.id == unavailableRecordId;
+              // 같은 날 여러 건이면 등록 시각으로 구분한다.
+              final subtitle = [
+                if (duplicated.contains(record.id))
+                  '${_timeFormat.format(record.createdAt)} 등록',
+                if (record.memo != null) record.memo!,
+              ].join(' · ');
               return ListTile(
                 key: ValueKey(
                   'compare.${isBefore ? 'before' : 'after'}.date.option.${record.id}',
                 ),
                 title: Text(_dateFormat.format(record.shotAt)),
-                subtitle: record.memo == null ? null : Text(record.memo!),
+                subtitle: subtitle.isEmpty ? null : Text(subtitle),
                 enabled: !isUnavailable,
                 onTap: isUnavailable
                     ? null
@@ -99,7 +132,6 @@ class _CompareDatesScreenState extends ConsumerState<CompareDatesScreen> {
     if (beforeId == null || afterId == null || beforeId == afterId) return;
     context.pushNamed(
       AppRoutes.compareDirection,
-      pathParameters: {AppParams.memberId: widget.memberId},
       queryParameters: {
         CompareQueryKeys.beforeRecordId: beforeId,
         CompareQueryKeys.afterRecordId: afterId,
@@ -109,7 +141,7 @@ class _CompareDatesScreenState extends ConsumerState<CompareDatesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final recordsAsync = ref.watch(memberRecordsProvider(widget.memberId));
+    final recordsAsync = ref.watch(allRecordsProvider);
 
     return Semantics(
       identifier: CompareDatesScreen.screenId,
@@ -128,8 +160,7 @@ class _CompareDatesScreenState extends ConsumerState<CompareDatesScreen> {
             key: const ValueKey('screen.compare.dates.status'),
             state: _AsyncState.error,
             message: '촬영 기록을 불러오지 못했습니다.',
-            onRetry: () =>
-                ref.invalidate(memberRecordsProvider(widget.memberId)),
+            onRetry: () => ref.invalidate(allRecordsProvider),
           ),
           data: (records) {
             if (records.length < 2) {
@@ -157,7 +188,7 @@ class _CompareDatesScreenState extends ConsumerState<CompareDatesScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    '같은 회원의 이전/이후 촬영일을 선택하세요.',
+                    '비교할 이전/이후 촬영일을 선택하세요.',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                   const SizedBox(height: 16),
@@ -269,8 +300,4 @@ class _StatusBody extends StatelessWidget {
       ),
     );
   }
-}
-
-extension _FirstOrNull<T> on Iterable<T> {
-  T? get firstOrNull => isEmpty ? null : first;
 }

@@ -3,5 +3,4 @@ export 'app_settings.dart';
 export 'body_direction.dart';
 export 'body_photo.dart';
 export 'grid_settings.dart';
-export 'member.dart';
 export 'photo_record.dart';

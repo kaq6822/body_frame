@@ -6,7 +6,6 @@ import 'package:body_frame/core/database/app_database.dart';
 import 'package:body_frame/core/models/models.dart';
 import 'package:body_frame/core/providers.dart';
 import 'package:body_frame/core/repositories/body_photo_repository.dart';
-import 'package:body_frame/core/repositories/member_repository.dart';
 import 'package:body_frame/core/repositories/photo_record_repository.dart';
 import 'package:body_frame/core/services/app_image_picker.dart';
 import 'package:body_frame/core/services/photo_storage_service.dart';
@@ -30,7 +29,6 @@ void main() {
   late FakePhotoExportSink exportSink;
   late FakeGridPhotoComposer gridComposer;
 
-  const memberId = 'member-1';
   const recordId = 'record-1';
   const photoId = 'photo-front';
   final shotAt = DateTime(2026, 1, 10);
@@ -53,21 +51,9 @@ void main() {
       await _solidPngBytes(4, 3, color: const ui.Color(0xFFCC3300)),
     );
 
-    // photo_records.member_id는 members 테이블을 참조하므로 먼저 회원을 등록한다.
-    final members = MemberRepositoryImpl(database: db, storage: storage);
-    await members.insert(
-      Member(
-        id: memberId,
-        name: '테스트 회원',
-        createdAt: shotAt,
-        updatedAt: shotAt,
-      ),
-    );
-
     await records.insert(
       PhotoRecord(
         id: recordId,
-        memberId: memberId,
         shotAt: shotAt,
         createdAt: shotAt,
         updatedAt: shotAt,
@@ -75,7 +61,7 @@ void main() {
     );
 
     final photoPath = await storage.saveBytes(
-      memberId: memberId,
+      shotAt: shotAt,
       bytes: await _solidPngBytes(4, 3),
       fileName: 'front.png',
     );
@@ -107,7 +93,6 @@ void main() {
   });
 
   Widget buildApp({
-    String routeMemberId = memberId,
     String routeRecordId = recordId,
     String routePhotoId = photoId,
     AppImagePickerCoordinator? pickerCoordinator,
@@ -125,14 +110,109 @@ void main() {
           ),
       ],
       child: MaterialApp(
-        home: PhotoViewScreen(
-          memberId: routeMemberId,
-          recordId: routeRecordId,
-          photoId: routePhotoId,
+        home: PhotoViewScreen(recordId: routeRecordId, photoId: routePhotoId),
+      ),
+    );
+  }
+
+  /// 기록 상세에서 진입한 상황을 재현한다. 상위 화면은 push 결과로만 편집
+  /// 사실을 알 수 있으므로, pop 결과를 [popped]에 받아 검증한다.
+  Widget buildPushedApp(List<bool?> popped) {
+    return ProviderScope(
+      overrides: [
+        photoRecordRepositoryProvider.overrideWithValue(records),
+        bodyPhotoRepositoryProvider.overrideWithValue(photos),
+        photoStorageServiceProvider.overrideWithValue(storage),
+        photoExportSinkProvider.overrideWithValue(exportSink),
+        gridPhotoComposerProvider.overrideWithValue(gridComposer),
+      ],
+      child: MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                key: const ValueKey('host.open.button'),
+                onPressed: () async {
+                  popped.add(
+                    await Navigator.of(context).push<bool>(
+                      MaterialPageRoute(
+                        builder: (_) => const PhotoViewScreen(
+                          recordId: recordId,
+                          photoId: photoId,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+                child: const Text('열기'),
+              ),
+            ),
+          ),
         ),
       ),
     );
   }
+
+  testWidgets('편집한 뒤 뒤로가기로 나가면 상위 화면에 변경 사실을 알린다', (tester) async {
+    await tester.runAsync(() async {
+      final popped = <bool?>[];
+      await tester.pumpWidget(buildPushedApp(popped));
+      await tester.tap(find.byKey(const ValueKey('host.open.button')));
+      await pumpUntil(
+        tester,
+        () => find
+            .byKey(const ValueKey('records.viewer.memo.field'))
+            .evaluate()
+            .isNotEmpty,
+      );
+
+      await tester.enterText(
+        find.byKey(const ValueKey('records.viewer.memo.field')),
+        '뒤로가기 직전에 고친 메모',
+      );
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('records.viewer.memo.save.button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('records.viewer.memo.save.button')),
+      );
+      // 저장이 리포지토리에 반영될 때까지 기다린 뒤에 나가야, pop 결과가
+      // "저장 성공 이후의 상태"를 반영한다.
+      for (var i = 0; i < 40; i++) {
+        final updated = await photos.getById(photoId);
+        if (updated?.memo == '뒤로가기 직전에 고친 메모') break;
+        await Future.delayed(const Duration(milliseconds: 50));
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      // AppBar 뒤로가기·시스템 뒤로가기 모두 결과 없는 maybePop으로 나간다.
+      await tester.pageBack();
+      await pumpUntil(tester, () => popped.isNotEmpty);
+
+      expect(popped, [true]);
+    });
+  });
+
+  testWidgets('아무것도 바꾸지 않고 나가면 갱신 신호를 보내지 않는다', (tester) async {
+    await tester.runAsync(() async {
+      final popped = <bool?>[];
+      await tester.pumpWidget(buildPushedApp(popped));
+      await tester.tap(find.byKey(const ValueKey('host.open.button')));
+      await pumpUntil(
+        tester,
+        () => find
+            .byKey(const ValueKey('records.viewer.image'))
+            .evaluate()
+            .isNotEmpty,
+      );
+
+      await tester.pageBack();
+      await pumpUntil(tester, () => popped.isNotEmpty);
+
+      expect(popped, [false]);
+    });
+  });
 
   testWidgets('원본 사진 보기 화면이 방향/메모를 표시한다', (tester) async {
     await tester.runAsync(() async {
@@ -166,23 +246,8 @@ void main() {
     });
   });
 
-  testWidgets('URL의 회원 또는 기록과 소유관계가 다르면 사진 작업을 노출하지 않는다', (tester) async {
+  testWidgets('URL의 기록과 사진 소유관계가 다르면 사진 작업을 노출하지 않는다', (tester) async {
     await tester.runAsync(() async {
-      await tester.pumpWidget(buildApp(routeMemberId: 'other-member'));
-      await pumpUntil(
-        tester,
-        () => find.text('사진 정보를 불러오지 못했습니다.').evaluate().isNotEmpty,
-      );
-
-      expect(
-        find.byKey(const ValueKey('records.viewer.replace.button')),
-        findsNothing,
-      );
-      expect(
-        find.byKey(const ValueKey('records.viewer.delete.button')),
-        findsNothing,
-      );
-
       await tester.pumpWidget(buildApp(routeRecordId: 'other-record'));
       await pumpUntil(
         tester,
@@ -267,6 +332,42 @@ void main() {
     });
   });
 
+  testWidgets('사진 메모를 비워 저장하면 메모가 지워진다', (tester) async {
+    await tester.runAsync(() async {
+      await tester.pumpWidget(buildApp());
+      await pumpUntil(
+        tester,
+        () => find
+            .byKey(const ValueKey('records.viewer.memo.field'))
+            .evaluate()
+            .isNotEmpty,
+      );
+
+      // copyWith에 null을 넘기는 것은 "바꾸지 않음"이라 예전 메모가 되살아났다.
+      await tester.enterText(
+        find.byKey(const ValueKey('records.viewer.memo.field')),
+        '',
+      );
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('records.viewer.memo.save.button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('records.viewer.memo.save.button')),
+      );
+
+      BodyPhoto? updated;
+      for (var i = 0; i < 40; i++) {
+        updated = await photos.getById(photoId);
+        if (updated?.memo == null) break;
+        await Future.delayed(const Duration(milliseconds: 50));
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(updated?.memo, isNull);
+    });
+  });
+
   testWidgets('유실된 교체 사진은 명시적으로 적용하기 전까지 기존 원본을 유지한다', (tester) async {
     await tester.runAsync(() async {
       final replacementBytes = await _solidPngBytes(
@@ -281,7 +382,6 @@ void main() {
       final originalBytes = await File(original.filePath).readAsBytes();
 
       final request = ImagePickerRequestContext.photoReplacement(
-        memberId: memberId,
         recordId: recordId,
         photoId: photoId,
       );
@@ -331,16 +431,180 @@ void main() {
     });
   });
 
-  testWidgets('격자 옵션을 끄면 원본 파일 경로를 그대로 내보낸다', (tester) async {
+  /// 기본 격자 설정(표시 켜짐)으로 저장된 사진을 넣고 id를 돌려준다.
+  ///
+  /// setUp의 기본 사진은 촬영 화면에서 격자를 숨긴 채 찍은 경우를 재현하므로,
+  /// 격자가 보이는 경로를 검증하려면 별도의 사진이 필요하다.
+  Future<String> insertPhotoWithVisibleGrid() async {
+    const gridPhotoId = 'photo-with-grid';
+    final gridPhotoPath = await storage.saveBytes(
+      shotAt: shotAt,
+      bytes: await _solidPngBytes(4, 3),
+      fileName: 'front_grid.png',
+    );
+    await photos.insert(
+      BodyPhoto(
+        id: gridPhotoId,
+        recordId: recordId,
+        filePath: gridPhotoPath,
+        direction: BodyDirection.front,
+        width: 4,
+        height: 3,
+        createdAt: shotAt,
+      ),
+    );
+    return gridPhotoId;
+  }
+
+  testWidgets('격자는 기본으로 보이고 격자 버튼으로 끄고 다시 켤 수 있다', (tester) async {
     await tester.runAsync(() async {
+      final gridPhotoId = await insertPhotoWithVisibleGrid();
+
+      await tester.pumpWidget(buildApp(routePhotoId: gridPhotoId));
+      await pumpUntil(
+        tester,
+        () => find
+            .byKey(const ValueKey('records.viewer.grid.visibility.button'))
+            .evaluate()
+            .isNotEmpty,
+      );
+
+      final overlay = find.byKey(const ValueKey('records.viewer.grid.overlay'));
+      final toggle = find.byKey(
+        const ValueKey('records.viewer.grid.visibility.button'),
+      );
+
+      expect(overlay, findsOneWidget);
+
+      await tester.tap(toggle);
+      await tester.pump();
+      expect(overlay, findsNothing);
+
+      await tester.tap(toggle);
+      await tester.pump();
+      expect(overlay, findsOneWidget);
+
+      // 보기 토글만으로는 저장된 격자 설정을 바꾸지 않는다.
+      expect((await photos.getById(gridPhotoId))!.gridSettings.visible, isTrue);
+    });
+  });
+
+  /// 격자 조정 패널을 열고 표시 스위치를 토글한 뒤 적용까지 수행한다.
+  Future<void> toggleGridAndApply(WidgetTester tester) async {
+    final expand = find.byKey(
+      const ValueKey('records.viewer.grid.expand.button'),
+    );
+    await tester.ensureVisible(expand);
+    await tester.tap(expand);
+    await tester.pump();
+
+    final visibleSwitch = find.byKey(
+      const ValueKey('records.viewer.grid.visible.switch'),
+    );
+    await tester.ensureVisible(visibleSwitch);
+    await tester.tap(visibleSwitch);
+    await tester.pump();
+
+    final apply = find.byKey(
+      const ValueKey('records.viewer.grid.apply.button'),
+    );
+    await tester.ensureVisible(apply);
+    await tester.tap(apply);
+    await tester.pump();
+  }
+
+  testWidgets('격자를 조정해 적용하면 메타데이터만 바뀌고 원본 파일은 그대로다', (tester) async {
+    await tester.runAsync(() async {
+      final before = (await photos.getById(photoId))!;
+      final originalBytes = await File(before.filePath).readAsBytes();
+
       await tester.pumpWidget(buildApp());
       await pumpUntil(
         tester,
         () => find
-            .byKey(const ValueKey('records.viewer.export.button'))
+            .byKey(const ValueKey('records.viewer.grid.expand.button'))
             .evaluate()
             .isNotEmpty,
       );
+
+      await toggleGridAndApply(tester);
+
+      BodyPhoto? after;
+      for (var i = 0; i < 40; i++) {
+        after = await photos.getById(photoId);
+        if (after!.gridSettings.visible != before.gridSettings.visible) break;
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+        await tester.pump(const Duration(milliseconds: 25));
+      }
+
+      // 격자 표시 여부만 바뀌어야 한다.
+      expect(after!.gridSettings.visible, !before.gridSettings.visible);
+      // 촬영 당시 값은 되돌리기 기준점이므로 보존된다.
+      expect(after.captureGridSettings, before.captureGridSettings);
+      expect(after.isGridEdited, isTrue);
+      // 원본 픽셀에는 격자를 굽지 않는다.
+      expect(await File(after.filePath).readAsBytes(), originalBytes);
+    });
+  });
+
+  testWidgets('촬영 당시와 달라지면 되돌리기가 나타나고 누르면 원래 설정으로 돌아간다', (tester) async {
+    await tester.runAsync(() async {
+      final before = (await photos.getById(photoId))!;
+
+      await tester.pumpWidget(buildApp());
+      await pumpUntil(
+        tester,
+        () => find
+            .byKey(const ValueKey('records.viewer.grid.expand.button'))
+            .evaluate()
+            .isNotEmpty,
+      );
+
+      final revert = find.byKey(
+        const ValueKey('records.viewer.grid.revert.button'),
+      );
+      // 촬영 당시 설정과 같은 상태에서는 되돌릴 것이 없다.
+      expect(revert, findsNothing);
+
+      await toggleGridAndApply(tester);
+      await pumpUntil(tester, () => revert.evaluate().isNotEmpty);
+
+      await tester.ensureVisible(revert);
+      await tester.tap(revert);
+      await tester.pump();
+
+      BodyPhoto? restored;
+      for (var i = 0; i < 40; i++) {
+        restored = await photos.getById(photoId);
+        if (!restored!.isGridEdited) break;
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+        await tester.pump(const Duration(milliseconds: 25));
+      }
+
+      expect(restored!.gridSettings, before.captureGridSettings);
+      expect(restored.isGridEdited, isFalse);
+    });
+  });
+
+  testWidgets('격자 합성 옵션을 끄면 원본 파일 경로를 그대로 내보낸다', (tester) async {
+    await tester.runAsync(() async {
+      final gridPhotoId = await insertPhotoWithVisibleGrid();
+      await tester.pumpWidget(buildApp(routePhotoId: gridPhotoId));
+      await pumpUntil(
+        tester,
+        () => find
+            .byKey(const ValueKey('records.viewer.export.grid.toggle'))
+            .evaluate()
+            .isNotEmpty,
+      );
+
+      // 격자 합성은 기본으로 켜져 있다. 원본 내보내기를 보려면 직접 끈다.
+      final gridToggle = find.byKey(
+        const ValueKey('records.viewer.export.grid.toggle'),
+      );
+      await tester.ensureVisible(gridToggle);
+      await tester.tap(gridToggle);
+      await tester.pump();
 
       final exportButton = find.byKey(
         const ValueKey('records.viewer.export.button'),
@@ -358,35 +622,25 @@ void main() {
       expect(exportSink.pngBytes, isEmpty);
       expect(
         exportSink.originalPaths.single,
-        (await photos.getById(photoId))!.filePath,
+        (await photos.getById(gridPhotoId))!.filePath,
       );
     });
   });
 
-  testWidgets('격자 옵션은 원본을 유지하고 격자가 합성된 별도 PNG를 내보낸다', (tester) async {
+  testWidgets('기본 격자 옵션은 원본을 유지하고 격자가 합성된 별도 PNG를 내보낸다', (tester) async {
     await tester.runAsync(() async {
-      final photo = (await photos.getById(photoId))!;
+      final gridPhotoId = await insertPhotoWithVisibleGrid();
+      final photo = (await photos.getById(gridPhotoId))!;
       final originalFile = File(photo.filePath);
       final originalBytes = await originalFile.readAsBytes();
 
-      await tester.pumpWidget(buildApp());
+      await tester.pumpWidget(buildApp(routePhotoId: gridPhotoId));
       await pumpUntil(
         tester,
         () => find
             .byKey(const ValueKey('records.viewer.export.grid.toggle'))
             .evaluate()
             .isNotEmpty,
-      );
-
-      final gridToggle = find.byKey(
-        const ValueKey('records.viewer.export.grid.toggle'),
-      );
-      await tester.ensureVisible(gridToggle);
-      await tester.tap(gridToggle);
-      await tester.pump();
-      expect(
-        find.byKey(const ValueKey('records.viewer.export.grid.preview')),
-        findsOneWidget,
       );
 
       final exportButton = find.byKey(
@@ -405,9 +659,109 @@ void main() {
       expect(exportSink.pngBytes, hasLength(1));
       expect(exportSink.pngNames.single, contains('_grid'));
       expect(gridComposer.sourceBytes, hasLength(1));
-      expect(gridComposer.settings.single.visible, isFalse);
+      expect(gridComposer.settings.single.visible, isTrue);
       expect(exportSink.pngBytes.single, isNot(orderedEquals(originalBytes)));
       expect(await originalFile.readAsBytes(), orderedEquals(originalBytes));
+    });
+  });
+
+  testWidgets('격자가 보이는 사진은 격자 합성본을 공유한다', (tester) async {
+    await tester.runAsync(() async {
+      final gridPhotoId = await insertPhotoWithVisibleGrid();
+      await tester.pumpWidget(buildApp(routePhotoId: gridPhotoId));
+      await pumpUntil(
+        tester,
+        () => find
+            .byKey(const ValueKey('records.viewer.share.button'))
+            .evaluate()
+            .isNotEmpty,
+      );
+
+      final shareButton = find.byKey(
+        const ValueKey('records.viewer.share.button'),
+      );
+      await tester.ensureVisible(shareButton);
+      await tester.tap(shareButton);
+      await tester.pump();
+
+      for (var i = 0; i < 60 && exportSink.sharedPngNames.isEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+        await tester.pump(const Duration(milliseconds: 25));
+      }
+
+      expect(exportSink.sharedPngNames.single, contains('_grid'));
+      expect(exportSink.sharedOriginalPaths, isEmpty);
+      expect(gridComposer.settings.single.visible, isTrue);
+    });
+  });
+
+  testWidgets('격자를 숨긴 사진은 원본 파일을 그대로 공유한다', (tester) async {
+    await tester.runAsync(() async {
+      // setUp의 기본 사진은 격자를 숨긴 채 저장돼 있다.
+      await tester.pumpWidget(buildApp());
+      await pumpUntil(
+        tester,
+        () => find
+            .byKey(const ValueKey('records.viewer.share.button'))
+            .evaluate()
+            .isNotEmpty,
+      );
+
+      final shareButton = find.byKey(
+        const ValueKey('records.viewer.share.button'),
+      );
+      await tester.ensureVisible(shareButton);
+      await tester.tap(shareButton);
+      await tester.pump();
+
+      for (var i = 0; i < 60 && exportSink.sharedOriginalPaths.isEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+        await tester.pump(const Duration(milliseconds: 25));
+      }
+
+      expect(
+        exportSink.sharedOriginalPaths.single,
+        (await photos.getById(photoId))!.filePath,
+      );
+      expect(exportSink.sharedPngBytes, isEmpty);
+      expect(gridComposer.sourceBytes, isEmpty);
+    });
+  });
+
+  testWidgets('격자를 숨긴 상태에서는 합성 없이 원본을 내보내고 옵션도 잠긴다', (tester) async {
+    await tester.runAsync(() async {
+      // setUp의 기본 사진은 격자를 숨긴 채 저장돼 있다. 화면에 없는 격자가
+      // 결과물에만 찍혀 나가면 사용자는 그 사실을 알 방법이 없다.
+      await tester.pumpWidget(buildApp());
+      await pumpUntil(
+        tester,
+        () => find
+            .byKey(const ValueKey('records.viewer.export.grid.toggle'))
+            .evaluate()
+            .isNotEmpty,
+      );
+
+      final gridToggle = tester.widget<SwitchListTile>(
+        find.byKey(const ValueKey('records.viewer.export.grid.toggle')),
+      );
+      expect(gridToggle.value, isFalse);
+      expect(gridToggle.onChanged, isNull);
+
+      final exportButton = find.byKey(
+        const ValueKey('records.viewer.export.button'),
+      );
+      await tester.ensureVisible(exportButton);
+      await tester.tap(exportButton);
+      await tester.pump();
+
+      for (var i = 0; i < 40 && exportSink.originalPaths.isEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+        await tester.pump(const Duration(milliseconds: 25));
+      }
+
+      expect(exportSink.originalPaths, hasLength(1));
+      expect(exportSink.pngBytes, isEmpty);
+      expect(gridComposer.sourceBytes, isEmpty);
     });
   });
 }
@@ -453,6 +807,9 @@ class FakePhotoExportSink implements PhotoExportSink {
   final List<String> originalPaths = [];
   final List<Uint8List> pngBytes = [];
   final List<String> pngNames = [];
+  final List<String> sharedOriginalPaths = [];
+  final List<Uint8List> sharedPngBytes = [];
+  final List<String> sharedPngNames = [];
 
   @override
   Future<void> saveOriginalFile(
@@ -466,6 +823,24 @@ class FakePhotoExportSink implements PhotoExportSink {
   Future<void> savePng(Uint8List bytes, {required String name}) async {
     pngBytes.add(Uint8List.fromList(bytes));
     pngNames.add(name);
+  }
+
+  @override
+  Future<void> shareOriginalFile(
+    String sourcePath, {
+    ui.Rect? sharePositionOrigin,
+  }) async {
+    sharedOriginalPaths.add(sourcePath);
+  }
+
+  @override
+  Future<void> sharePng(
+    Uint8List bytes, {
+    required String name,
+    ui.Rect? sharePositionOrigin,
+  }) async {
+    sharedPngBytes.add(Uint8List.fromList(bytes));
+    sharedPngNames.add(name);
   }
 }
 

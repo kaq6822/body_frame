@@ -2,5 +2,6 @@ package com.bodyframe.body_frame
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 
-// local_auth 생체 인증은 Android에서 FragmentActivity를 요구한다.
+// FragmentActivity 기반을 유지한다. 일부 Flutter 플러그인이 FragmentActivity를
+// 전제로 동작하며, 되돌릴 실익이 없다.
 class MainActivity : FlutterFragmentActivity()

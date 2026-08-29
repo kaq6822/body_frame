@@ -59,6 +59,15 @@ String formatBytes(int bytes) {
   return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
 }
 
+/// `yyyyMM` 버킷 이름을 표시용 문자열로 바꾼다. 예: `202608` → `2026년 8월`.
+String _formatMonth(String bucket) {
+  if (bucket.length != 6) return bucket;
+  final year = bucket.substring(0, 4);
+  final month = int.tryParse(bucket.substring(4));
+  if (month == null) return bucket;
+  return '$year년 $month월';
+}
+
 class _StorageBody extends StatelessWidget {
   final StorageUsageReport report;
 
@@ -88,17 +97,17 @@ class _StorageBody extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        const Text('회원별 사용량', style: TextStyle(fontWeight: FontWeight.bold)),
-        if (report.byMember.isEmpty)
+        const Text('월별 사용량', style: TextStyle(fontWeight: FontWeight.bold)),
+        if (report.byMonth.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
-            child: Text('등록된 회원이 없습니다'),
+            child: Text('저장된 사진이 없습니다'),
           )
         else
-          ...report.byMember.map(
+          ...report.byMonth.map(
             (m) => ListTile(
-              key: ValueKey('storage.member.item.${m.memberId}'),
-              title: Text(m.memberName),
+              key: ValueKey('storage.month.item.${m.month}'),
+              title: Text(_formatMonth(m.month)),
               subtitle: Text('사진 ${m.photoCount}장'),
               trailing: Text(formatBytes(m.totalBytes)),
             ),

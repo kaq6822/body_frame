@@ -3,11 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/models.dart';
 import '../../core/providers.dart';
 
-// memberRecordsProvider/recordPhotosProvider는 members feature의 정의를
-// 단일 출처로 재사용한다(중복 정의 시 invalidate가 서로 전파되지 않고
-// 두 파일 동시 import에서 이름이 충돌한다 — 코드 리뷰 지적 사항).
-export '../members/providers/members_providers.dart'
-    show memberRecordsProvider, recordPhotosProvider;
+// allRecordsProvider/recordPhotosProvider는 home feature의 정의를 단일
+// 출처로 재사용한다(중복 정의 시 invalidate가 서로 전파되지 않고 두 파일
+// 동시 import에서 이름이 충돌한다).
+export '../records/providers/records_providers.dart'
+    show allRecordsProvider, recordPhotosProvider;
 
 /// compare feature 전용 조회용 provider 모음.
 ///
@@ -25,7 +25,6 @@ final recordByIdProvider = FutureProvider.family<PhotoRecord?, String>((
 
 /// 전후 사진 비교 화면에 필요한 데이터 묶음.
 class CompareViewBundle {
-  final Member? member;
   final PhotoRecord beforeRecord;
   final PhotoRecord afterRecord;
   final BodyPhoto beforePhoto;
@@ -33,7 +32,6 @@ class CompareViewBundle {
   final GridSettings defaultGrid;
 
   const CompareViewBundle({
-    required this.member,
     required this.beforeRecord,
     required this.afterRecord,
     required this.beforePhoto,
@@ -43,18 +41,13 @@ class CompareViewBundle {
 }
 
 /// [CompareViewBundle] 조회 키.
-typedef CompareViewKey = ({
-  String memberId,
-  String beforePhotoId,
-  String afterPhotoId,
-});
+typedef CompareViewKey = ({String beforePhotoId, String afterPhotoId});
 
-/// 사진/촬영 기록/회원/기본 격자 설정을 한 번에 모아 전후 비교 화면에 공급한다.
+/// 사진/촬영 기록/기본 격자 설정을 한 번에 모아 전후 비교 화면에 공급한다.
 final compareViewBundleProvider =
     FutureProvider.family<CompareViewBundle, CompareViewKey>((ref, key) async {
       final photos = ref.watch(bodyPhotoRepositoryProvider);
       final records = ref.watch(photoRecordRepositoryProvider);
-      final members = ref.watch(memberRepositoryProvider);
       final grids = ref.watch(gridSettingsServiceProvider);
 
       final beforePhoto = await photos.getById(key.beforePhotoId);
@@ -72,11 +65,9 @@ final compareViewBundleProvider =
         throw StateError('촬영 기록을 찾을 수 없습니다.');
       }
 
-      final member = await members.getById(key.memberId);
       final grid = await grids.load();
 
       return CompareViewBundle(
-        member: member,
         beforeRecord: beforeRecord,
         afterRecord: afterRecord,
         beforePhoto: beforePhoto,

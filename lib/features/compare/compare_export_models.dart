@@ -33,7 +33,6 @@ enum CompareMode {
 /// 구도가 정확히 일치해야 하므로, 비교 화면에서 사용자가
 /// 조정한 확대/이동 값([beforeMatrix]/[afterMatrix])을 그대로 재사용한다.
 class CompareExportRequest {
-  final Member? member;
   final PhotoRecord beforeRecord;
   final PhotoRecord afterRecord;
   final BodyPhoto beforePhoto;
@@ -44,9 +43,13 @@ class CompareExportRequest {
   final Matrix4 beforeMatrix;
   final Matrix4 afterMatrix;
 
-  /// 비교 화면에서 사용하던 격자 설정과 표시 여부(초기값 제안용).
+  /// 비교 화면에서 사용하던 격자 설정(초기값 제안용).
   final GridSettings grid;
-  final bool showGrid;
+
+  /// 비교 화면에서 사용자가 **직접 고른** 격자 표시 여부. null이면 고른 적이
+  /// 없다는 뜻이며, 생성 화면은 저장된 기본 내보내기 옵션을 그대로 쓴다.
+  /// 화면 기본값만으로 사용자가 저장해 둔 설정을 덮어쓰지 않기 위한 구분이다.
+  final bool? showGrid;
 
   /// 화면에서 선택한 비교 방식과 해당 방식의 조절값.
   final CompareMode mode;
@@ -62,7 +65,6 @@ class CompareExportRequest {
   final Size? panePhotoSize;
 
   const CompareExportRequest({
-    required this.member,
     required this.beforeRecord,
     required this.afterRecord,
     required this.beforePhoto,
@@ -71,7 +73,7 @@ class CompareExportRequest {
     required this.beforeMatrix,
     required this.afterMatrix,
     required this.grid,
-    required this.showGrid,
+    this.showGrid,
     this.mode = CompareMode.sideBySide,
     this.overlayOpacity = 0.5,
     this.sliderPosition = 0.5,

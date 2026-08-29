@@ -28,8 +28,18 @@ class BodyPhoto {
   /// EXIF 기반 회전 정보(1~8). 표시할 때 올바르게 반영한다.
   final int orientation;
 
-  /// 촬영 당시 사용한 격자 설정(재현용).
+  /// 현재 이 사진에 적용된 격자 설정.
+  ///
+  /// 격자는 원본 픽셀에 굽지 않고 메타데이터로만 남기므로 촬영 후에도 바꿀 수
+  /// 있다. 화면 표시는 항상 오버레이이고, 한 장으로 합치는 것은 내보내기·공유
+  /// 순간뿐이다.
   final GridSettings gridSettings;
+
+  /// 촬영 당시 격자 설정. null이면 [gridSettings]와 같다고 본다.
+  ///
+  /// [captureGridSettings]로 읽는다. 되돌리기를 위해 보존하는 값이므로 수정
+  /// 경로에서 덮어쓰지 않는다.
+  final GridSettings? _captureGridSettings;
 
   /// 사진 메모 (선택).
   final String? memo;
@@ -46,9 +56,16 @@ class BodyPhoto {
     this.height = 0,
     this.orientation = 1,
     this.gridSettings = GridSettings.defaults,
+    GridSettings? captureGridSettings,
     this.memo,
     required this.createdAt,
-  });
+  }) : _captureGridSettings = captureGridSettings;
+
+  /// 촬영 당시 격자 설정. 촬영 후 [gridSettings]를 조정해도 바뀌지 않는다.
+  GridSettings get captureGridSettings => _captureGridSettings ?? gridSettings;
+
+  /// 촬영 당시 설정과 다르게 조정된 상태인지. 되돌리기 노출 여부를 정한다.
+  bool get isGridEdited => captureGridSettings != gridSettings;
 
   BodyPhoto copyWith({
     String? recordId,
@@ -59,6 +76,7 @@ class BodyPhoto {
     int? orientation,
     GridSettings? gridSettings,
     String? memo,
+    bool clearMemo = false,
     DateTime? createdAt,
   }) {
     return BodyPhoto(
@@ -70,7 +88,11 @@ class BodyPhoto {
       height: height ?? this.height,
       orientation: orientation ?? this.orientation,
       gridSettings: gridSettings ?? this.gridSettings,
-      memo: memo ?? this.memo,
+      // 촬영 당시 값은 copyWith로 바꿀 수 없다. 되돌리기의 기준점이므로
+      // 수정 경로에서 잃어버리지 않게 항상 그대로 넘긴다.
+      captureGridSettings: _captureGridSettings,
+      // null은 "바꾸지 않음"이므로 비우려면 clearMemo를 써야 한다.
+      memo: clearMemo ? null : (memo ?? this.memo),
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -85,6 +107,7 @@ class BodyPhoto {
       'height': height,
       'orientation': orientation,
       'grid_settings': gridSettings.toJson(),
+      'capture_grid_settings': captureGridSettings.toJson(),
       'memo': memo,
       'created_at': createdAt.millisecondsSinceEpoch,
     };
@@ -100,6 +123,12 @@ class BodyPhoto {
       height: (map['height'] as int?) ?? 0,
       orientation: (map['orientation'] as int?) ?? 1,
       gridSettings: GridSettings.fromJson(map['grid_settings'] as String?),
+      // 마이그레이션 이전 행은 이 값이 없다. null로 두면 촬영 당시 설정이
+      // 현재 설정과 같다고 해석되어 되돌리기가 노출되지 않는다.
+      captureGridSettings: switch (map['capture_grid_settings']) {
+        final String json when json.isNotEmpty => GridSettings.fromJson(json),
+        _ => null,
+      },
       memo: map['memo'] as String?,
       createdAt: DateTime.fromMillisecondsSinceEpoch(map['created_at'] as int),
     );

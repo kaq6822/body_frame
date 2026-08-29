@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:body_frame/core/models/models.dart';
+import 'package:body_frame/core/theme/app_tokens.dart';
 import '../providers/capture_providers.dart';
 import 'async_status_indicator.dart';
 
@@ -26,7 +27,7 @@ class GridSettingsPanel extends ConsumerWidget {
     final notifier = ref.read(gridSettingsControllerProvider.notifier);
 
     return async.when(
-      data: (settings) => _buildControls(settings, notifier),
+      data: (settings) => _buildControls(context, settings, notifier),
       loading: () => const Padding(
         padding: EdgeInsets.all(16),
         child: AsyncStatusIndicator(
@@ -47,7 +48,11 @@ class GridSettingsPanel extends ConsumerWidget {
     );
   }
 
-  Widget _buildControls(GridSettings settings, GridSettingsController notifier) {
+  Widget _buildControls(
+    BuildContext context,
+    GridSettings settings,
+    GridSettingsController notifier,
+  ) {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -114,17 +119,27 @@ class GridSettingsPanel extends ConsumerWidget {
                 label: '격자 색상 ${entry.key}',
                 child: GestureDetector(
                   key: ValueKey(id),
-                  onTap: () =>
-                      notifier.update((s) => s.copyWith(colorValue: colorValue)),
-                  child: Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      color: entry.value,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: isSelected ? Colors.blueAccent : Colors.grey,
-                        width: isSelected ? 3 : 1,
+                  onTap: () => notifier.update(
+                    (s) => s.copyWith(colorValue: colorValue),
+                  ),
+                  // 스와치는 작게 보이지만 히트 영역은 최소 터치 타겟을 채운다.
+                  child: SizedBox(
+                    width: AppSpacing.minTouchTarget,
+                    height: AppSpacing.minTouchTarget,
+                    child: Center(
+                      child: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: entry.value,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: isSelected
+                                ? context.colors.primary
+                                : context.colors.outline,
+                            width: isSelected ? 3 : 1,
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -155,10 +170,11 @@ class GridSettingsPanel extends ConsumerWidget {
     required ValueChanged<double> onChanged,
   }) {
     final clamped = value.clamp(min, max).toDouble();
+    final display = clamped.toStringAsFixed(1);
     return Semantics(
       identifier: id,
       label: label,
-      value: clamped.toStringAsFixed(1),
+      value: display,
       child: Row(
         children: [
           SizedBox(width: 64, child: Text(label)),
@@ -169,6 +185,18 @@ class GridSettingsPanel extends ConsumerWidget {
               min: min,
               max: max,
               onChanged: onChanged,
+            ),
+          ),
+          // 슬라이더만으로는 조작 결과를 확인할 수 없어 현재 값을 늘 함께 둔다.
+          SizedBox(
+            width: 36,
+            child: Text(
+              display,
+              textAlign: TextAlign.end,
+              style: const TextStyle(
+                fontFeatures: [FontFeature.tabularFigures()],
+                fontSize: 12,
+              ),
             ),
           ),
         ],

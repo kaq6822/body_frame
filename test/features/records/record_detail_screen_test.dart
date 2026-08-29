@@ -6,10 +6,10 @@ import 'package:body_frame/core/database/app_database.dart';
 import 'package:body_frame/core/models/models.dart';
 import 'package:body_frame/core/providers.dart';
 import 'package:body_frame/core/repositories/body_photo_repository.dart';
-import 'package:body_frame/core/repositories/member_repository.dart';
 import 'package:body_frame/core/repositories/photo_record_repository.dart';
 import 'package:body_frame/core/services/photo_storage_service.dart';
 import 'package:body_frame/features/records/record_detail_screen.dart';
+import 'package:body_frame/features/records/providers/records_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -29,7 +29,6 @@ void main() {
   late BodyPhotoRepository photos;
   late PhotoRecordRepository records;
 
-  const memberId = 'member-1';
   const recordId = 'record-1';
   final shotAt = DateTime(2026, 1, 10);
 
@@ -48,21 +47,9 @@ void main() {
     photos = BodyPhotoRepositoryImpl(database: db, storage: storage);
     records = PhotoRecordRepositoryImpl(database: db, storage: storage);
 
-    // photo_records.member_id는 members 테이블을 참조하므로 먼저 회원을 등록한다.
-    final members = MemberRepositoryImpl(database: db, storage: storage);
-    await members.insert(
-      Member(
-        id: memberId,
-        name: '테스트 회원',
-        createdAt: shotAt,
-        updatedAt: shotAt,
-      ),
-    );
-
     await records.insert(
       PhotoRecord(
         id: recordId,
-        memberId: memberId,
         shotAt: shotAt,
         memo: '기존 메모',
         createdAt: shotAt,
@@ -71,7 +58,7 @@ void main() {
     );
 
     final frontPhotoPath = await storage.saveBytes(
-      memberId: memberId,
+      shotAt: shotAt,
       bytes: _onePixelPng,
       fileName: 'front.png',
     );
@@ -93,18 +80,13 @@ void main() {
     }
   });
 
-  Widget buildApp({String routeMemberId = memberId}) {
+  Widget buildApp({String routeRecordId = recordId}) {
     return ProviderScope(
       overrides: [
         photoRecordRepositoryProvider.overrideWithValue(records),
         bodyPhotoRepositoryProvider.overrideWithValue(photos),
       ],
-      child: MaterialApp(
-        home: RecordDetailScreen(
-          memberId: routeMemberId,
-          recordId: recordId,
-        ),
-      ),
+      child: MaterialApp(home: RecordDetailScreen(recordId: routeRecordId)),
     );
   }
 
@@ -124,7 +106,7 @@ void main() {
         findsOneWidget,
       );
 
-      // 등록된 방향(정면)은 사진 타일로, 미등록 방향은 빈 타일로 표시된다.
+      // 등록된 방향(정면)은 슬라이더 첫 장으로, 미등록 방향은 요약 칩으로 알린다.
       expect(
         find.byKey(const ValueKey('records.photo.front.image')),
         findsOneWidget,
@@ -146,6 +128,17 @@ void main() {
         findsOneWidget,
       );
 
+      // 사진에는 기본적으로 정렬 격자가 함께 얹힌다.
+      expect(
+        find.byKey(const ValueKey('records.photo.front.image.grid.overlay')),
+        findsOneWidget,
+      );
+      // 사진이 한 장뿐이면 넘길 곳이 없어 점을 두지 않는다.
+      expect(
+        find.byKey(const ValueKey('records.photo.slider.dot.0')),
+        findsNothing,
+      );
+
       final memoField = tester.widget<TextField>(
         find.byKey(const ValueKey('records.memo.field')),
       );
@@ -153,22 +146,193 @@ void main() {
     });
   });
 
-  testWidgets('URL의 회원과 기록 소유관계가 다르면 기록 작업을 노출하지 않는다', (
-    tester,
-  ) async {
+  testWidgets('촬영분이 여러 장이면 좌우로 넘겨 보고 점으로 바로 이동한다', (tester) async {
+    // 슬라이더는 3:4 프레임이라 기본 테스트 뷰포트(800x600)에서는 화면 밖으로
+    // 넘쳐 제스처 지점이 잡히지 않는다. 실기기 비율(1080x2400 @2.75)을 재현한다.
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.reset);
+
     await tester.runAsync(() async {
-      await tester.pumpWidget(buildApp(routeMemberId: 'other-member'));
+      // 정면·좌측면·우측면 3장. 넘기는 순서는 촬영 순서를 따른다.
+      for (final direction in [
+        BodyDirection.leftSide,
+        BodyDirection.rightSide,
+      ]) {
+        final path = await storage.saveBytes(
+          shotAt: shotAt,
+          bytes: _onePixelPng,
+          fileName: '${direction.key}.png',
+        );
+        await photos.insert(
+          BodyPhoto(
+            id: 'photo-${direction.key}',
+            recordId: recordId,
+            filePath: path,
+            direction: direction,
+            createdAt: shotAt,
+          ),
+        );
+      }
+
+      await tester.pumpWidget(buildApp());
+      await pumpUntil(
+        tester,
+        () => find
+            .byKey(const ValueKey('records.photo.slider'))
+            .evaluate()
+            .isNotEmpty,
+      );
+
+      final slider = find.byKey(const ValueKey('records.photo.slider'));
+      expect(
+        find.byKey(const ValueKey('records.photo.front.image')),
+        findsOneWidget,
+      );
+      expect(find.text('정면'), findsOneWidget);
+      expect(find.text('1 / 3'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('records.photo.slider.dot.2')),
+        findsOneWidget,
+      );
+
+      // 왼쪽으로 밀면 다음 촬영분(좌측면)으로 넘어간다.
+      await tester.drag(slider, const Offset(-500, 0));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('records.photo.leftSide.image')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('records.photo.front.image')),
+        findsNothing,
+      );
+      expect(find.text('2 / 3'), findsOneWidget);
+
+      // 점을 누르면 그 촬영분으로 바로 이동한다.
+      await tester.tap(
+        find.byKey(const ValueKey('records.photo.slider.dot.0')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('records.photo.front.image')),
+        findsOneWidget,
+      );
+      expect(find.text('1 / 3'), findsOneWidget);
+
+      // 3장이 모두 있으므로 미등록으로 남는 방향은 후면·기타뿐이다.
+      expect(
+        find.byKey(const ValueKey('records.photo.leftSide.empty')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('records.photo.back.empty')),
+        findsOneWidget,
+      );
+    });
+  });
+
+  testWidgets('존재하지 않는 기록 id로 진입하면 기록 작업을 노출하지 않는다', (tester) async {
+    await tester.runAsync(() async {
+      await tester.pumpWidget(buildApp(routeRecordId: 'missing-record'));
       await pumpUntil(
         tester,
         () => find.text('촬영 기록을 불러오지 못했습니다.').evaluate().isNotEmpty,
       );
 
       expect(find.byKey(const ValueKey('records.memo.field')), findsNothing);
-      expect(
-        find.byKey(const ValueKey('records.delete.button')),
-        findsNothing,
+      expect(find.byKey(const ValueKey('records.delete.button')), findsNothing);
+      expect(await records.getById(recordId), isNotNull);
+    });
+  });
+
+  testWidgets('기록 메모를 비워 저장하면 메모가 지워진다', (tester) async {
+    await tester.runAsync(() async {
+      await tester.pumpWidget(buildApp());
+      await pumpUntil(
+        tester,
+        () => find
+            .byKey(const ValueKey('records.memo.field'))
+            .evaluate()
+            .isNotEmpty,
       );
-      expect((await records.getById(recordId))?.memberId, memberId);
+
+      // copyWith에 null을 넘기는 것은 "바꾸지 않음"이라 예전 메모가 되살아났다.
+      await tester.enterText(
+        find.byKey(const ValueKey('records.memo.field')),
+        '',
+      );
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('records.memo.save.button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('records.memo.save.button')));
+
+      PhotoRecord? updated;
+      for (var i = 0; i < 40; i++) {
+        updated = await records.getById(recordId);
+        if (updated?.memo == null) break;
+        await Future.delayed(const Duration(milliseconds: 50));
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(updated?.memo, isNull);
+    });
+  });
+
+  testWidgets('기록을 삭제하면 타임라인 목록도 함께 갱신된다', (tester) async {
+    await tester.runAsync(() async {
+      // 기록 목록과 홈 카메라 썸네일이 이 provider를 읽는다. 삭제 후에도 캐시가
+      // 남으면 사라진 기록이 목록에 계속 보인다.
+      final container = ProviderContainer(
+        overrides: [
+          photoRecordRepositoryProvider.overrideWithValue(records),
+          bodyPhotoRepositoryProvider.overrideWithValue(photos),
+        ],
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        timelineProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      expect(await container.read(timelineProvider.future), hasLength(1));
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: RecordDetailScreen(recordId: recordId),
+          ),
+        ),
+      );
+      await pumpUntil(
+        tester,
+        () => find
+            .byKey(const ValueKey('records.record.delete.button'))
+            .evaluate()
+            .isNotEmpty,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey('records.record.delete.button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('records.delete.confirm.button')),
+      );
+      await tester.pump();
+
+      for (var i = 0; i < 40; i++) {
+        if (await records.getById(recordId) == null) break;
+        await Future.delayed(const Duration(milliseconds: 50));
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(await container.read(timelineProvider.future), isEmpty);
     });
   });
 

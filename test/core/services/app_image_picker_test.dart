@@ -13,7 +13,6 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final store = SharedPreferencesImagePickerRequestStore();
     final expected = ImagePickerRequestContext.photoReplacement(
-      memberId: 'member-1',
       recordId: 'record-1',
       photoId: 'photo-1',
     );
@@ -22,7 +21,6 @@ void main() {
     expect(await store.load(), expected);
     await store.clearIfMatches(
       ImagePickerRequestContext.photoReplacement(
-        memberId: 'member-1',
         recordId: 'record-1',
         photoId: 'photo-2',
       ),
@@ -35,7 +33,6 @@ void main() {
 
   test('유실 결과는 정확한 문맥이 화면 반영을 확인할 때까지 유지한다', () async {
     final expected = ImagePickerRequestContext.photoReplacement(
-      memberId: 'member-1',
       recordId: 'record-1',
       photoId: 'photo-1',
     );
@@ -62,8 +59,7 @@ void main() {
     expect(
       coordinator.recoveredFor(
         ImagePickerRequestContext.photoReplacement(
-          memberId: 'member-2',
-          recordId: 'record-1',
+          recordId: 'record-2',
           photoId: 'photo-1',
         ),
       ),
@@ -93,7 +89,7 @@ void main() {
     final recoveredFile = await File(
       '${temporaryDirectory.path}/recovered.jpg',
     ).writeAsBytes(const [1, 2, 3]);
-    final expected = ImagePickerRequestContext.galleryImport('member-1');
+    final expected = ImagePickerRequestContext.galleryImport();
     final firstStore = SharedPreferencesImagePickerRequestStore();
     await firstStore.save(expected);
     final firstPicker = FakeAppImagePicker(
@@ -136,7 +132,7 @@ void main() {
 
   test('영속 복구 파일이 사라졌으면 문맥을 정리해 새 picker를 막지 않는다', () async {
     SharedPreferences.setMockInitialValues({});
-    final expected = ImagePickerRequestContext.galleryImport('member-1');
+    final expected = ImagePickerRequestContext.galleryImport();
     final store = SharedPreferencesImagePickerRequestStore();
     await store.save(expected);
     await store.saveRecovered(
@@ -164,7 +160,7 @@ void main() {
     expect(picker.retrieveLostDataCalls, 0);
     expect(
       await coordinator.pickImage(
-        context: ImagePickerRequestContext.studioLogo(),
+        context: ImagePickerRequestContext.galleryImport(),
         source: ImageSource.gallery,
       ),
       isNotNull,
@@ -173,16 +169,15 @@ void main() {
 
   test('삭제된 대상의 복구 결과는 사용자의 다른 새 선택으로 안전하게 대체한다', () async {
     final obsolete = ImagePickerRequestContext.photoReplacement(
-      memberId: 'deleted-member',
       recordId: 'deleted-record',
       photoId: 'deleted-photo',
     );
-    final next = ImagePickerRequestContext.studioLogo();
+    final next = ImagePickerRequestContext.galleryImport();
     final store = MemoryImagePickerRequestStore(obsolete);
     final picker = FakeAppImagePicker(
       lostResponse: LostDataResponse(file: XFile('/obsolete.jpg')),
       store: store,
-      pickedFile: XFile('/new-logo.jpg'),
+      pickedFile: XFile('/new-selection.jpg'),
     );
     final coordinator = AppImagePickerCoordinator(
       picker: picker,
@@ -196,7 +191,7 @@ void main() {
       source: ImageSource.gallery,
     );
 
-    expect(picked?.path, '/new-logo.jpg');
+    expect(picked?.path, '/new-selection.jpg');
     expect(coordinator.state, isNull);
     expect(store.recovered, isNull);
     expect(store.current, isNull);
@@ -204,11 +199,14 @@ void main() {
   });
 
   test('플랫폼 회수 예외는 pending 문맥을 유지하고 다음 initialize에서 재시도한다', () async {
-    final expected = ImagePickerRequestContext.newMemberAvatar();
+    final expected = ImagePickerRequestContext.photoReplacement(
+      recordId: 'record-9',
+      photoId: 'photo-9',
+    );
     final store = MemoryImagePickerRequestStore(expected);
     final picker = FakeAppImagePicker(
       lostResponse: LostDataResponse(
-        file: XFile('/cache/new-member-avatar.jpg'),
+        file: XFile('/cache/replacement.jpg'),
       ),
       store: store,
     )..throwOnRetrieve = true;
@@ -232,7 +230,10 @@ void main() {
   });
 
   test('picker 호출 전에 문맥을 저장하고 정상 반환과 오류에서 정리한다', () async {
-    final request = ImagePickerRequestContext.memberAvatar('member-1');
+    final request = ImagePickerRequestContext.photoReplacement(
+      recordId: 'record-1',
+      photoId: 'photo-1',
+    );
     final store = MemoryImagePickerRequestStore();
     final picker = FakeAppImagePicker(
       lostResponse: LostDataResponse.empty(),
@@ -267,7 +268,7 @@ void main() {
   });
 
   test('다중 선택도 갤러리 대상 문맥을 먼저 저장하고 반환 후 정리한다', () async {
-    final request = ImagePickerRequestContext.galleryImport('member-1');
+    final request = ImagePickerRequestContext.galleryImport();
     final store = MemoryImagePickerRequestStore();
     final picker = FakeAppImagePicker(
       lostResponse: LostDataResponse.empty(),

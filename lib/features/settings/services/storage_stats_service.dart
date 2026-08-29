@@ -3,16 +3,15 @@ import 'dart:io';
 import '../../../core/database/app_database.dart';
 import '../../../core/services/photo_storage_service.dart';
 
-/// 회원별 저장 공간 사용량.
-class MemberStorageUsage {
-  final String memberId;
-  final String memberName;
+/// 촬영 월별 저장 공간 사용량.
+class MonthStorageUsage {
+  /// `yyyyMM` 형식의 촬영 월.
+  final String month;
   final int photoCount;
   final int totalBytes;
 
-  const MemberStorageUsage({
-    required this.memberId,
-    required this.memberName,
+  const MonthStorageUsage({
+    required this.month,
     required this.photoCount,
     required this.totalBytes,
   });
@@ -22,18 +21,20 @@ class MemberStorageUsage {
 class StorageUsageReport {
   final int totalBytes;
   final int totalPhotoCount;
-  final List<MemberStorageUsage> byMember;
+
+  /// 최근 월 먼저.
+  final List<MonthStorageUsage> byMonth;
 
   const StorageUsageReport({
     required this.totalBytes,
     required this.totalPhotoCount,
-    required this.byMember,
+    required this.byMonth,
   });
 
   static const empty = StorageUsageReport(
     totalBytes: 0,
     totalPhotoCount: 0,
-    byMember: [],
+    byMonth: [],
   );
 }
 
@@ -55,47 +56,45 @@ class StorageStatsServiceImpl implements StorageStatsService {
   Future<StorageUsageReport> collect() async {
     final db = await _db.database;
 
-    final memberRows = await db.query(
-      AppDatabase.tableMembers,
-      columns: ['id', 'name'],
-    );
-
     final photoRows = await db.rawQuery('''
-      SELECT r.member_id AS member_id, p.file_path AS file_path
+      SELECT r.shot_at AS shot_at, p.file_path AS file_path
       FROM ${AppDatabase.tableBodyPhotos} p
       JOIN ${AppDatabase.tablePhotoRecords} r ON r.id = p.record_id
     ''');
 
-    final countByMember = <String, int>{};
-    final bytesByMember = <String, int>{};
+    final countByMonth = <String, int>{};
+    final bytesByMonth = <String, int>{};
     var totalBytes = 0;
     var totalCount = 0;
 
     for (final row in photoRows) {
-      final memberId = row['member_id'] as String;
+      final shotAt = DateTime.fromMillisecondsSinceEpoch(row['shot_at'] as int);
+      final month = PhotoStorageServiceImpl.bucketName(shotAt);
       final filePath = await _storage.resolvePath(row['file_path'] as String);
       final file = File(filePath);
       final size = await file.exists() ? await file.length() : 0;
       totalBytes += size;
       totalCount += 1;
-      countByMember[memberId] = (countByMember[memberId] ?? 0) + 1;
-      bytesByMember[memberId] = (bytesByMember[memberId] ?? 0) + size;
+      countByMonth[month] = (countByMonth[month] ?? 0) + 1;
+      bytesByMonth[month] = (bytesByMonth[month] ?? 0) + size;
     }
 
-    final byMember = memberRows.map((m) {
-      final id = m['id'] as String;
-      return MemberStorageUsage(
-        memberId: id,
-        memberName: m['name'] as String,
-        photoCount: countByMember[id] ?? 0,
-        totalBytes: bytesByMember[id] ?? 0,
-      );
-    }).toList()..sort((a, b) => b.totalBytes.compareTo(a.totalBytes));
+    final byMonth =
+        countByMonth.keys
+            .map(
+              (month) => MonthStorageUsage(
+                month: month,
+                photoCount: countByMonth[month] ?? 0,
+                totalBytes: bytesByMonth[month] ?? 0,
+              ),
+            )
+            .toList()
+          ..sort((a, b) => b.month.compareTo(a.month));
 
     return StorageUsageReport(
       totalBytes: totalBytes,
       totalPhotoCount: totalCount,
-      byMember: byMember,
+      byMonth: byMonth,
     );
   }
 }

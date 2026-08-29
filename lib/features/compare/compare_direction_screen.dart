@@ -20,9 +20,7 @@ final _dateFormat = DateFormat('yyyy.MM.dd');
 class CompareDirectionScreen extends ConsumerStatefulWidget {
   static const screenId = 'screen.compare.direction';
 
-  final String memberId;
-
-  const CompareDirectionScreen({super.key, required this.memberId});
+  const CompareDirectionScreen({super.key});
 
   @override
   ConsumerState<CompareDirectionScreen> createState() =>
@@ -51,14 +49,12 @@ class _CompareDirectionScreenState
         appBar: AppBar(title: const Text('비교 방향 선택')),
         body: (hasMissingRecord || hasSameRecord)
             ? CompareMissingContext(
-                memberId: widget.memberId,
                 message: hasSameRecord
                     ? '이전과 이후에는 서로 다른 촬영 기록을 선택해 주세요.'
                     : '비교 날짜 선택 화면에서 다시 진입해 주세요.',
                 backButtonId: 'compare.direction.backToDates.button',
               )
             : _DirectionBody(
-                memberId: widget.memberId,
                 beforeRecordId: beforeRecordId,
                 afterRecordId: afterRecordId,
                 selected: _selected,
@@ -70,14 +66,12 @@ class _CompareDirectionScreenState
 }
 
 class _DirectionBody extends ConsumerWidget {
-  final String memberId;
   final String beforeRecordId;
   final String afterRecordId;
   final BodyDirection? selected;
   final ValueChanged<BodyDirection> onSelect;
 
   const _DirectionBody({
-    required this.memberId,
     required this.beforeRecordId,
     required this.afterRecordId,
     required this.selected,
@@ -201,7 +195,6 @@ class _DirectionBody extends ConsumerWidget {
                       if (beforePhoto == null || afterPhoto == null) return;
                       context.pushNamed(
                         AppRoutes.compareView,
-                        pathParameters: {AppParams.memberId: memberId},
                         queryParameters: {
                           AppParams.direction: effectiveSelection.key,
                           AppParams.beforePhotoId: beforePhoto.id,

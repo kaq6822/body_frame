@@ -7,6 +7,8 @@ import 'package:body_frame/core/services/photo_storage_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+final _shotAt = DateTime(2026, 1, 1);
+
 void main() {
   late Directory root;
   late AppDatabase appDatabase;
@@ -23,17 +25,6 @@ void main() {
     appDatabase = AppDatabase.forTesting();
     storage = PhotoStorageServiceImpl(rootPath: root.path);
     ingest = PhotoIngestRepositoryImpl(database: appDatabase, storage: storage);
-    final db = await appDatabase.database;
-    await db.insert(
-      AppDatabase.tableMembers,
-      _member('m1').toMap(),
-      conflictAlgorithm: ConflictAlgorithm.abort,
-    );
-    await db.insert(
-      AppDatabase.tableMembers,
-      _member('m2').toMap(),
-      conflictAlgorithm: ConflictAlgorithm.abort,
-    );
   });
 
   tearDown(() async {
@@ -43,22 +34,21 @@ void main() {
 
   test('새 기록과 사진 전체를 한 transaction에 넣고 파일 경로는 상대경로로 저장한다', () async {
     final db = await appDatabase.database;
-    final existing = _record('r-existing', 'm1');
+    final existing = _record('r-existing');
     await db.insert(AppDatabase.tablePhotoRecords, existing.toMap());
-    final created = _record('r-new', 'm1');
+    final created = _record('r-new');
     final firstPath = await storage.saveBytes(
-      memberId: 'm1',
+      shotAt: _shotAt,
       bytes: const [1],
       fileName: 'first.jpg',
     );
     final secondPath = await storage.saveBytes(
-      memberId: 'm1',
+      shotAt: _shotAt,
       bytes: const [2],
       fileName: 'second.jpg',
     );
 
     await ingest.insertPrepared(
-      memberId: 'm1',
       newRecords: [created],
       photos: [
         _photo('p-new', created.id, firstPath),
@@ -71,28 +61,22 @@ void main() {
       where: 'id = ?',
       whereArgs: [created.id],
     );
-    final photoRows = await db.query(
-      AppDatabase.tableBodyPhotos,
-      orderBy: 'id',
-    );
+    final photoRows = await db.query(AppDatabase.tableBodyPhotos, orderBy: 'id');
     expect(recordRows, hasLength(1));
     expect(photoRows, hasLength(2));
     expect(
       photoRows.map((row) => row['file_path']),
-      everyElement(startsWith('photos/m1/')),
+      everyElement(startsWith('photos/202601/')),
     );
-    expect(
-      photoRows.map((row) => row['file_path']),
-      isNot(contains(firstPath)),
-    );
+    expect(photoRows.map((row) => row['file_path']), isNot(contains(firstPath)));
   });
 
   test('두 번째 사진 conflict 시 앞선 새 기록과 사진도 실제 transaction에서 rollback한다', () async {
     final db = await appDatabase.database;
-    final existing = _record('r-existing', 'm1');
+    final existing = _record('r-existing');
     await db.insert(AppDatabase.tablePhotoRecords, existing.toMap());
     final existingPath = await storage.saveBytes(
-      memberId: 'm1',
+      shotAt: _shotAt,
       bytes: const [9],
       fileName: 'existing.jpg',
     );
@@ -104,21 +88,20 @@ void main() {
       ).toMap(),
     });
 
-    final created = _record('r-new', 'm1');
+    final created = _record('r-new');
     final firstPath = await storage.saveBytes(
-      memberId: 'm1',
+      shotAt: _shotAt,
       bytes: const [1],
       fileName: 'first.jpg',
     );
     final conflictPath = await storage.saveBytes(
-      memberId: 'm1',
+      shotAt: _shotAt,
       bytes: const [2],
       fileName: 'conflict.jpg',
     );
 
     await expectLater(
       ingest.insertPrepared(
-        memberId: 'm1',
         newRecords: [created],
         photos: [
           _photo('p-first', created.id, firstPath),
@@ -153,56 +136,50 @@ void main() {
     expect(conflictRows.single['record_id'], existing.id);
   });
 
-  test('파일 경로와 기존 촬영 기록이 모두 대상 회원 소유인지 검증한다', () async {
+  test('앱 저장소 밖의 파일과 존재하지 않는 촬영 기록은 거부한다', () async {
     final db = await appDatabase.database;
-    final m1Record = _record('r-m1', 'm1');
-    final m2Record = _record('r-m2', 'm2');
-    await db.insert(AppDatabase.tablePhotoRecords, m1Record.toMap());
-    await db.insert(AppDatabase.tablePhotoRecords, m2Record.toMap());
-    final m1Path = await storage.saveBytes(
-      memberId: 'm1',
-      bytes: const [1],
-      fileName: 'm1.jpg',
-    );
-    final m2Path = await storage.saveBytes(
-      memberId: 'm2',
+    final outside = File('${root.path}/outside.jpg');
+    await outside.writeAsBytes(const [1]);
+    final managed = await storage.saveBytes(
+      shotAt: _shotAt,
       bytes: const [2],
-      fileName: 'm2.jpg',
+      fileName: 'managed.jpg',
     );
 
     await expectLater(
       ingest.insertPrepared(
-        memberId: 'm1',
         newRecords: const [],
-        photos: [_photo('p-wrong-file', m1Record.id, m2Path)],
+        photos: [_photo('p-outside', 'r-missing', outside.path)],
       ),
-      throwsA(isA<StateError>()),
+      throwsA(anyOf(isA<StateError>(), isA<FormatException>())),
     );
     await expectLater(
       ingest.insertPrepared(
-        memberId: 'm1',
         newRecords: const [],
-        photos: [_photo('p-wrong-record', m2Record.id, m1Path)],
+        photos: [_photo('p-orphan', 'r-missing', managed)],
       ),
       throwsA(isA<StateError>()),
     );
     expect(await db.query(AppDatabase.tableBodyPhotos), isEmpty);
   });
+
+  test('사진이 하나도 없으면 등록하지 않는다', () async {
+    await expectLater(
+      ingest.insertPrepared(
+        newRecords: [_record('r-empty')],
+        photos: const [],
+      ),
+      throwsArgumentError,
+    );
+  });
 }
 
-Member _member(String id) {
-  final now = DateTime(2026, 1, 1);
-  return Member(id: id, name: id, createdAt: now, updatedAt: now);
-}
-
-PhotoRecord _record(String id, String memberId) {
-  final now = DateTime(2026, 1, 1);
+PhotoRecord _record(String id) {
   return PhotoRecord(
     id: id,
-    memberId: memberId,
-    shotAt: now,
-    createdAt: now,
-    updatedAt: now,
+    shotAt: _shotAt,
+    createdAt: _shotAt,
+    updatedAt: _shotAt,
   );
 }
 
@@ -212,6 +189,6 @@ BodyPhoto _photo(String id, String recordId, String path) {
     recordId: recordId,
     filePath: path,
     direction: BodyDirection.front,
-    createdAt: DateTime(2026, 1, 1),
+    createdAt: _shotAt,
   );
 }

@@ -2,183 +2,151 @@ import 'dart:convert';
 
 import 'grid_settings.dart';
 
-/// 앱 잠금 방식.
-enum LockMode {
-  none,
-  password,
-  pin,
-  biometric;
-
-  String get key => name;
-
-  String get label {
-    switch (this) {
-      case LockMode.none:
-        return '잠금 사용 안 함';
-      case LockMode.password:
-        return '비밀번호';
-      case LockMode.pin:
-        return 'PIN 번호';
-      case LockMode.biometric:
-        return '기기 생체 인증';
-    }
-  }
-
-  static LockMode fromKey(String? key) {
-    return LockMode.values.firstWhere(
-      (m) => m.key == key,
-      orElse: () => LockMode.none,
-    );
-  }
-}
-
 /// 비교 이미지 생성 시 포함 항목.
 class ExportImageOptions {
-  final bool includeMemberName;
   final bool includeShotDate;
+  final bool includeLabel;
   final bool includeMemo;
+
+  /// 격자 무늬를 이미지에 합성할지. 앱 안에서 사진을 항상 격자와 함께 보므로
+  /// 내보낸 이미지도 같은 모습이 기본이다.
   final bool includeGrid;
-  final bool includeStudioName;
-  final bool includeWatermark;
 
   const ExportImageOptions({
-    // 개인정보 보호를 위해 회원 이름은 기본 숨김.
-    this.includeMemberName = false,
     this.includeShotDate = true,
+    this.includeLabel = true,
     this.includeMemo = false,
-    this.includeGrid = false,
-    this.includeStudioName = true,
-    this.includeWatermark = true,
+    this.includeGrid = true,
   });
 
   static const ExportImageOptions defaults = ExportImageOptions();
 
   ExportImageOptions copyWith({
-    bool? includeMemberName,
     bool? includeShotDate,
+    bool? includeLabel,
     bool? includeMemo,
     bool? includeGrid,
-    bool? includeStudioName,
-    bool? includeWatermark,
   }) {
     return ExportImageOptions(
-      includeMemberName: includeMemberName ?? this.includeMemberName,
       includeShotDate: includeShotDate ?? this.includeShotDate,
+      includeLabel: includeLabel ?? this.includeLabel,
       includeMemo: includeMemo ?? this.includeMemo,
       includeGrid: includeGrid ?? this.includeGrid,
-      includeStudioName: includeStudioName ?? this.includeStudioName,
-      includeWatermark: includeWatermark ?? this.includeWatermark,
     );
   }
 
   Map<String, dynamic> toMap() => {
-    'includeMemberName': includeMemberName,
     'includeShotDate': includeShotDate,
+    'includeLabel': includeLabel,
     'includeMemo': includeMemo,
     'includeGrid': includeGrid,
-    'includeStudioName': includeStudioName,
-    'includeWatermark': includeWatermark,
   };
 
   factory ExportImageOptions.fromMap(Map<String, dynamic> map) {
     return ExportImageOptions(
-      includeMemberName: (map['includeMemberName'] as bool?) ?? false,
       includeShotDate: (map['includeShotDate'] as bool?) ?? true,
+      includeLabel: (map['includeLabel'] as bool?) ?? true,
       includeMemo: (map['includeMemo'] as bool?) ?? false,
-      includeGrid: (map['includeGrid'] as bool?) ?? false,
-      includeStudioName: (map['includeStudioName'] as bool?) ?? true,
-      includeWatermark: (map['includeWatermark'] as bool?) ?? true,
+      includeGrid: (map['includeGrid'] as bool?) ?? true,
     );
   }
 }
 
-/// 앱 전역 설정.
+/// 촬영 편의 설정.
 ///
-/// shared_preferences에 JSON으로 영속화한다. 잠금 비밀번호/PIN 자체는
-/// 여기에 저장하지 않고 flutter_secure_storage에 보관한다.
+/// 기기를 거치해 놓고 혼자 전신을 찍는 것이 이 앱의 기본 사용 방식이라,
+/// 셔터를 누른 뒤 물러날 시간을 주는 셀프 타이머가 사실상 필수다.
+class CaptureOptions {
+  /// 새 세션을 시작할 때의 셀프 타이머(초). 0이면 사용하지 않는다.
+  ///
+  /// 촬영 화면 상단 버튼으로 바꾼 값은 그 세션에만 적용되고, 이 값이 다음 세션의
+  /// 시작값이 된다.
+  final int timerSeconds;
+
+  /// 카운트다운 중 소리·햅틱 피드백. 화면을 보고 있지 않을 때 남은 시간을 알린다.
+  final bool countdownFeedback;
+
+  const CaptureOptions({this.timerSeconds = 0, this.countdownFeedback = true});
+
+  static const CaptureOptions defaults = CaptureOptions();
+
+  /// 타이머가 순환하는 값. 0은 끔.
+  static const List<int> timerChoices = [0, 3, 5, 10];
+
+  /// 저장된 값이 순환 목록에 없으면 끔으로 본다.
+  static int normalizeTimer(int value) =>
+      timerChoices.contains(value) ? value : 0;
+
+  CaptureOptions copyWith({int? timerSeconds, bool? countdownFeedback}) {
+    return CaptureOptions(
+      timerSeconds: timerSeconds ?? this.timerSeconds,
+      countdownFeedback: countdownFeedback ?? this.countdownFeedback,
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'timerSeconds': timerSeconds,
+    'countdownFeedback': countdownFeedback,
+  };
+
+  factory CaptureOptions.fromMap(Map<String, dynamic> map) {
+    return CaptureOptions(
+      timerSeconds: normalizeTimer((map['timerSeconds'] as int?) ?? 0),
+      countdownFeedback: (map['countdownFeedback'] as bool?) ?? true,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is CaptureOptions &&
+      other.timerSeconds == timerSeconds &&
+      other.countdownFeedback == countdownFeedback;
+
+  @override
+  int get hashCode => Object.hash(timerSeconds, countdownFeedback);
+}
+
+/// 앱 전역 설정. shared_preferences에 JSON으로 영속화한다.
 class AppSettings {
-  /// 앱 잠금 방식.
-  final LockMode lockMode;
-
-  /// 생체 인증 사용 여부.
-  final bool biometricEnabled;
-
-  /// 자동 잠금 시간(초). 0이면 자동 잠금 사용 안 함.
-  final int autoLockSeconds;
-
   /// 기본 격자 설정.
   final GridSettings defaultGrid;
 
   /// 기본 저장 이미지 설정.
   final ExportImageOptions defaultExportOptions;
 
-  /// 스튜디오명 (선택).
-  final String? studioName;
-
-  /// 앱 관리 저장소 기준 스튜디오 로고 상대경로 (선택).
-  final String? studioLogoPath;
-
-  /// 앱 삭제 시 데이터 삭제 안내 확인 여부(최초 안내 노출 제어).
-  final bool dataNoticeAcknowledged;
+  /// 촬영 편의 설정.
+  final CaptureOptions capture;
 
   const AppSettings({
-    this.lockMode = LockMode.none,
-    this.biometricEnabled = false,
-    this.autoLockSeconds = 0,
     this.defaultGrid = GridSettings.defaults,
     this.defaultExportOptions = ExportImageOptions.defaults,
-    this.studioName,
-    this.studioLogoPath,
-    this.dataNoticeAcknowledged = false,
+    this.capture = CaptureOptions.defaults,
   });
 
   static const AppSettings defaults = AppSettings();
 
   AppSettings copyWith({
-    LockMode? lockMode,
-    bool? biometricEnabled,
-    int? autoLockSeconds,
     GridSettings? defaultGrid,
     ExportImageOptions? defaultExportOptions,
-    String? studioName,
-    bool clearStudioName = false,
-    String? studioLogoPath,
-    bool clearStudioLogoPath = false,
-    bool? dataNoticeAcknowledged,
+    CaptureOptions? capture,
   }) {
     return AppSettings(
-      lockMode: lockMode ?? this.lockMode,
-      biometricEnabled: biometricEnabled ?? this.biometricEnabled,
-      autoLockSeconds: autoLockSeconds ?? this.autoLockSeconds,
       defaultGrid: defaultGrid ?? this.defaultGrid,
       defaultExportOptions: defaultExportOptions ?? this.defaultExportOptions,
-      studioName: clearStudioName ? null : (studioName ?? this.studioName),
-      studioLogoPath: clearStudioLogoPath
-          ? null
-          : (studioLogoPath ?? this.studioLogoPath),
-      dataNoticeAcknowledged:
-          dataNoticeAcknowledged ?? this.dataNoticeAcknowledged,
+      capture: capture ?? this.capture,
     );
   }
 
   Map<String, dynamic> toMap() {
     return {
-      'lockMode': lockMode.key,
-      'biometricEnabled': biometricEnabled,
-      'autoLockSeconds': autoLockSeconds,
       'defaultGrid': defaultGrid.toMap(),
       'defaultExportOptions': defaultExportOptions.toMap(),
-      'studioName': studioName,
-      'studioLogoPath': studioLogoPath,
-      'dataNoticeAcknowledged': dataNoticeAcknowledged,
+      'capture': capture.toMap(),
     };
   }
 
   factory AppSettings.fromMap(Map<String, dynamic> map) {
     return AppSettings(
-      lockMode: LockMode.fromKey(map['lockMode'] as String?),
-      biometricEnabled: (map['biometricEnabled'] as bool?) ?? false,
-      autoLockSeconds: (map['autoLockSeconds'] as int?) ?? 0,
       defaultGrid: map['defaultGrid'] == null
           ? GridSettings.defaults
           : GridSettings.fromMap(
@@ -189,9 +157,12 @@ class AppSettings {
           : ExportImageOptions.fromMap(
               (map['defaultExportOptions'] as Map).cast<String, dynamic>(),
             ),
-      studioName: map['studioName'] as String?,
-      studioLogoPath: map['studioLogoPath'] as String?,
-      dataNoticeAcknowledged: (map['dataNoticeAcknowledged'] as bool?) ?? false,
+      // 이 필드가 없던 버전의 저장값에서도 기본값으로 열린다.
+      capture: map['capture'] == null
+          ? CaptureOptions.defaults
+          : CaptureOptions.fromMap(
+              (map['capture'] as Map).cast<String, dynamic>(),
+            ),
     );
   }
 

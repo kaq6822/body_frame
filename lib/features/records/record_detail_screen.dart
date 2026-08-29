@@ -6,30 +6,27 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/models/models.dart';
+import '../../core/photo_frame.dart';
 import '../../core/providers.dart';
 import '../../core/router/app_routes.dart';
 import '../../core/services/app_logger.dart';
+import '../../core/widgets/photo_grid_overlay.dart';
+import 'providers/records_providers.dart';
 
 /// 촬영 기록 상세 화면.
 ///
-/// 촬영일/등록일, 방향별 사진 그리드(정면·좌·우·후면·기타), 기록 메모
+/// 촬영일/등록일, 이 기록의 촬영분을 좌우로 넘겨 보는 사진 슬라이더, 기록 메모
 /// 표시/수정, 촬영일 수정, 기록 삭제(확인 절차)를 제공한다.
 class RecordDetailScreen extends ConsumerWidget {
   static const screenId = 'screen.records.detail';
 
-  final String memberId;
   final String recordId;
 
-  const RecordDetailScreen({
-    super.key,
-    required this.memberId,
-    required this.recordId,
-  });
+  const RecordDetailScreen({super.key, required this.recordId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final detailKey = (memberId: memberId, recordId: recordId);
-    final async = ref.watch(_recordDetailProvider(detailKey));
+    final async = ref.watch(_recordDetailProvider(recordId));
 
     return Semantics(
       identifier: screenId,
@@ -39,7 +36,7 @@ class RecordDetailScreen extends ConsumerWidget {
         key: const ValueKey(screenId),
         appBar: AppBar(title: const Text('촬영 기록 상세')),
         body: async.when(
-          data: (data) => _RecordDetailBody(detailKey: detailKey, data: data),
+          data: (data) => _RecordDetailBody(recordId: recordId, data: data),
           loading: () => const _StatusPane(
             key: ValueKey('screen.records.detail.status'),
             state: _PaneState.running,
@@ -48,7 +45,7 @@ class RecordDetailScreen extends ConsumerWidget {
             key: const ValueKey('screen.records.detail.status'),
             state: _PaneState.failure,
             message: '촬영 기록을 불러오지 못했습니다.',
-            onRetry: () => ref.invalidate(_recordDetailProvider(detailKey)),
+            onRetry: () => ref.invalidate(_recordDetailProvider(recordId)),
           ),
         ),
       ),
@@ -73,27 +70,25 @@ class RecordNotFoundException implements Exception {
   String toString() => '촬영 기록을 찾을 수 없습니다: $recordId';
 }
 
-typedef _RecordDetailKey = ({String memberId, String recordId});
-
 final _recordDetailProvider = FutureProvider.autoDispose
-    .family<_RecordDetailData, _RecordDetailKey>((ref, key) async {
+    .family<_RecordDetailData, String>((ref, recordId) async {
       final recordRepo = ref.watch(photoRecordRepositoryProvider);
       final photoRepo = ref.watch(bodyPhotoRepositoryProvider);
-      final record = await recordRepo.getById(key.recordId);
-      if (record == null || record.memberId != key.memberId) {
-        throw RecordNotFoundException(key.recordId);
+      final record = await recordRepo.getById(recordId);
+      if (record == null) {
+        throw RecordNotFoundException(recordId);
       }
-      final photos = await photoRepo.listByRecord(key.recordId);
+      final photos = await photoRepo.listByRecord(recordId);
       return _RecordDetailData(record: record, photos: photos);
     });
 
 enum _PaneState { idle, running, success, failure }
 
 class _RecordDetailBody extends ConsumerStatefulWidget {
-  final _RecordDetailKey detailKey;
+  final String recordId;
   final _RecordDetailData data;
 
-  const _RecordDetailBody({required this.detailKey, required this.data});
+  const _RecordDetailBody({required this.recordId, required this.data});
 
   @override
   ConsumerState<_RecordDetailBody> createState() => _RecordDetailBodyState();
@@ -121,7 +116,10 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
   }
 
   void _invalidate() {
-    ref.invalidate(_recordDetailProvider(widget.detailKey));
+    ref.invalidate(_recordDetailProvider(widget.recordId));
+    // 기록 목록과 홈 카메라의 썸네일·건수가 같은 provider를 읽는다. 여기서 바꾼
+    // 내용을 알리지 않으면 삭제한 기록이 목록에 남고 탭하면 오류가 난다.
+    ref.invalidate(timelineProvider);
   }
 
   Future<void> _saveMemo() async {
@@ -129,11 +127,11 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
     try {
       final repo = ref.read(photoRecordRepositoryProvider);
       final record = widget.data.record;
+      final memo = _memoController.text.trim();
       await repo.update(
         record.copyWith(
-          memo: _memoController.text.trim().isEmpty
-              ? null
-              : _memoController.text.trim(),
+          memo: memo.isEmpty ? null : memo,
+          clearMemo: memo.isEmpty,
           updatedAt: DateTime.now(),
         ),
       );
@@ -218,31 +216,31 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
     logger.phase(
       'record.delete',
       LogPhase.start,
-      context: {'id': widget.detailKey.recordId},
+      context: {'id': widget.recordId},
     );
     try {
       final repo = ref.read(photoRecordRepositoryProvider);
-      await repo.delete(widget.detailKey.recordId);
+      await repo.delete(widget.recordId);
       logger.phase(
         'record.delete',
         LogPhase.success,
-        context: {'id': widget.detailKey.recordId},
+        context: {'id': widget.recordId},
       );
+      ref.invalidate(timelineProvider);
       if (!mounted) return;
       setState(() => _deleteState = _PaneState.success);
       if (context.canPop()) {
         context.pop(true);
       } else {
-        context.goNamed(
-          AppRoutes.memberDetail,
-          pathParameters: {AppParams.memberId: widget.detailKey.memberId},
-        );
+        // 딥링크로 상세에 바로 들어온 경우엔 돌아갈 화면이 없다. 삭제한 기록이
+        // 있던 타임라인으로 보낸다(홈은 촬영 화면이라 결과를 확인할 수 없다).
+        context.goNamed(AppRoutes.records);
       }
     } catch (err) {
       logger.phase(
         'record.delete',
         LogPhase.failure,
-        context: {'id': widget.detailKey.recordId},
+        context: {'id': widget.recordId},
       );
       if (!mounted) return;
       setState(() => _deleteState = _PaneState.failure);
@@ -253,8 +251,7 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
     final changed = await context.pushNamed<bool>(
       AppRoutes.photoView,
       pathParameters: {
-        AppParams.memberId: widget.detailKey.memberId,
-        AppParams.recordId: widget.detailKey.recordId,
+        AppParams.recordId: widget.recordId,
         AppParams.photoId: photo.id,
       },
     );
@@ -272,6 +269,14 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
     for (final photo in widget.data.photos) {
       photosByDirection[photo.direction]!.add(photo);
     }
+    // 넘겨 보는 순서는 촬영 순서(정면→좌→우→후→기타)를 따른다.
+    final ordered = <BodyPhoto>[
+      for (final direction in BodyDirection.values)
+        ...photosByDirection[direction]!,
+    ];
+    final missing = BodyDirection.values
+        .where((d) => photosByDirection[d]!.isEmpty)
+        .toList();
 
     return SingleChildScrollView(
       key: const ValueKey('screen.records.detail.status'),
@@ -320,30 +325,18 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
           const SizedBox(height: 16),
           Text('사진', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
-          GridView.count(
-            crossAxisCount: 2,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            childAspectRatio: 0.9,
-            children: [
-              for (final direction in BodyDirection.values)
-                for (final entry
-                    in photosByDirection[direction]!.isEmpty
-                        ? [null]
-                        : photosByDirection[direction]!)
-                  entry == null
-                      ? _EmptyDirectionTile(direction: direction)
-                      : _PhotoTile(
-                          direction: direction,
-                          index: photosByDirection[direction]!.indexOf(entry),
-                          count: photosByDirection[direction]!.length,
-                          photo: entry,
-                          onTap: () => _openPhoto(entry),
-                        ),
-            ],
-          ),
+          if (ordered.isEmpty)
+            const _NoPhotosNotice()
+          else
+            _PhotoSlider(
+              photos: ordered,
+              photosByDirection: photosByDirection,
+              onOpen: _openPhoto,
+            ),
+          if (missing.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _MissingDirections(directions: missing),
+          ],
           const SizedBox(height: 24),
           Text('기록 메모', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
@@ -386,60 +379,171 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
   }
 }
 
-class _PhotoTile extends StatelessWidget {
-  final BodyDirection direction;
-  final int index;
-  final int count;
+/// 이 기록의 촬영분을 좌우로 넘겨 보는 사진 슬라이더.
+///
+/// 방향마다 작은 타일을 늘어놓는 대신 한 장을 크게 보여준다. 체형 변화는 작아서
+/// 타일 크기로는 알아보기 어렵고, 같은 기록 안의 다른 방향은 순서대로 넘겨 보는
+/// 편이 몸을 한 바퀴 둘러보는 실제 흐름에 가깝다.
+class _PhotoSlider extends StatefulWidget {
+  final List<BodyPhoto> photos;
+  final Map<BodyDirection, List<BodyPhoto>> photosByDirection;
+  final ValueChanged<BodyPhoto> onOpen;
+
+  const _PhotoSlider({
+    required this.photos,
+    required this.photosByDirection,
+    required this.onOpen,
+  });
+
+  @override
+  State<_PhotoSlider> createState() => _PhotoSliderState();
+}
+
+class _PhotoSliderState extends State<_PhotoSlider> {
+  final _controller = PageController();
+  int _index = 0;
+
+  @override
+  void didUpdateWidget(_PhotoSlider oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 원본 보기에서 사진을 지우고 돌아오면 장수가 줄어든다. 컨트롤러가 사라진
+    // 페이지를 가리키고 있으면 마지막 장으로 당겨 온다.
+    final last = widget.photos.length - 1;
+    if (last >= 0 && _index > last) {
+      _index = last;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _controller.hasClients) _controller.jumpToPage(last);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  /// 사진 식별자. 같은 방향이 여러 장이면 방향 안에서의 순번을 덧붙인다.
+  String _imageId(BodyPhoto photo) {
+    final sameDirection = widget.photosByDirection[photo.direction] ?? const [];
+    if (sameDirection.length <= 1) {
+      return 'records.photo.${photo.direction.key}.image';
+    }
+    final order = sameDirection.indexOf(photo);
+    return 'records.photo.${photo.direction.key}.image.$order';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final photos = widget.photos;
+    final index = _index.clamp(0, photos.length - 1);
+    final current = photos[index];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: AspectRatio(
+            aspectRatio: kPhotoFrameAspect,
+            child: Semantics(
+              identifier: 'records.photo.slider',
+              container: true,
+              label: '촬영분 ${photos.length}장, 좌우로 넘겨 보기',
+              value: '${index + 1} / ${photos.length}',
+              child: PageView.builder(
+                key: const ValueKey('records.photo.slider'),
+                controller: _controller,
+                itemCount: photos.length,
+                onPageChanged: (value) => setState(() => _index = value),
+                itemBuilder: (context, i) => _PhotoPage(
+                  photo: photos[i],
+                  id: _imageId(photos[i]),
+                  onTap: () => widget.onOpen(photos[i]),
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                current.direction.label,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+            ),
+            Text(
+              '${index + 1} / ${photos.length}',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+        if (photos.length > 1) ...[
+          const SizedBox(height: 8),
+          // 점은 위치 표시이자 바로 이동 수단이다. 스와이프만으로는 몇 장이
+          // 남았는지 알 수 없고, 손이 닿기 어려운 상황도 있다.
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              for (var i = 0; i < photos.length; i++)
+                _SliderDot(
+                  id: 'records.photo.slider.dot.$i',
+                  label: '${photos[i].direction.label} 사진으로 이동',
+                  selected: i == index,
+                  onTap: () {
+                    _controller.animateToPage(
+                      i,
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeOut,
+                    );
+                  },
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _PhotoPage extends StatelessWidget {
   final BodyPhoto photo;
+  final String id;
   final VoidCallback onTap;
 
-  const _PhotoTile({
-    required this.direction,
-    required this.index,
-    required this.count,
+  const _PhotoPage({
     required this.photo,
+    required this.id,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final id = count > 1
-        ? 'records.photo.${direction.key}.image.$index'
-        : 'records.photo.${direction.key}.image';
     return Semantics(
       identifier: id,
-      label: '${direction.label} 사진',
       button: true,
+      label: '${photo.direction.label} 사진, 탭하면 원본 보기',
       child: GestureDetector(
         key: ValueKey(id),
         onTap: onTap,
-        child: Container(
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: Theme.of(context).colorScheme.outlineVariant,
-            ),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
+        child: ColoredBox(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          child: Stack(
+            fit: StackFit.expand,
             children: [
-              Expanded(
-                child: Container(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  child: Image.file(
-                    File(photo.filePath),
-                    fit: BoxFit.contain,
-                    errorBuilder: (context, error, stack) =>
-                        const Center(child: Icon(Icons.broken_image_outlined)),
-                  ),
-                ),
+              Image.file(
+                File(photo.filePath),
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stack) =>
+                    const Center(child: Icon(Icons.broken_image_outlined)),
               ),
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Text(
-                  direction.label,
-                  style: Theme.of(context).textTheme.labelSmall,
-                ),
+              PhotoGridOverlay(
+                settings: photo.gridSettings,
+                semanticsIdentifier: '$id.grid.overlay',
               ),
             ],
           ),
@@ -449,37 +553,109 @@ class _PhotoTile extends StatelessWidget {
   }
 }
 
-class _EmptyDirectionTile extends StatelessWidget {
-  final BodyDirection direction;
+class _SliderDot extends StatelessWidget {
+  final String id;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
 
-  const _EmptyDirectionTile({required this.direction});
+  const _SliderDot({
+    required this.id,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final id = 'records.photo.${direction.key}.empty';
+    final colors = Theme.of(context).colorScheme;
     return Semantics(
       identifier: id,
-      label: '${direction.label} 사진 미등록',
-      child: Container(
+      button: true,
+      selected: selected,
+      label: label,
+      child: InkResponse(
         key: ValueKey(id),
+        onTap: onTap,
+        radius: 20,
+        child: Padding(
+          // 점 자체는 작아도 터치 영역은 48dp를 확보한다.
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
+          child: Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: selected ? colors.primary : colors.outlineVariant,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 이 기록에 아직 없는 방향 안내.
+///
+/// 빈 타일을 방향마다 늘어놓지 않고 한 줄로 요약한다. 비교는 양쪽에 같은 방향이
+/// 있어야 하므로 무엇이 빠졌는지는 계속 보여줄 값이 있다.
+class _MissingDirections extends StatelessWidget {
+  final List<BodyDirection> directions;
+
+  const _MissingDirections({required this.directions});
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Text(
+          '미등록',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+        for (final direction in directions)
+          Semantics(
+            identifier: 'records.photo.${direction.key}.empty',
+            label: '${direction.label} 사진 미등록',
+            child: Chip(
+              key: ValueKey('records.photo.${direction.key}.empty'),
+              label: Text(direction.label),
+              avatar: const Icon(Icons.image_not_supported_outlined, size: 16),
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// 사진이 한 장도 없는 기록. 갤러리 등록으로 만든 뒤 사진을 모두 지운 경우다.
+class _NoPhotosNotice extends StatelessWidget {
+  const _NoPhotosNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      identifier: 'records.photo.none',
+      label: '이 기록에 사진이 없습니다',
+      child: Container(
+        key: const ValueKey('records.photo.none'),
+        padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
           border: Border.all(
             color: Theme.of(context).colorScheme.outlineVariant,
-            style: BorderStyle.solid,
           ),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.image_not_supported_outlined),
-              const SizedBox(height: 4),
-              Text(
-                '${direction.label} 미등록',
-                style: Theme.of(context).textTheme.labelSmall,
-              ),
-            ],
+          child: Text(
+            '이 기록에는 사진이 없습니다.',
+            style: Theme.of(context).textTheme.bodyMedium,
           ),
         ),
       ),

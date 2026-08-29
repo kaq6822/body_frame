@@ -9,13 +9,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:photo_view/photo_view.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../../core/models/models.dart';
 import '../../core/providers.dart';
 import '../../core/services/app_image_picker.dart';
 import '../../core/services/app_logger.dart';
-import '../../core/widgets/grid_painter.dart';
+import '../../core/theme/app_tokens.dart';
+import '../../core/widgets/photo_grid_overlay.dart';
+import 'providers/records_providers.dart';
 import 'services/grid_photo_composer.dart';
 import 'services/photo_export_sink.dart';
 
@@ -28,24 +29,18 @@ import 'services/photo_export_sink.dart';
 class PhotoViewScreen extends ConsumerWidget {
   static const screenId = 'screen.records.photo';
 
-  final String memberId;
   final String recordId;
   final String photoId;
 
   const PhotoViewScreen({
     super.key,
-    required this.memberId,
     required this.recordId,
     required this.photoId,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final detailKey = (
-      memberId: memberId,
-      recordId: recordId,
-      photoId: photoId,
-    );
+    final detailKey = (recordId: recordId, photoId: photoId);
     final async = ref.watch(_photoDetailProvider(detailKey));
 
     return Semantics(
@@ -90,7 +85,7 @@ class PhotoNotFoundException implements Exception {
   String toString() => '사진을 찾을 수 없습니다: $photoId';
 }
 
-typedef _PhotoDetailKey = ({String memberId, String recordId, String photoId});
+typedef _PhotoDetailKey = ({String recordId, String photoId});
 
 final _photoDetailProvider = FutureProvider.autoDispose
     .family<_PhotoDetailData, _PhotoDetailKey>((ref, key) async {
@@ -101,7 +96,7 @@ final _photoDetailProvider = FutureProvider.autoDispose
         throw PhotoNotFoundException(key.photoId);
       }
       final record = await recordRepo.getById(key.recordId);
-      if (record == null || record.memberId != key.memberId) {
+      if (record == null) {
         throw RecordNotFoundException(key.recordId);
       }
       return _PhotoDetailData(photo: photo, record: record);
@@ -144,7 +139,19 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
   _OpState _exportState = _OpState.idle;
   _OpState _shareState = _OpState.idle;
   _OpState _deleteState = _OpState.idle;
-  bool _includeGridOnExport = false;
+  _OpState _gridState = _OpState.idle;
+
+  /// 내보내기·공유할 이미지에 격자를 합성할지. 앱 안에서 늘 격자와 함께 보므로
+  /// 내보낸 이미지도 같은 모습이 기본이다.
+  bool _includeGridOnExport = true;
+
+  /// 이 사진에 적용된 격자 설정. 원본 픽셀에는 굽지 않고 메타데이터로만 남기므로
+  /// 촬영 후에도 여기서 조정할 수 있다.
+  late GridSettings _grid;
+
+  /// 격자 조정 패널을 펼친 상태인지. 격자 자체는 기본으로 켜져 있으므로 이
+  /// 값은 세부 설정 노출 여부만 결정한다.
+  bool _gridEditing = false;
   XFile? _pendingReplacement;
   bool _recoveringLostReplacement = false;
   bool _lostReplacementRecoveryScheduled = false;
@@ -154,7 +161,6 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
 
   ImagePickerRequestContext get _pickerContext =>
       ImagePickerRequestContext.photoReplacement(
-        memberId: widget.detailKey.memberId,
         recordId: widget.detailKey.recordId,
         photoId: widget.detailKey.photoId,
       );
@@ -164,6 +170,7 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
     super.initState();
     _memoController = TextEditingController(text: widget.data.photo.memo ?? '');
     _direction = widget.data.photo.direction;
+    _grid = widget.data.photo.gridSettings;
     ref.listenManual<RecoveredImagePickerSelection?>(
       appImagePickerCoordinatorProvider,
       (previous, next) {
@@ -192,6 +199,9 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
 
   void _invalidate() {
     ref.invalidate(_photoDetailProvider(widget.detailKey));
+    // 기록 목록과 홈 카메라의 썸네일이 같은 provider를 읽는다. 사진을 바꾸거나
+    // 지운 사실을 알리지 않으면 목록이 옛 사진을 계속 그린다.
+    ref.invalidate(timelineProvider);
   }
 
   Future<void> _saveMemo() async {
@@ -200,11 +210,11 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
     final logger = ref.read(appLoggerProvider);
     try {
       final repo = ref.read(bodyPhotoRepositoryProvider);
+      final memo = _memoController.text.trim();
       await repo.update(
         photo.copyWith(
-          memo: _memoController.text.trim().isEmpty
-              ? null
-              : _memoController.text.trim(),
+          memo: memo.isEmpty ? null : memo,
+          clearMemo: memo.isEmpty,
         ),
       );
       logger.phase(
@@ -372,7 +382,7 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
       final orientation = await _readOrientation(bytes);
       final storage = ref.read(photoStorageServiceProvider);
       final newPath = await storage.saveOriginal(
-        memberId: widget.detailKey.memberId,
+        shotAt: widget.data.record.shotAt,
         sourcePath: picked.path,
       );
       newlySavedPath = newPath;
@@ -383,8 +393,7 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
           .getById(widget.detailKey.recordId);
       if (latestPhoto == null ||
           latestPhoto.recordId != widget.detailKey.recordId ||
-          latestRecord == null ||
-          latestRecord.memberId != widget.detailKey.memberId) {
+          latestRecord == null) {
         throw const PhotoReplacementOwnershipException();
       }
       await repo.update(
@@ -430,10 +439,58 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
     }
   }
 
+  /// 조정한 격자 설정을 이 사진의 메타데이터로 저장한다.
+  ///
+  /// 원본 파일은 건드리지 않는다. 촬영 당시 설정은 리포지토리가 그대로 보존하므로
+  /// 몇 번을 조정해도 되돌릴 기준점은 남는다.
+  Future<void> _saveGrid() async {
+    setState(() => _gridState = _OpState.running);
+    final photo = widget.data.photo;
+    final logger = ref.read(appLoggerProvider);
+    logger.phase(
+      'photo.grid.update',
+      LogPhase.start,
+      context: {'id': photo.id},
+    );
+    try {
+      final repo = ref.read(bodyPhotoRepositoryProvider);
+      await repo.update(photo.copyWith(gridSettings: _grid));
+      logger.phase(
+        'photo.grid.update',
+        LogPhase.success,
+        context: {'id': photo.id},
+      );
+      _hasChanges = true;
+      if (!mounted) return;
+      setState(() => _gridState = _OpState.success);
+      _invalidate();
+    } catch (err) {
+      logger.phase(
+        'photo.grid.update',
+        LogPhase.failure,
+        context: {'id': photo.id},
+      );
+      if (!mounted) return;
+      setState(() => _gridState = _OpState.failure);
+    }
+  }
+
+  /// 촬영 당시 격자 설정으로 되돌린다.
+  Future<void> _revertGrid() async {
+    setState(() => _grid = widget.data.photo.captureGridSettings);
+    await _saveGrid();
+  }
+
+  /// 내보내기·공유 결과에 격자를 합성할지.
+  ///
+  /// 격자를 숨긴 상태에서는 화면에 없는 격자가 결과물에만 찍혀 나오게 되므로
+  /// 토글이 켜져 있어도 합성하지 않는다(토글 자체도 그때는 잠긴다).
+  bool get _willComposeGrid => _includeGridOnExport && _grid.visible;
+
   Future<void> _export() async {
     setState(() => _exportState = _OpState.running);
     final photo = widget.data.photo;
-    final includeGrid = _includeGridOnExport;
+    final includeGrid = _willComposeGrid;
     final logger = ref.read(appLoggerProvider);
     logger.phase(
       'photo.export',
@@ -448,7 +505,7 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
         final sourceBytes = await File(photo.filePath).readAsBytes();
         final png = await ref
             .read(gridPhotoComposerProvider)
-            .compose(sourceBytes, photo.gridSettings);
+            .compose(sourceBytes, _grid);
         await sink.savePng(png, name: '${name}_grid');
       } else {
         await sink.saveOriginalFile(photo.filePath, name: name);
@@ -474,10 +531,39 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
   Future<void> _share() async {
     setState(() => _shareState = _OpState.running);
     final photo = widget.data.photo;
+    final includeGrid = _willComposeGrid;
     final logger = ref.read(appLoggerProvider);
+    final sink = ref.read(photoExportSinkProvider);
+    // iPad의 popover 공유 시트는 비어 있지 않은 기준 사각형이 필수다.
+    final renderBox = context.findRenderObject() as RenderBox?;
+    final shareOrigin = renderBox == null || !renderBox.hasSize
+        ? null
+        : renderBox.localToGlobal(Offset.zero) & renderBox.size;
     try {
-      await Share.shareXFiles([XFile(photo.filePath)]);
-      logger.phase('photo.share', LogPhase.success, context: {'id': photo.id});
+      // 격자 합성은 공유하는 순간에만 일어난다. 앱 안에 합성본을 남기지 않도록
+      // 임시 파일 생성과 정리는 sink 안에서 끝낸다. 토글이 꺼져 있으면 원본을
+      // 그대로 넘긴다.
+      if (includeGrid) {
+        final sourceBytes = await File(photo.filePath).readAsBytes();
+        final png = await ref
+            .read(gridPhotoComposerProvider)
+            .compose(sourceBytes, _grid);
+        await sink.sharePng(
+          png,
+          name: '${photo.id}_grid',
+          sharePositionOrigin: shareOrigin,
+        );
+      } else {
+        await sink.shareOriginalFile(
+          photo.filePath,
+          sharePositionOrigin: shareOrigin,
+        );
+      }
+      logger.phase(
+        'photo.share',
+        LogPhase.success,
+        context: {'id': photo.id, 'grid': includeGrid},
+      );
       if (!mounted) return;
       setState(() => _shareState = _OpState.success);
     } catch (err) {
@@ -521,6 +607,7 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
       final repo = ref.read(bodyPhotoRepositoryProvider);
       await repo.delete(photo.id);
       logger.phase('photo.delete', LogPhase.success, context: {'id': photo.id});
+      ref.invalidate(timelineProvider);
       if (!mounted) return;
       setState(() => _deleteState = _OpState.success);
       Navigator.of(context).pop(true);
@@ -536,14 +623,15 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
     final photo = widget.data.photo;
     final record = widget.data.record;
 
+    // 시스템 뒤로가기(스와이프)와 AppBar 뒤로가기는 결과 없이 pop되므로
+    // 상위 기록 상세가 편집 사실을 모른 채 옛 사진을 계속 그린다. pop을 한 번
+    // 가로채 직접 [_hasChanges]를 결과로 돌려준다. 삭제는 자체적으로
+    // `pop(true)`를 호출하며, 명시적 pop은 PopScope의 영향을 받지 않는다.
     return PopScope(
-      canPop: true,
+      canPop: false,
       onPopInvokedWithResult: (didPop, result) {
-        if (didPop && result == null && _hasChanges) {
-          // 시스템 뒤로가기(스와이프 등)로 나갈 때도 변경 사실을 남긴다.
-          // 이미 pop된 뒤라 결과 전달은 불가하므로 상위 화면은 복귀 시
-          // 명시적 새로고침 버튼으로 갱신할 수 있다.
-        }
+        if (didPop) return;
+        Navigator.of(context).pop(_hasChanges);
       },
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -584,21 +672,37 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
                         ),
                       ),
                     ),
-                    if (_includeGridOnExport)
-                      Semantics(
-                        identifier: 'records.viewer.export.grid.preview',
-                        label: '내보내기에 합성할 격자 미리보기',
-                        child: IgnorePointer(
-                          child: CustomPaint(
-                            key: const ValueKey(
-                              'records.viewer.export.grid.preview',
-                            ),
-                            painter: GridPainter(
-                              photo.gridSettings.copyWith(visible: true),
-                            ),
+                    // 격자는 항상 오버레이로만 그린다. 원본 픽셀에는 굽지 않는다.
+                    PhotoGridOverlay(
+                      settings: _grid,
+                      semanticsIdentifier: 'records.viewer.grid.overlay',
+                    ),
+                    // 격자를 잠깐 걷어내고 사진만 보고 싶을 때를 위한 버튼.
+                    // 사진 위에 두어야 보고 있는 대상과 조작이 붙어 있다.
+                    Positioned(
+                      top: AppSpacing.sp2,
+                      right: AppSpacing.sp2,
+                      child: Semantics(
+                        identifier: 'records.viewer.grid.visibility.button',
+                        button: true,
+                        label: _grid.visible ? '격자 숨기기' : '격자 보기',
+                        child: IconButton.filledTonal(
+                          key: const ValueKey(
+                            'records.viewer.grid.visibility.button',
                           ),
+                          tooltip: _grid.visible ? '격자 숨기기' : '격자 보기',
+                          icon: Icon(
+                            _grid.visible
+                                ? Icons.grid_on
+                                : Icons.grid_off_outlined,
+                          ),
+                          onPressed: () => setState(() {
+                            _grid = _grid.copyWith(visible: !_grid.visible);
+                            _gridState = _OpState.idle;
+                          }),
                         ),
                       ),
+                    ),
                   ],
                 ),
               ),
@@ -691,17 +795,38 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            _GridEditSection(
+              settings: _grid,
+              captureSettings: photo.captureGridSettings,
+              expanded: _gridEditing,
+              state: _gridState,
+              onExpandedChanged: (value) =>
+                  setState(() => _gridEditing = value),
+              onChanged: (value) => setState(() {
+                _grid = value;
+                _gridState = _OpState.idle;
+              }),
+              onApply: _gridState == _OpState.running ? null : _saveGrid,
+              onRevert: _gridState == _OpState.running ? null : _revertGrid,
+            ),
             Semantics(
               identifier: 'records.viewer.export.grid.toggle',
               label: '내보내기에 격자 합성',
-              value: _includeGridOnExport ? '켜짐' : '꺼짐',
+              value: _willComposeGrid ? '켜짐' : '꺼짐',
+              enabled: _grid.visible,
               child: SwitchListTile(
                 key: const ValueKey('records.viewer.export.grid.toggle'),
                 contentPadding: EdgeInsets.zero,
                 title: const Text('내보내기에 격자 합성'),
-                subtitle: const Text('원본은 변경하지 않고 격자가 포함된 새 PNG를 만듭니다.'),
-                value: _includeGridOnExport,
-                onChanged: _exportState == _OpState.running
+                subtitle: Text(
+                  _grid.visible
+                      ? '원본은 변경하지 않고 격자가 포함된 새 PNG를 만듭니다.'
+                      : '격자를 숨긴 상태입니다. 격자를 켜면 합성할 수 있습니다.',
+                ),
+                value: _willComposeGrid,
+                // 격자를 숨긴 채 합성하면 화면에 없는 격자가 결과물에만 찍힌다.
+                onChanged: (_exportState == _OpState.running || !_grid.visible)
                     ? null
                     : (value) => setState(() {
                         _includeGridOnExport = value;
@@ -819,7 +944,7 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
                 ),
                 _ActionButton(
                   id: 'records.viewer.export.button',
-                  label: _includeGridOnExport ? '격자 합성 내보내기' : '내보내기',
+                  label: _willComposeGrid ? '격자 합성 내보내기' : '내보내기',
                   icon: Icons.save_alt_outlined,
                   state: _exportState,
                   onPressed: _export,
@@ -899,6 +1024,253 @@ class _PaneStatus extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 사진별 격자 조정 패널.
+///
+/// 격자는 원본 픽셀이 아니라 메타데이터이므로 촬영 후에도 바꿀 수 있다. 펼치면
+/// 위쪽 사진에 조정 결과가 바로 겹쳐 보이고, 적용을 누를 때 메타데이터로 저장된다.
+/// 촬영 당시 값은 따로 보존되므로 언제든 되돌릴 수 있다.
+class _GridEditSection extends StatelessWidget {
+  final GridSettings settings;
+  final GridSettings captureSettings;
+  final bool expanded;
+  final _OpState state;
+  final ValueChanged<bool> onExpandedChanged;
+  final ValueChanged<GridSettings> onChanged;
+  final VoidCallback? onApply;
+  final VoidCallback? onRevert;
+
+  const _GridEditSection({
+    required this.settings,
+    required this.captureSettings,
+    required this.expanded,
+    required this.state,
+    required this.onExpandedChanged,
+    required this.onChanged,
+    required this.onApply,
+    required this.onRevert,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final differsFromCapture = settings != captureSettings;
+
+    return Semantics(
+      identifier: 'records.viewer.grid.section',
+      container: true,
+      label: '격자 조정',
+      child: Card(
+        key: const ValueKey('records.viewer.grid.section'),
+        margin: EdgeInsets.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Semantics(
+              identifier: 'records.viewer.grid.expand.button',
+              button: true,
+              expanded: expanded,
+              label: '격자 조정 패널 열기/닫기',
+              child: InkWell(
+                key: const ValueKey('records.viewer.grid.expand.button'),
+                onTap: () => onExpandedChanged(!expanded),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sp3,
+                    vertical: AppSpacing.sp2,
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.grid_on_outlined, size: 20),
+                      const SizedBox(width: AppSpacing.sp3),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('격자 조정', style: context.texts.titleSmall),
+                            Text(
+                              differsFromCapture
+                                  ? '촬영 당시와 다르게 조정됨'
+                                  : '촬영 당시 설정',
+                              style: context.texts.bodySmall?.copyWith(
+                                color: context.colors.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      _InlineStatus(
+                        id: 'records.viewer.grid.status',
+                        state: state,
+                      ),
+                      Icon(expanded ? Icons.expand_less : Icons.expand_more),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (expanded) ...[
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.sp3,
+                  AppSpacing.sp2,
+                  AppSpacing.sp3,
+                  AppSpacing.sp3,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Semantics(
+                      identifier: 'records.viewer.grid.visible.switch',
+                      label: '격자 표시',
+                      value: settings.visible ? '켜짐' : '꺼짐',
+                      child: SwitchListTile(
+                        key: const ValueKey(
+                          'records.viewer.grid.visible.switch',
+                        ),
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('격자 표시'),
+                        value: settings.visible,
+                        onChanged: (value) =>
+                            onChanged(settings.copyWith(visible: value)),
+                      ),
+                    ),
+                    _GridSlider(
+                      id: 'records.viewer.grid.opacity.slider',
+                      label: '투명도',
+                      value: settings.opacity,
+                      min: 0.1,
+                      max: 1,
+                      display: settings.opacity.toStringAsFixed(2),
+                      onChanged: (value) =>
+                          onChanged(settings.copyWith(opacity: value)),
+                    ),
+                    _GridSlider(
+                      id: 'records.viewer.grid.lineWidth.slider',
+                      label: '선 굵기',
+                      value: settings.lineWidth,
+                      min: 0.5,
+                      max: 4,
+                      display: settings.lineWidth.toStringAsFixed(1),
+                      onChanged: (value) =>
+                          onChanged(settings.copyWith(lineWidth: value)),
+                    ),
+                    _GridSlider(
+                      id: 'records.viewer.grid.spacing.slider',
+                      label: '간격',
+                      value: settings.spacing,
+                      min: 10,
+                      max: 120,
+                      display: settings.spacing.toStringAsFixed(0),
+                      onChanged: (value) =>
+                          onChanged(settings.copyWith(spacing: value)),
+                    ),
+                    const SizedBox(height: AppSpacing.sp2),
+                    Text(
+                      '격자는 원본 사진에 저장되지 않습니다. 내보내거나 공유할 때만 이미지에 합쳐집니다.',
+                      style: context.texts.bodySmall?.copyWith(
+                        color: context.colors.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.sp3),
+                    Row(
+                      children: [
+                        Semantics(
+                          identifier: 'records.viewer.grid.apply.button',
+                          button: true,
+                          label: '격자 설정 적용',
+                          child: FilledButton(
+                            key: const ValueKey(
+                              'records.viewer.grid.apply.button',
+                            ),
+                            onPressed: onApply,
+                            child: const Text('적용'),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sp2),
+                        if (differsFromCapture)
+                          Semantics(
+                            identifier: 'records.viewer.grid.revert.button',
+                            button: true,
+                            label: '촬영 당시 격자 설정으로 되돌리기',
+                            child: TextButton(
+                              key: const ValueKey(
+                                'records.viewer.grid.revert.button',
+                              ),
+                              onPressed: onRevert,
+                              child: const Text('촬영 당시로 되돌리기'),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 라벨 · 슬라이더 · 현재 값을 한 행으로 묶는다.
+///
+/// 값을 항상 눈에 보이게 두는 것은 접근성 요구다. 슬라이더만으로는 조작 결과를
+/// 확인할 수 없다.
+class _GridSlider extends StatelessWidget {
+  final String id;
+  final String label;
+  final double value;
+  final double min;
+  final double max;
+  final String display;
+  final ValueChanged<double> onChanged;
+
+  const _GridSlider({
+    required this.id,
+    required this.label,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.display,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        SizedBox(width: 60, child: Text(label, style: context.texts.bodySmall)),
+        Expanded(
+          child: Semantics(
+            identifier: id,
+            slider: true,
+            label: label,
+            value: display,
+            child: Slider(
+              key: ValueKey(id),
+              value: value.clamp(min, max),
+              min: min,
+              max: max,
+              onChanged: onChanged,
+            ),
+          ),
+        ),
+        SizedBox(
+          width: 40,
+          child: Text(
+            display,
+            textAlign: TextAlign.end,
+            style: context.numericTexts.bodySmall.copyWith(
+              color: context.colors.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

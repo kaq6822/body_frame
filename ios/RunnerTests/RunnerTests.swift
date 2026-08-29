@@ -3,59 +3,26 @@ import Foundation
 import XCTest
 @testable import Runner
 
+/// 앱 컨테이너는 iOS 기본값(백업 포함)을 그대로 사용한다.
+///
+/// iOS는 iCloud 백업과 Quick Start 기기 전송을 나누는 스위치가 없어
+/// `isExcludedFromBackup`을 켜면 기기 교체 시 기록이 함께 사라진다.
+/// 앱이 이 값을 건드리지 않는지 회귀로 확인한다.
 final class RunnerTests: XCTestCase {
 
-  func testSensitiveDataProtectionAppliesRecursivelyWithoutFollowingSymlinks() throws {
+  func testAppDoesNotExcludeContainerFromBackup() throws {
     let fileManager = FileManager.default
-    let testRoot = fileManager.temporaryDirectory
-      .appendingPathComponent("body-frame-protection-\(UUID().uuidString)")
-    let protectedRoot = testRoot.appendingPathComponent("Documents")
-    let nestedDirectory = protectedRoot.appendingPathComponent("members/member-1")
-    let nestedFile = nestedDirectory.appendingPathComponent("front.jpg")
-    let externalRoot = testRoot.appendingPathComponent("outside")
-    let externalFile = externalRoot.appendingPathComponent("must-remain-unchanged.db")
-    let symlink = protectedRoot.appendingPathComponent("outside-link")
-
-    defer {
-      try? fileManager.removeItem(at: testRoot)
-    }
-
-    try fileManager.createDirectory(
-      at: nestedDirectory,
-      withIntermediateDirectories: true
-    )
-    try fileManager.createDirectory(
-      at: externalRoot,
-      withIntermediateDirectories: true
-    )
-    try Data("photo".utf8).write(to: nestedFile)
-    try Data("database".utf8).write(to: externalFile)
-    try fileManager.createSymbolicLink(
-      at: symlink,
-      withDestinationURL: externalRoot
+    let documents = try fileManager.url(
+      for: .documentDirectory,
+      in: .userDomainMask,
+      appropriateFor: nil,
+      create: true
     )
 
-    var externalValues = URLResourceValues()
-    externalValues.isExcludedFromBackup = false
-    var mutableExternalFile = externalFile
-    try mutableExternalFile.setResourceValues(externalValues)
-
-    SensitiveDataProtector(fileManager: fileManager)
-      .protectRecursively(at: protectedRoot)
-
-    XCTAssertEqual(backupExclusion(of: protectedRoot), true)
-    XCTAssertEqual(backupExclusion(of: nestedDirectory), true)
-    XCTAssertEqual(backupExclusion(of: nestedFile), true)
-    XCTAssertEqual(backupExclusion(of: externalFile), false)
-
-    let attributes = try fileManager.attributesOfItem(atPath: nestedFile.path)
-    if let protection = attributes[.protectionKey] as? FileProtectionType {
-      XCTAssertEqual(protection, .complete)
-    }
-  }
-
-  private func backupExclusion(of url: URL) -> Bool? {
-    try? url.resourceValues(forKeys: [.isExcludedFromBackupKey])
+    let excluded = try documents
+      .resourceValues(forKeys: [.isExcludedFromBackupKey])
       .isExcludedFromBackup
+
+    XCTAssertNotEqual(excluded, true)
   }
 }

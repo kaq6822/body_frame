@@ -22,9 +22,7 @@ final _dateFormat = DateFormat('yyyy.MM.dd');
 class CompareViewScreen extends ConsumerWidget {
   static const screenId = 'screen.compare.view';
 
-  final String memberId;
-
-  const CompareViewScreen({super.key, required this.memberId});
+  const CompareViewScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -35,19 +33,13 @@ class CompareViewScreen extends ConsumerWidget {
 
     final Widget body;
     if (directionKey == null || beforePhotoId == null || afterPhotoId == null) {
-      body = CompareMissingContext(
-        memberId: memberId,
+      body = const CompareMissingContext(
         backButtonId: 'compare.view.backToDates.button',
       );
     } else {
       body = _CompareViewBody(
-        memberId: memberId,
         direction: BodyDirection.fromKey(directionKey),
-        bundleKey: (
-          memberId: memberId,
-          beforePhotoId: beforePhotoId,
-          afterPhotoId: afterPhotoId,
-        ),
+        bundleKey: (beforePhotoId: beforePhotoId, afterPhotoId: afterPhotoId),
       );
     }
 
@@ -65,15 +57,10 @@ class CompareViewScreen extends ConsumerWidget {
 }
 
 class _CompareViewBody extends ConsumerStatefulWidget {
-  final String memberId;
   final BodyDirection direction;
   final CompareViewKey bundleKey;
 
-  const _CompareViewBody({
-    required this.memberId,
-    required this.direction,
-    required this.bundleKey,
-  });
+  const _CompareViewBody({required this.direction, required this.bundleKey});
 
   @override
   ConsumerState<_CompareViewBody> createState() => _CompareViewBodyState();
@@ -83,7 +70,13 @@ class _CompareViewBodyState extends ConsumerState<_CompareViewBody> {
   late final TransformationController _beforeCtrl;
   late final TransformationController _afterCtrl;
   bool _sync = true;
-  bool _showGrid = false;
+
+  /// 비교 화면도 다른 사진 보기와 같이 격자를 켠 상태로 시작한다.
+  bool _showGrid = true;
+
+  /// 사용자가 격자 표시를 직접 건드렸는지. 생성 화면은 저장된 기본 내보내기
+  /// 옵션을 쓰는데, 화면 기본값(켜짐)만으로 그 설정을 덮어쓰지 않게 구분한다.
+  bool _gridChoiceTouched = false;
   GridSettings _grid = GridSettings.defaults;
   bool _gridInitialized = false;
   CompareMode _mode = CompareMode.sideBySide;
@@ -144,7 +137,6 @@ class _CompareViewBodyState extends ConsumerState<_CompareViewBody> {
 
   void _goExport(CompareViewBundle bundle) {
     final request = CompareExportRequest(
-      member: bundle.member,
       beforeRecord: bundle.beforeRecord,
       afterRecord: bundle.afterRecord,
       beforePhoto: bundle.beforePhoto,
@@ -153,7 +145,7 @@ class _CompareViewBodyState extends ConsumerState<_CompareViewBody> {
       beforeMatrix: _beforeCtrl.value.clone(),
       afterMatrix: _afterCtrl.value.clone(),
       grid: _grid,
-      showGrid: _showGrid,
+      showGrid: _gridChoiceTouched ? _showGrid : null,
       mode: _mode,
       overlayOpacity: _overlayOpacity,
       sliderPosition: _sliderPosition,
@@ -161,7 +153,6 @@ class _CompareViewBodyState extends ConsumerState<_CompareViewBody> {
     );
     context.pushNamed(
       AppRoutes.compareExport,
-      pathParameters: {AppParams.memberId: widget.memberId},
       queryParameters: {
         AppParams.direction: widget.direction.key,
         AppParams.beforePhotoId: bundle.beforePhoto.id,
@@ -289,7 +280,10 @@ class _CompareViewBodyState extends ConsumerState<_CompareViewBody> {
               sync: _sync,
               onSyncChanged: _toggleSync,
               showGrid: _showGrid,
-              onShowGridChanged: (v) => setState(() => _showGrid = v),
+              onShowGridChanged: (v) => setState(() {
+                _showGrid = v;
+                _gridChoiceTouched = true;
+              }),
               grid: _grid,
               onGridChanged: (g) => setState(() => _grid = g),
               onLoadCaptureGrid: _loadCaptureGrid,

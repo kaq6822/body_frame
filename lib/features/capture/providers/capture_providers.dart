@@ -1,21 +1,14 @@
 import 'dart:io';
 
+// 이 앱에도 같은 이름의 설정 모델(core/models/app_settings.dart)이 있어 구분한다.
+import 'package:app_settings/app_settings.dart' as platform_settings;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:body_frame/core/models/models.dart';
 import 'package:body_frame/core/providers.dart';
 import 'package:body_frame/core/services/grid_settings_service.dart';
+import 'package:body_frame/features/records/providers/records_providers.dart';
 import '../camera/capture_camera_controller.dart';
-
-/// id로 회원 정보를 조회한다. 잘못된 회원에게 등록되는 일을 막기 위해
-/// 촬영/갤러리 등록 화면에서 회원 이름을 상시 표시할 때 사용한다.
-final memberByIdProvider = FutureProvider.autoDispose.family<Member?, String>((
-  ref,
-  memberId,
-) async {
-  final repository = ref.watch(memberRepositoryProvider);
-  return repository.getById(memberId);
-});
 
 /// 실제 카메라 컨트롤러 생성 팩토리. 테스트에서
 /// `captureCameraControllerFactoryProvider.overrideWithValue(() => Fake...())`로
@@ -25,18 +18,32 @@ final captureCameraControllerFactoryProvider =
       (ref) => DeviceCaptureCameraController.new,
     );
 
-typedef PreviousPhotoGuideKey = ({String memberId, BodyDirection direction});
+/// 이 앱의 시스템 설정 화면을 여는 플랫폼 경계.
+///
+/// 권한을 거부한 사용자가 설정 앱을 직접 헤매지 않게 앱 정보 화면으로 바로
+/// 보낸다. 플러그인 채널을 타므로 위젯 테스트에서는 이 provider를 교체해
+/// "눌렀을 때 열기를 요청하는지"만 확인한다.
+final openAppSettingsProvider = Provider<Future<void> Function()>(
+  (ref) => platform_settings.AppSettings.openAppSettings,
+);
 
-/// 같은 회원·촬영 방향의 사진 중 가장 최근에 저장됐고 실제 파일도 남아 있는
+/// 같은 촬영 방향의 사진 중 가장 최근에 저장됐고 실제 파일도 남아 있는
 /// 원본 경로를 찾는다. 최신 행의 파일이 유실됐으면 다음 사진을 확인한다.
 ///
 /// 조회 실패는 [AsyncError], 정상적으로 사용할 사진이 없으면 null이다. 화면은
 /// 두 경우 모두 카메라만 계속 사용할 수 있도록 가이드 없이 대체한다.
 final previousPhotoGuidePathProvider = FutureProvider.autoDispose
-    .family<String?, PreviousPhotoGuideKey>((ref, key) async {
+    .family<String?, BodyDirection>((ref, direction) async {
+      // 촬영 화면은 앱의 루트라 저장·삭제·교체를 오가는 동안 계속 살아 있다.
+      // [bodyPhotoRepositoryProvider]는 값이 바뀌지 않는 Provider여서 그것만
+      // 지켜보면 캐시된 옛 경로가 그대로 남는다. 기록이 바뀌었다는 신호를 주는
+      // [timelineProvider]를 함께 지켜봐 방금 찍은 사진이 가이드에 반영되게 한다.
+      // 값이 아니라 무효화 신호만 쓰므로 타임라인 조회 실패는 가이드에 옮기지
+      // 않는다 — 사진 조회 자체는 아래에서 독립적으로 수행한다.
+      ref.watch(timelineProvider);
       final photos = await ref
           .watch(bodyPhotoRepositoryProvider)
-          .listByMemberDirection(key.memberId, key.direction);
+          .listByDirection(direction);
       for (final photo in photos) {
         try {
           final file = File(photo.filePath);

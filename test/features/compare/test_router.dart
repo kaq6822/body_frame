@@ -16,32 +16,24 @@ GoRouter createCompareTestRouter({required String initialLocation}) {
     initialLocation: initialLocation,
     routes: [
       GoRoute(
-        path: '/members/:${AppParams.memberId}/compare',
+        path: '/compare',
         name: AppRoutes.compareDates,
-        builder: (context, state) => CompareDatesScreen(
-          memberId: state.pathParameters[AppParams.memberId]!,
-        ),
+        builder: (context, state) => const CompareDatesScreen(),
         routes: [
           GoRoute(
             path: 'direction',
             name: AppRoutes.compareDirection,
-            builder: (context, state) => CompareDirectionScreen(
-              memberId: state.pathParameters[AppParams.memberId]!,
-            ),
+            builder: (context, state) => const CompareDirectionScreen(),
           ),
           GoRoute(
             path: 'view',
             name: AppRoutes.compareView,
-            builder: (context, state) => CompareViewScreen(
-              memberId: state.pathParameters[AppParams.memberId]!,
-            ),
+            builder: (context, state) => const CompareViewScreen(),
           ),
           GoRoute(
             path: 'export',
             name: AppRoutes.compareExport,
-            builder: (context, state) => CompareExportScreen(
-              memberId: state.pathParameters[AppParams.memberId]!,
-            ),
+            builder: (context, state) => const CompareExportScreen(),
           ),
         ],
       ),

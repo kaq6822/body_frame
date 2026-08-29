@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../../core/models/models.dart';
+import '../../../core/photo_frame.dart';
+import '../../../core/theme/app_tokens.dart';
 import '../compare_export_models.dart';
 import 'compare_grid_overlay.dart';
 
@@ -108,7 +110,7 @@ class CompareLayeredPane extends StatelessWidget {
   }
 
   Size _frameSize(BoxConstraints constraints) {
-    const targetAspect = 3 / 4;
+    const targetAspect = kPhotoFrameAspect;
     var width = constraints.maxWidth;
     if (!width.isFinite) {
       width = constraints.maxHeight.isFinite
@@ -157,7 +159,7 @@ class CompareLayeredPane extends StatelessWidget {
             return Stack(
               fit: StackFit.expand,
               children: [
-                const ColoredBox(color: Color(0x14000000)),
+                ColoredBox(color: context.photoColors.inset),
                 before,
                 if (mode == CompareMode.overlay)
                   Opacity(opacity: opacity, child: after)
@@ -177,6 +179,10 @@ class CompareLayeredPane extends StatelessWidget {
                     position: position,
                     frameWidth: constraints.maxWidth,
                     onChanged: onSliderPositionChanged,
+                    // 내보내기 프레임에서는 경계선만 남긴다. 드래그 손잡이는
+                    // 조작 수단이므로 저장된 이미지에 합성되면 결과물에 앱 UI가
+                    // 섞인다.
+                    showHandle: interactive,
                   ),
               ],
             );
@@ -219,19 +225,37 @@ class _SliderBoundary extends StatelessWidget {
   final double position;
   final double frameWidth;
   final ValueChanged<double>? onChanged;
+  final bool showHandle;
 
   const _SliderBoundary({
     required this.identifier,
     required this.position,
     required this.frameWidth,
     required this.onChanged,
+    required this.showHandle,
   });
 
   @override
   Widget build(BuildContext context) {
-    const handleWidth = 44.0;
+    // 최소 터치 타겟(48dp)을 채운다. 경계를 끌 때 손가락이 자주 미끄러지는 지점이다.
+    const handleWidth = AppSpacing.minTouchTarget;
+    const lineWidth = 3.0;
     final percent = (position * 100).round();
     final callback = onChanged;
+    final line = Container(width: lineWidth, color: context.photoColors.onChrome);
+
+    if (!showHandle) {
+      // 경계 위치는 canvas의 semantics value로 이미 읽히므로 표시용 선에는
+      // 별도 노드를 만들지 않는다.
+      return Positioned(
+        left: frameWidth * position - lineWidth / 2,
+        top: 0,
+        bottom: 0,
+        width: lineWidth,
+        child: line,
+      );
+    }
+
     return Positioned(
       left: frameWidth * position - handleWidth / 2,
       top: 0,
@@ -264,20 +288,23 @@ class _SliderBoundary extends StatelessWidget {
             child: Stack(
               alignment: Alignment.center,
               children: [
-                Container(width: 3, color: Colors.white),
+                line,
                 DecoratedBox(
                   decoration: BoxDecoration(
                     color: Theme.of(context).colorScheme.primary,
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2),
+                    border: Border.all(
+                      color: context.photoColors.onChrome,
+                      width: 2,
+                    ),
                   ),
-                  child: const SizedBox(
+                  child: SizedBox(
                     width: 28,
                     height: 28,
                     child: Icon(
                       Icons.drag_handle,
                       size: 18,
-                      color: Colors.white,
+                      color: context.photoColors.onChrome,
                     ),
                   ),
                 ),

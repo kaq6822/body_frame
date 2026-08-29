@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:body_frame/core/theme/app_tokens.dart';
+
 /// 비동기 작업의 대기/진행/성공/실패를 구분한다.
 enum AsyncStatus { idle, busy, success, failure }
 
@@ -28,37 +30,41 @@ class AsyncStatusIndicator extends StatelessWidget {
     final Widget content = switch (status) {
       AsyncStatus.idle => const SizedBox.shrink(),
       AsyncStatus.busy => Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-            const SizedBox(width: 8),
-            Text(busyLabel),
-          ],
-        ),
-      AsyncStatus.success => successLabel == null
-          ? const SizedBox.shrink()
-          : Text(successLabel!, style: const TextStyle(color: Colors.green)),
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 8),
+          Text(busyLabel),
+        ],
+      ),
+      AsyncStatus.success =>
+        successLabel == null
+            ? const SizedBox.shrink()
+            : Text(
+                successLabel!,
+                style: TextStyle(color: context.semanticColors.success),
+              ),
       AsyncStatus.failure => Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Flexible(
-              child: Text(
-                failureMessage ?? '오류가 발생했습니다.',
-                style: const TextStyle(color: Colors.red),
-              ),
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: Text(
+              failureMessage ?? '오류가 발생했습니다.',
+              style: TextStyle(color: context.colors.error),
             ),
-            if (onRetry != null)
-              TextButton(
-                key: ValueKey('$statusId.retry.button'),
-                onPressed: onRetry,
-                child: const Text('재시도'),
-              ),
-          ],
-        ),
+          ),
+          if (onRetry != null)
+            TextButton(
+              key: ValueKey('$statusId.retry.button'),
+              onPressed: onRetry,
+              child: const Text('재시도'),
+            ),
+        ],
+      ),
     };
 
     return Semantics(

@@ -11,23 +11,22 @@ import 'package:body_frame/core/models/models.dart';
 import 'package:body_frame/core/providers.dart';
 import 'package:body_frame/core/services/app_image_picker.dart';
 import 'package:body_frame/core/services/app_logger.dart';
-import 'providers/capture_providers.dart';
+import 'package:body_frame/core/theme/app_tokens.dart';
+import 'package:body_frame/core/widgets/photo_grid_overlay.dart';
+import '../records/providers/records_providers.dart';
 import 'utils/image_meta.dart';
 import 'widgets/async_status_indicator.dart';
-import 'widgets/capture_member_banner.dart';
 import 'widgets/direction_selector.dart';
 
 /// 갤러리 사진 등록 화면.
 ///
 /// 여러 사진을 한 번에 선택해 사진별로 방향을 개별 지정하고, EXIF 촬영일이
-/// 있으면 기본값으로 제안한다(사용자가 직접 수정 가능). 같은 촬영일의
-/// [PhotoRecord]가 있으면 재사용하고, 없으면 새로 만든다.
+/// 있으면 기본값으로 제안한다(사용자가 직접 수정 가능). 등록 한 건 안에서
+/// 촬영일이 같은 사진끼리 [PhotoRecord] 하나로 묶고, 기존 기록에는 합치지 않는다.
 class GalleryImportScreen extends ConsumerStatefulWidget {
   static const screenId = 'screen.capture.import';
 
-  final String memberId;
-
-  const GalleryImportScreen({super.key, required this.memberId});
+  const GalleryImportScreen({super.key});
 
   @override
   ConsumerState<GalleryImportScreen> createState() =>
@@ -52,7 +51,7 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
   bool _lostRecoveryScheduled = false;
 
   ImagePickerRequestContext get _pickerContext =>
-      ImagePickerRequestContext.galleryImport(widget.memberId);
+      ImagePickerRequestContext.galleryImport();
 
   DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
   String _dateKey(DateTime d) => '${d.year}-${d.month}-${d.day}';
@@ -182,21 +181,15 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
       _errorMessage = null;
     });
     final logger = ref.read(appLoggerProvider);
-    logger.phase(
-      'gallery.import',
-      LogPhase.start,
-      context: {'memberId': widget.memberId},
-    );
+    logger.phase('gallery.import', LogPhase.start);
     final storage = ref.read(photoStorageServiceProvider);
-    final records = ref.read(photoRecordRepositoryProvider);
     final ingest = ref.read(photoIngestRepositoryProvider);
     final preparedPaths = <String>[];
     var databaseCommitted = false;
     try {
-      final existingRecords = await records.listByMember(widget.memberId);
-      final byDate = <String, PhotoRecord>{
-        for (final r in existingRecords) _dateKey(_dateOnly(r.shotAt)): r,
-      };
+      // 이 등록 건 안에서만 촬영일이 같은 사진을 한 기록으로 묶는다. 기존 기록에
+      // 합치면 따로 등록한 촬영분이 한 건으로 보이게 된다.
+      final byDate = <String, PhotoRecord>{};
       final newRecords = <PhotoRecord>[];
       final preparedPhotos = <BodyPhoto>[];
 
@@ -211,7 +204,6 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
         if (record == null) {
           record = PhotoRecord(
             id: const Uuid().v4(),
-            memberId: widget.memberId,
             shotAt: dateOnly,
             createdAt: now,
             updatedAt: now,
@@ -220,7 +212,7 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
           byDate[key] = record;
         }
         final savedPath = await storage.saveOriginal(
-          memberId: widget.memberId,
+          shotAt: dateOnly,
           sourcePath: item.file.path,
         );
         preparedPaths.add(savedPath);
@@ -241,7 +233,6 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
         );
       }
       await ingest.insertPrepared(
-        memberId: widget.memberId,
         newRecords: newRecords,
         photos: preparedPhotos,
       );
@@ -250,8 +241,9 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
       logger.phase(
         'gallery.import',
         LogPhase.success,
-        context: {'memberId': widget.memberId, 'count': savedCount},
+        context: {'count': savedCount},
       );
+      ref.invalidate(timelineProvider);
       if (!mounted) return;
       setState(() {
         _saveStatus = AsyncStatus.success;
@@ -270,11 +262,7 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
           }
         }
       }
-      logger.phase(
-        'gallery.import',
-        LogPhase.failure,
-        context: {'memberId': widget.memberId},
-      );
+      logger.phase('gallery.import', LogPhase.failure);
       if (!mounted) return;
       setState(() {
         _saveStatus = AsyncStatus.failure;
@@ -285,8 +273,6 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final memberAsync = ref.watch(memberByIdProvider(widget.memberId));
-
     return Semantics(
       identifier: GalleryImportScreen.screenId,
       container: true,
@@ -294,37 +280,19 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
       child: Scaffold(
         key: const ValueKey(GalleryImportScreen.screenId),
         appBar: AppBar(title: const Text('갤러리 사진 등록')),
-        body: memberAsync.when(
-          data: (member) => _buildBody(member?.name ?? ''),
-          loading: () => const Center(
-            child: AsyncStatusIndicator(
-              statusId: 'screen.capture.import.status',
-              status: AsyncStatus.busy,
-              busyLabel: '회원 정보를 불러오는 중입니다.',
-            ),
-          ),
-          error: (error, stackTrace) => Center(
-            child: AsyncStatusIndicator(
-              statusId: 'screen.capture.import.status',
-              status: AsyncStatus.failure,
-              failureMessage: '회원 정보를 불러오지 못했습니다.',
-              onRetry: () =>
-                  ref.invalidate(memberByIdProvider(widget.memberId)),
-            ),
-          ),
-        ),
+        body: _buildBody(),
       ),
     );
   }
 
-  Widget _buildBody(String memberName) {
+  Widget _buildBody() {
     return Column(
       children: [
         Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              Expanded(child: CaptureMemberBanner(memberName: memberName)),
+              const Expanded(child: Text('여러 사진을 선택해 방향과 촬영일을 지정하세요.')),
               const SizedBox(width: 8),
               Semantics(
                 identifier: 'capture.import.pick.button',
@@ -364,11 +332,11 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
                 ),
         ),
         if (_items.isNotEmpty && !_allDirectionsAssigned)
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Text(
               '모든 사진에 촬영 방향을 지정해주세요.',
-              style: TextStyle(color: Colors.red),
+              style: TextStyle(color: context.colors.error),
             ),
           ),
         Padding(
@@ -430,11 +398,21 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
                   child: ClipRRect(
                     key: ValueKey('capture.import.item.$index.thumbnail.image'),
                     borderRadius: BorderRadius.circular(6),
-                    child: Image.file(
-                      File(item.file.path),
+                    child: SizedBox(
                       width: 72,
                       height: 72,
-                      fit: BoxFit.contain,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          Image.file(File(item.file.path), fit: BoxFit.contain),
+                          // 등록 전 사진도 격자와 함께 보여 정렬 상태를 가늠하게 한다.
+                          PhotoGridOverlay(
+                            settings: GridSettings.defaults,
+                            semanticsIdentifier:
+                                'capture.import.item.$index.grid.overlay',
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),

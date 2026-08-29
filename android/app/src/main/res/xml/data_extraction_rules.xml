@@ -1,5 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Android 12 이상: 클라우드 백업과 기기 간 전송에서 앱 데이터를 모두 제외한다. -->
+<!--
+  Android 12 이상.
+
+  cloud-backup: 사용하지 않는다. 앱당 25MB 한도라 체형 사진을 담을 수 없고,
+  일부만 올라간 백업은 복원 결과를 신뢰할 수 없게 만든다.
+
+  device-transfer: 새 기기로 옮길 때 용량 제한이 없으므로 DB, 사진, 설정을
+  모두 넘긴다. 임시 디렉터리(cache)는 OS가 기본 제외한다.
+-->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="root" path="." />
@@ -13,14 +21,14 @@
         <exclude domain="device_sharedpref" path="." />
     </cloud-backup>
     <device-transfer>
-        <exclude domain="root" path="." />
-        <exclude domain="file" path="." />
-        <exclude domain="database" path="." />
-        <exclude domain="sharedpref" path="." />
-        <exclude domain="external" path="." />
-        <exclude domain="device_root" path="." />
-        <exclude domain="device_file" path="." />
-        <exclude domain="device_database" path="." />
-        <exclude domain="device_sharedpref" path="." />
+        <!--
+          DB(body_frame.db)와 사진(photos/)은 getApplicationDocumentsDirectory()가
+          가리키는 <dataDir>/app_flutter 아래에 있다. domain="file"은
+          <dataDir>/files, domain="database"는 <dataDir>/databases만 덮으므로
+          둘 중 어느 것도 app_flutter를 포함하지 못한다. 인앱 백업이 없는 이 앱은
+          기기 간 전송이 유일한 이전 경로이므로 dataDir 전체를 뜻하는
+          domain="root"로 포함한다. cache/code_cache/no_backup은 OS가 기본 제외한다.
+        -->
+        <include domain="root" path="." />
     </device-transfer>
 </data-extraction-rules>

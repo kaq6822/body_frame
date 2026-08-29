@@ -3,7 +3,6 @@ import 'dart:ui';
 
 import 'package:body_frame/core/models/models.dart';
 import 'package:body_frame/core/repositories/body_photo_repository.dart';
-import 'package:body_frame/core/repositories/member_repository.dart';
 import 'package:body_frame/core/repositories/photo_record_repository.dart';
 import 'package:body_frame/core/services/grid_settings_service.dart';
 import 'package:body_frame/features/compare/services/compare_export_sink.dart';
@@ -12,32 +11,6 @@ import 'package:body_frame/features/compare/services/compare_export_sink.dart';
 ///
 /// `ProviderScope(overrides:)`에서 이 Fake들로 교체해 실제 DB/플러그인
 /// 채널 없이도 화면을 검증할 수 있다.
-class FakeMemberRepository implements MemberRepository {
-  final Map<String, Member> members = {};
-
-  @override
-  Future<void> insert(Member member) async => members[member.id] = member;
-
-  @override
-  Future<void> update(Member member) async => members[member.id] = member;
-
-  @override
-  Future<void> delete(String id) async => members.remove(id);
-
-  @override
-  Future<Member?> getById(String id) async => members[id];
-
-  @override
-  Future<List<MemberListItem>> list({
-    String? query,
-    MemberSort sort = MemberSort.recentShot,
-  }) async {
-    return members.values
-        .map((m) => MemberListItem(member: m, recordCount: 0, lastShotAt: null))
-        .toList();
-  }
-}
-
 class FakePhotoRecordRepository implements PhotoRecordRepository {
   final Map<String, PhotoRecord> records = {};
 
@@ -54,8 +27,8 @@ class FakePhotoRecordRepository implements PhotoRecordRepository {
   Future<PhotoRecord?> getById(String id) async => records[id];
 
   @override
-  Future<List<PhotoRecord>> listByMember(String memberId) async {
-    final list = records.values.where((r) => r.memberId == memberId).toList();
+  Future<List<PhotoRecord>> listAll() async {
+    final list = records.values.toList();
     list.sort((a, b) => b.shotAt.compareTo(a.shotAt));
     return list;
   }
@@ -64,10 +37,10 @@ class FakePhotoRecordRepository implements PhotoRecordRepository {
 class FakeBodyPhotoRepository implements BodyPhotoRepository {
   final Map<String, BodyPhoto> photos = {};
 
-  /// recordId -> memberId 매핑(listByMemberDirection 지원용).
-  final Map<String, String> recordMemberId;
+  /// recordId -> 촬영일 매핑(listByDirection 정렬 지원용).
+  final Map<String, DateTime> recordShotAt;
 
-  FakeBodyPhotoRepository({this.recordMemberId = const {}});
+  FakeBodyPhotoRepository({this.recordShotAt = const {}});
 
   @override
   Future<void> insert(BodyPhoto photo) async => photos[photo.id] = photo;
@@ -79,11 +52,6 @@ class FakeBodyPhotoRepository implements BodyPhotoRepository {
   Future<void> delete(String id) async => photos.remove(id);
 
   @override
-  Future<void> deleteByRecord(String recordId) async {
-    photos.removeWhere((_, p) => p.recordId == recordId);
-  }
-
-  @override
   Future<BodyPhoto?> getById(String id) async => photos[id];
 
   @override
@@ -92,21 +60,21 @@ class FakeBodyPhotoRepository implements BodyPhotoRepository {
   }
 
   @override
-  Future<List<BodyPhoto>> listByMemberDirection(
-    String memberId,
-    BodyDirection direction,
-  ) async {
-    return photos.values.where((p) {
-      return p.direction == direction && recordMemberId[p.recordId] == memberId;
-    }).toList();
+  Future<List<BodyPhoto>> listByDirection(BodyDirection direction) async {
+    final list = photos.values
+        .where((p) => p.direction == direction)
+        .toList();
+    list.sort((a, b) {
+      final left = recordShotAt[a.recordId];
+      final right = recordShotAt[b.recordId];
+      if (left == null || right == null) return 0;
+      return right.compareTo(left);
+    });
+    return list;
   }
 
   @override
-  Future<List<BodyPhoto>> listByMember(String memberId) async {
-    return photos.values
-        .where((p) => recordMemberId[p.recordId] == memberId)
-        .toList();
-  }
+  Future<List<BodyPhoto>> listAll() async => photos.values.toList();
 }
 
 class FakeGridSettingsService implements GridSettingsService {
