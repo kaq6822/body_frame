@@ -32,6 +32,31 @@ RecordWithPhotos _entry({
 }
 
 void main() {
+  group('daysBetween', () {
+    test('서머타임이 낀 구간에서도 달력 날짜 차이를 그대로 센다', () {
+      // 지역 시간의 자정끼리 빼면 서머타임 전환이 낀 하루가 23시간 또는
+      // 25시간이 되어 `inDays`가 하루를 깎거나 더한다. 기기 시간대가
+      // 서머타임을 쓰는지와 무관하게 달력으로 센 날짜 수가 그대로 나와야
+      // 한다(`TZ=America/New_York flutter test`로 실제 전환 구간을 덮는다).
+      final start = DateTime(2026, 2, 20);
+      for (var offset = 1; offset <= 400; offset++) {
+        final later = DateTime(start.year, start.month, start.day + offset);
+        expect(
+          daysBetween(start, later),
+          offset,
+          reason: '$offset일 뒤 날짜의 경과일이 어긋난다: $later',
+        );
+      }
+    });
+
+    test('같은 날은 시각이 달라도 0일이다', () {
+      expect(
+        daysBetween(DateTime(2026, 3, 8, 1, 30), DateTime(2026, 3, 8, 23, 30)),
+        0,
+      );
+    });
+  });
+
   group('buildTimelineRows', () {
     test('경과일은 같은 대상 라벨끼리만 계산한다', () {
       // 본인(8/8) → 어머니(8/4) → 본인(8/1) 순서. 본인 기록 사이 간격은 7일이며

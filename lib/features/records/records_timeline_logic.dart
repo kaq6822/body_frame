@@ -52,12 +52,25 @@ String? normalizeLabel(String? label) {
 }
 
 /// 날짜만 남긴 값. 경과일은 시각이 아니라 날짜 차이로 센다.
+///
+/// 같은 달력 날짜끼리 묶는 용도이므로 기기 지역 시간대를 그대로 쓴다.
 DateTime _dateOnly(DateTime value) =>
     DateTime(value.year, value.month, value.day);
 
 /// 두 촬영일 사이의 일수. 시각 성분과 서머타임 영향을 받지 않게 날짜로 자른다.
-int daysBetween(DateTime older, DateTime newer) =>
-    _dateOnly(newer).difference(_dateOnly(older)).inDays;
+///
+/// 지역 시간의 자정끼리 빼면 서머타임이 낀 구간은 23시간 또는 25시간이 되어
+/// `inDays`가 하루를 깎거나 더한다. 날짜만 남긴 뒤에는 시간대가 의미 없으므로
+/// UTC 자정으로 옮겨 하루를 항상 24시간으로 고정한다.
+int daysBetween(DateTime older, DateTime newer) {
+  final from = _dateOnly(older);
+  final to = _dateOnly(newer);
+  return DateTime.utc(
+    to.year,
+    to.month,
+    to.day,
+  ).difference(DateTime.utc(from.year, from.month, from.day)).inDays;
+}
 
 /// 타임라인 행 목록을 만든다.
 ///
