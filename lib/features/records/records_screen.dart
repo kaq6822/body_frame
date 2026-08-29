@@ -32,6 +32,15 @@ class _RecordsScreenState extends ConsumerState<RecordsScreen> {
   /// null이면 전체 보기.
   BodyDirection? _filter;
 
+  /// 고른 방향의 사진이 모두 사라지면 필터 바까지 함께 사라져(방향이 1개 이하)
+  /// 전체 보기로 돌아갈 칩이 없어진다. 빈 화면에 갇히지 않게 상태를 되돌린다.
+  /// 빌드 도중에는 setState를 부를 수 없어 다음 프레임으로 미룬다.
+  void _resetFilterAfterFrame() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _filter != null) setState(() => _filter = null);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final timeline = ref.watch(timelineProvider);
@@ -98,9 +107,15 @@ class _RecordsScreenState extends ConsumerState<RecordsScreen> {
             onRetry: () => ref.invalidate(timelineProvider),
             builder: (entries) {
               if (entries.isEmpty) return const _EmptyRecords();
+              // 사진이 지워져 더 이상 고를 수 없는 방향이면 이번 프레임부터
+              // 전체 보기로 그리고, 남아 있는 상태도 함께 되돌린다.
+              final filter = availableDirections(entries).contains(_filter)
+                  ? _filter
+                  : null;
+              if (filter != _filter) _resetFilterAfterFrame();
               return _RecordsBody(
                 entries: entries,
-                filter: _filter,
+                filter: filter,
                 onFilterChanged: (value) => setState(() => _filter = value),
               );
             },

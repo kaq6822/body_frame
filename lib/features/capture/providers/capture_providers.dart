@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:body_frame/core/models/models.dart';
 import 'package:body_frame/core/providers.dart';
 import 'package:body_frame/core/services/grid_settings_service.dart';
+import 'package:body_frame/features/records/providers/records_providers.dart';
 import '../camera/capture_camera_controller.dart';
 
 /// 실제 카메라 컨트롤러 생성 팩토리. 테스트에서
@@ -33,6 +34,13 @@ final openAppSettingsProvider = Provider<Future<void> Function()>(
 /// 두 경우 모두 카메라만 계속 사용할 수 있도록 가이드 없이 대체한다.
 final previousPhotoGuidePathProvider = FutureProvider.autoDispose
     .family<String?, BodyDirection>((ref, direction) async {
+      // 촬영 화면은 앱의 루트라 저장·삭제·교체를 오가는 동안 계속 살아 있다.
+      // [bodyPhotoRepositoryProvider]는 값이 바뀌지 않는 Provider여서 그것만
+      // 지켜보면 캐시된 옛 경로가 그대로 남는다. 기록이 바뀌었다는 신호를 주는
+      // [timelineProvider]를 함께 지켜봐 방금 찍은 사진이 가이드에 반영되게 한다.
+      // 값이 아니라 무효화 신호만 쓰므로 타임라인 조회 실패는 가이드에 옮기지
+      // 않는다 — 사진 조회 자체는 아래에서 독립적으로 수행한다.
+      ref.watch(timelineProvider);
       final photos = await ref
           .watch(bodyPhotoRepositoryProvider)
           .listByDirection(direction);

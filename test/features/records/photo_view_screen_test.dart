@@ -115,6 +115,105 @@ void main() {
     );
   }
 
+  /// 기록 상세에서 진입한 상황을 재현한다. 상위 화면은 push 결과로만 편집
+  /// 사실을 알 수 있으므로, pop 결과를 [popped]에 받아 검증한다.
+  Widget buildPushedApp(List<bool?> popped) {
+    return ProviderScope(
+      overrides: [
+        photoRecordRepositoryProvider.overrideWithValue(records),
+        bodyPhotoRepositoryProvider.overrideWithValue(photos),
+        photoStorageServiceProvider.overrideWithValue(storage),
+        photoExportSinkProvider.overrideWithValue(exportSink),
+        gridPhotoComposerProvider.overrideWithValue(gridComposer),
+      ],
+      child: MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                key: const ValueKey('host.open.button'),
+                onPressed: () async {
+                  popped.add(
+                    await Navigator.of(context).push<bool>(
+                      MaterialPageRoute(
+                        builder: (_) => const PhotoViewScreen(
+                          recordId: recordId,
+                          photoId: photoId,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+                child: const Text('열기'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  testWidgets('편집한 뒤 뒤로가기로 나가면 상위 화면에 변경 사실을 알린다', (tester) async {
+    await tester.runAsync(() async {
+      final popped = <bool?>[];
+      await tester.pumpWidget(buildPushedApp(popped));
+      await tester.tap(find.byKey(const ValueKey('host.open.button')));
+      await pumpUntil(
+        tester,
+        () => find
+            .byKey(const ValueKey('records.viewer.memo.field'))
+            .evaluate()
+            .isNotEmpty,
+      );
+
+      await tester.enterText(
+        find.byKey(const ValueKey('records.viewer.memo.field')),
+        '뒤로가기 직전에 고친 메모',
+      );
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('records.viewer.memo.save.button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('records.viewer.memo.save.button')),
+      );
+      // 저장이 리포지토리에 반영될 때까지 기다린 뒤에 나가야, pop 결과가
+      // "저장 성공 이후의 상태"를 반영한다.
+      for (var i = 0; i < 40; i++) {
+        final updated = await photos.getById(photoId);
+        if (updated?.memo == '뒤로가기 직전에 고친 메모') break;
+        await Future.delayed(const Duration(milliseconds: 50));
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      // AppBar 뒤로가기·시스템 뒤로가기 모두 결과 없는 maybePop으로 나간다.
+      await tester.pageBack();
+      await pumpUntil(tester, () => popped.isNotEmpty);
+
+      expect(popped, [true]);
+    });
+  });
+
+  testWidgets('아무것도 바꾸지 않고 나가면 갱신 신호를 보내지 않는다', (tester) async {
+    await tester.runAsync(() async {
+      final popped = <bool?>[];
+      await tester.pumpWidget(buildPushedApp(popped));
+      await tester.tap(find.byKey(const ValueKey('host.open.button')));
+      await pumpUntil(
+        tester,
+        () => find
+            .byKey(const ValueKey('records.viewer.image'))
+            .evaluate()
+            .isNotEmpty,
+      );
+
+      await tester.pageBack();
+      await pumpUntil(tester, () => popped.isNotEmpty);
+
+      expect(popped, [false]);
+    });
+  });
+
   testWidgets('원본 사진 보기 화면이 방향/메모를 표시한다', (tester) async {
     await tester.runAsync(() async {
       await tester.pumpWidget(buildApp());

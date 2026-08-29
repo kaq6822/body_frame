@@ -3,6 +3,7 @@ import 'package:body_frame/core/providers.dart';
 import 'package:body_frame/core/repositories/body_photo_repository.dart';
 import 'package:body_frame/core/repositories/photo_record_repository.dart';
 import 'package:body_frame/core/router/app_routes.dart';
+import 'package:body_frame/features/records/providers/records_providers.dart';
 import 'package:body_frame/features/records/records_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -269,6 +270,46 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('records.filter.all')));
     await tester.pumpAndSettle();
 
+    expect(find.byKey(const ValueKey('records.item.0')), findsOneWidget);
+  });
+
+  testWidgets('고른 방향의 사진이 모두 사라지면 전체 보기로 되돌아온다', (tester) async {
+    // 필터 바는 방향이 2종류 이상일 때만 나온다. 후면을 고른 채 마지막 후면
+    // 사진을 지우면 바가 사라져 전체로 돌아갈 칩도 함께 없어지므로, 필터를
+    // 되돌리지 않으면 "후면 사진이 없습니다"에 갇힌다.
+    final photos = [
+      photo('r1', BodyDirection.front),
+      photo('r1', BodyDirection.back),
+      photo('r2', BodyDirection.front),
+    ];
+
+    await tester.pumpWidget(
+      buildApp(
+        records: [
+          record('r1', DateTime(2026, 8, 8)),
+          record('r2', DateTime(2026, 8, 1)),
+        ],
+        photos: photos,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('records.filter.${'back'}')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('records.direction.item.0')),
+      findsOneWidget,
+    );
+
+    // 기록 상세에서 마지막 후면 사진을 지우고 돌아온 상황.
+    photos.removeWhere((p) => p.direction == BodyDirection.back);
+    ProviderScope.containerOf(
+      tester.element(find.byType(RecordsScreen)),
+    ).invalidate(timelineProvider);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('records.filter')), findsNothing);
+    expect(find.text('후면 사진이 없습니다'), findsNothing);
     expect(find.byKey(const ValueKey('records.item.0')), findsOneWidget);
   });
 

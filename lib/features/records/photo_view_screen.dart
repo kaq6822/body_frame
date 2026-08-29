@@ -623,14 +623,15 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
     final photo = widget.data.photo;
     final record = widget.data.record;
 
+    // 시스템 뒤로가기(스와이프)와 AppBar 뒤로가기는 결과 없이 pop되므로
+    // 상위 기록 상세가 편집 사실을 모른 채 옛 사진을 계속 그린다. pop을 한 번
+    // 가로채 직접 [_hasChanges]를 결과로 돌려준다. 삭제는 자체적으로
+    // `pop(true)`를 호출하며, 명시적 pop은 PopScope의 영향을 받지 않는다.
     return PopScope(
-      canPop: true,
+      canPop: false,
       onPopInvokedWithResult: (didPop, result) {
-        if (didPop && result == null && _hasChanges) {
-          // 시스템 뒤로가기(스와이프 등)로 나갈 때도 변경 사실을 남긴다.
-          // 이미 pop된 뒤라 결과 전달은 불가하므로 상위 화면은 복귀 시
-          // 명시적 새로고침 버튼으로 갱신할 수 있다.
-        }
+        if (didPop) return;
+        Navigator.of(context).pop(_hasChanges);
       },
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(16),

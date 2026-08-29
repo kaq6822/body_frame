@@ -67,7 +67,7 @@ class BodyPhotoRepositoryImpl implements BodyPhotoRepository {
       FROM ${AppDatabase.tableBodyPhotos} bp
       JOIN ${AppDatabase.tablePhotoRecords} r ON r.id = bp.record_id
       WHERE bp.direction = ?
-      ORDER BY r.shot_at DESC
+      ORDER BY r.shot_at DESC, bp.created_at DESC, bp.id DESC
     ''',
       [direction.key],
     );
