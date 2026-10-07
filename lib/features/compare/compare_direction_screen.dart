@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/models/models.dart';
 import '../../core/router/app_routes.dart';
+import '../../core/theme/app_tokens.dart';
 import 'compare_dates_screen.dart' show CompareQueryKeys;
 import 'compare_logic.dart';
 import 'compare_providers.dart';
@@ -137,75 +138,102 @@ class _DirectionBody extends ConsumerWidget {
       );
     }
 
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            '이전: ${_recordDateLabel(beforeRecordAsync)}   '
-            '이후: ${_recordDateLabel(afterRecordAsync)}',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          const SizedBox(height: 12),
-          const Text('동일한 촬영 방향끼리 비교하는 것을 기본으로 합니다.'),
-          const SizedBox(height: 8),
-          Semantics(
-            identifier: 'compare.direction.selector',
-            label: '촬영 방향 선택',
-            child: Wrap(
-              spacing: 8,
-              children: BodyDirection.values.map((direction) {
-                final isAvailable = available.contains(direction);
-                final isSelected = direction == effectiveSelection;
-                return Semantics(
-                  identifier: 'compare.direction.selector.${direction.key}',
-                  label: direction.label,
-                  selected: isSelected,
-                  enabled: isAvailable,
-                  child: ChoiceChip(
-                    key: ValueKey(
-                      'compare.direction.selector.${direction.key}',
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Semantics(
+              identifier: 'compare.direction.intro',
+              child: Column(
+                key: const ValueKey('compare.direction.intro'),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '비교 · 2 / 3',
+                    style: context.texts.labelMedium?.copyWith(
+                      color: context.colors.primary,
                     ),
-                    label: Text(direction.label),
-                    selected: isSelected,
-                    onSelected: isAvailable ? (_) => onSelect(direction) : null,
                   ),
-                );
-              }).toList(),
+                  const SizedBox(height: 8),
+                  Text('같은 방향으로 살펴보기', style: context.texts.headlineSmall),
+                  const SizedBox(height: 16),
+                ],
+              ),
             ),
-          ),
-          const Spacer(),
-          Semantics(
-            identifier: 'compare.direction.next.button',
-            label: '다음: 전후 사진 비교',
-            child: ElevatedButton(
-              key: const ValueKey('compare.direction.next.button'),
-              onPressed: effectiveSelection == null
-                  ? null
-                  : () {
-                      final beforePhoto = photoForDirection(
-                        beforePhotos,
-                        effectiveSelection,
-                      );
-                      final afterPhoto = photoForDirection(
-                        afterPhotos,
-                        effectiveSelection,
-                      );
-                      if (beforePhoto == null || afterPhoto == null) return;
-                      context.pushNamed(
-                        AppRoutes.compareView,
-                        queryParameters: {
-                          AppParams.direction: effectiveSelection.key,
-                          AppParams.beforePhotoId: beforePhoto.id,
-                          AppParams.afterPhotoId: afterPhoto.id,
-                        },
-                      );
-                    },
-              child: const Text('다음'),
+            Text(
+              '이전: ${_recordDateLabel(beforeRecordAsync)}   '
+              '이후: ${_recordDateLabel(afterRecordAsync)}',
+              style: Theme.of(context).textTheme.bodySmall,
             ),
-          ),
-        ],
+            const SizedBox(height: 12),
+            Text(
+              '양쪽 기록에 사진이 있는 방향을 선택하세요.',
+              key: const ValueKey('compare.direction.hint'),
+            ),
+            const SizedBox(height: 8),
+            Semantics(
+              identifier: 'compare.direction.selector',
+              label: '촬영 방향 선택',
+              child: Wrap(
+                key: const ValueKey('compare.direction.selector'),
+                runSpacing: 8,
+                spacing: 8,
+                children: BodyDirection.values.map((direction) {
+                  final isAvailable = available.contains(direction);
+                  final isSelected = direction == effectiveSelection;
+                  return Semantics(
+                    identifier: 'compare.direction.selector.${direction.key}',
+                    label: direction.label,
+                    selected: isSelected,
+                    enabled: isAvailable,
+                    child: ChoiceChip(
+                      key: ValueKey(
+                        'compare.direction.selector.${direction.key}',
+                      ),
+                      label: Text(direction.label),
+                      selected: isSelected,
+                      onSelected: isAvailable
+                          ? (_) => onSelect(direction)
+                          : null,
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Semantics(
+              identifier: 'compare.direction.next.button',
+              label: '다음: 전후 사진 비교',
+              child: ElevatedButton(
+                key: const ValueKey('compare.direction.next.button'),
+                onPressed: effectiveSelection == null
+                    ? null
+                    : () {
+                        final beforePhoto = photoForDirection(
+                          beforePhotos,
+                          effectiveSelection,
+                        );
+                        final afterPhoto = photoForDirection(
+                          afterPhotos,
+                          effectiveSelection,
+                        );
+                        if (beforePhoto == null || afterPhoto == null) return;
+                        context.pushNamed(
+                          AppRoutes.compareView,
+                          queryParameters: {
+                            AppParams.direction: effectiveSelection.key,
+                            AppParams.beforePhotoId: beforePhoto.id,
+                            AppParams.afterPhotoId: afterPhoto.id,
+                          },
+                        );
+                      },
+                child: const Text('다음'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

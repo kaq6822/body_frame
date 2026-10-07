@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -80,6 +81,23 @@ void main() {
       notifier.goTo(entry.key);
       notifier.captureCurrent(entry.value, gridSettings: GridSettings.defaults);
     }
+  }
+
+  /// 리뷰 화면의 뒤로가기 허용 여부.
+  ///
+  /// 라우터도 PopScope을 함께 깔기 때문에 종류로는 구분하기 어렵다. 리뷰 화면의
+  /// 가장 가까운 조상 PopScope(가장 안쪽)을 찾아 그 canPop을 읽는다.
+  bool popAllowed(WidgetTester tester) {
+    final ancestors = find
+        .ancestor(
+          of: find.byKey(const ValueKey('screen.capture.review')),
+          matching: find.byWidgetPredicate((widget) => widget is PopScope),
+        )
+        .evaluate()
+        .map((element) => element.widget)
+        .whereType<PopScope<dynamic>>()
+        .toList();
+    return ancestors.last.canPop;
   }
 
   // 저장 과정은 실제 파일 IO(dart:io)와 이미지 디코드(dart:ui)를 거치므로
@@ -326,6 +344,190 @@ void main() {
     );
   });
 
+  testWidgets('저장 중에는 재촬영·날짜·입력이 막히고 저장이 두 번 돌지 않는다', (tester) async {
+    final recordRepo = _FakePhotoRecordRepository();
+    final ingestRepo = _FakePhotoIngestRepository(recordRepo);
+    final storage = _FakePhotoStorageService(tempDir);
+    final container = buildContainer(
+      recordRepo: recordRepo,
+      ingestRepo: ingestRepo,
+      storage: storage,
+    );
+    addTearDown(container.dispose);
+
+    captureShots(container, {0: frontFile.path});
+
+    await tester.pumpWidget(wrapWithRouter(container));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('capture.review.label.field')),
+      '동생',
+    );
+    await tester.pumpAndSettle();
+
+    // 저장을 멈춰 세운 뒤 저장을 시작한다.
+    final gate = Completer<void>();
+    storage.saveGate = gate;
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('capture.save.button')),
+    );
+    await tester.tap(find.byKey(const ValueKey('capture.save.button')));
+    await pumpUntil(tester, () => storage.savedFrom.isNotEmpty);
+    await tester.pump();
+
+    // 저장 중에는 재촬영 버튼과 날짜, 입력이 모두 막혀 있다.
+    final retakeButton = tester.widget<OutlinedButton>(
+      find.byKey(const ValueKey('capture.review.retake.front')),
+    );
+    expect(retakeButton.onPressed, isNull);
+    final dateButton = tester.widget<OutlinedButton>(
+      find.byKey(const ValueKey('capture.review.date.field')),
+    );
+    expect(dateButton.onPressed, isNull);
+    expect(
+      tester
+          .widget<TextField>(
+            find.byKey(const ValueKey('capture.review.label.field')),
+          )
+          .readOnly,
+      isTrue,
+    );
+    expect(
+      tester
+          .widget<TextField>(
+            find.byKey(const ValueKey('capture.review.memo.field')),
+          )
+          .readOnly,
+      isTrue,
+    );
+    final saveButton = tester.widget<FilledButton>(
+      find.byKey(const ValueKey('capture.save.button')),
+    );
+    expect(saveButton.onPressed, isNull);
+
+    // 비활성 버튼을 강제로 눌러도 중복 저장이 일어나지 않는다.
+    await tester.tap(
+      find.byKey(const ValueKey('capture.save.button')),
+      warnIfMissed: false,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('capture.review.retake.front')),
+      warnIfMissed: false,
+    );
+    await tester.pump();
+
+    gate.complete();
+    await pumpUntil(tester, () => ingestRepo.photos.isNotEmpty);
+
+    expect(ingestRepo.calls, 1);
+    expect(ingestRepo.photos, hasLength(1));
+    // 재촬영으로 지워지지 않고 임시 원본도 남는다.
+    expect(frontFile.existsSync(), isTrue);
+    expect(
+      container.read(captureSessionProvider).shots.first.isCaptured,
+      isFalse,
+    );
+  });
+
+  testWidgets('저장 중 뒤로가기로 화면을 떠나지 않는다', (tester) async {
+    final recordRepo = _FakePhotoRecordRepository();
+    final ingestRepo = _FakePhotoIngestRepository(recordRepo);
+    final storage = _FakePhotoStorageService(tempDir);
+    final container = buildContainer(
+      recordRepo: recordRepo,
+      ingestRepo: ingestRepo,
+      storage: storage,
+    );
+    addTearDown(container.dispose);
+
+    captureShots(container, {0: frontFile.path});
+
+    await tester.pumpWidget(wrapWithRouter(container));
+    await tester.pumpAndSettle();
+
+    final gate = Completer<void>();
+    storage.saveGate = gate;
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('capture.save.button')),
+    );
+    await tester.tap(find.byKey(const ValueKey('capture.save.button')));
+    await pumpUntil(tester, () => storage.savedFrom.isNotEmpty);
+    // 저장 상태 표시가 반영된 프레임을 한 번 더 그린다.
+    await tester.pump();
+
+    // 뒤로가기가 막혀 있는지 확인한다. 저장이 끝나기 전에는 조작 중인
+    // 요청을 버리는 화면 이탈을 허용하지 않는다.
+    expect(popAllowed(tester), isFalse);
+
+    gate.complete();
+    await pumpUntil(tester, () => ingestRepo.photos.isNotEmpty);
+    await tester.pumpAndSettle();
+
+    // 저장이 끝나면 홈으로 이동한다.
+    expect(
+      find.byKey(const ValueKey('screen.capture.camera.stub')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('저장이 실패하면 입력과 임시 원본을 보존해 그대로 재시도한다', (tester) async {
+    final recordRepo = _FakePhotoRecordRepository();
+    final ingestRepo = _FakePhotoIngestRepository(recordRepo, fail: true);
+    final storage = _FakePhotoStorageService(tempDir);
+    final container = buildContainer(
+      recordRepo: recordRepo,
+      ingestRepo: ingestRepo,
+      storage: storage,
+    );
+    addTearDown(container.dispose);
+
+    captureShots(container, {0: frontFile.path});
+
+    await tester.pumpWidget(wrapWithRouter(container));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('capture.review.label.field')),
+      '동생',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('capture.review.memo.field')),
+      '첫 촬영',
+    );
+    await tester.pumpAndSettle();
+
+    const retryKey = ValueKey('screen.capture.review.status.retry.button');
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('capture.save.button')),
+    );
+    await tester.tap(find.byKey(const ValueKey('capture.save.button')));
+    await pumpUntil(tester, () => find.byKey(retryKey).evaluate().isNotEmpty);
+
+    // 입력은 그대로 남아 재시도에 포함된다.
+    expect(
+      tester
+          .widget<TextField>(
+            find.byKey(const ValueKey('capture.review.label.field')),
+          )
+          .controller!
+          .text,
+      '동생',
+    );
+    expect(frontFile.existsSync(), isTrue);
+
+    // 재시도하면 처음 입력으로 저장된다.
+    ingestRepo.fail = false;
+    await tester.ensureVisible(find.byKey(retryKey));
+    await tester.tap(find.byKey(retryKey));
+    await pumpUntil(tester, () => ingestRepo.photos.isNotEmpty);
+
+    expect(ingestRepo.calls, 2);
+    expect(ingestRepo.photos, hasLength(1));
+    expect(ingestRepo.lastNewRecords.single.label, '동생');
+    expect(ingestRepo.lastNewRecords.single.memo, '첫 촬영');
+  });
+
   testWidgets('다시 촬영을 누르면 해당 컷을 비우고 카메라로 돌아간다', (tester) async {
     final container = buildContainer();
     addTearDown(container.dispose);
@@ -404,7 +606,9 @@ class _FakePhotoRecordRepository implements PhotoRecordRepository {
 class _FakePhotoIngestRepository implements PhotoIngestRepository {
   final _FakePhotoRecordRepository records;
   final List<BodyPhoto> photos = [];
-  final bool fail;
+
+  /// 실패를 잠깐 껐다 켜서 재시도 경로를 시험한다.
+  bool fail;
   int calls = 0;
   List<PhotoRecord> lastNewRecords = const [];
 
@@ -431,6 +635,10 @@ class _FakePhotoStorageService implements PhotoStorageService {
   final Directory root;
   final List<String> savedFrom = [];
 
+  /// 저장을 이 지연까지 멈춰 세운다. 저장이 진행 중인 동안의 조작을 검증할 때
+  /// 쓴다. 실제 시간 지연이 아니라 명시적으로 완료시켜 결정론적으로 만든다.
+  Completer<void>? saveGate;
+
   _FakePhotoStorageService(this.root);
 
   @override
@@ -453,6 +661,11 @@ class _FakePhotoStorageService implements PhotoStorageService {
     final saved = await File(
       sourcePath,
     ).copy(p.join(directory.path, fileName ?? p.basename(sourcePath)));
+    final gate = saveGate;
+    if (gate != null) {
+      // 복사는 이미 끝난 뒤 멈춘다. 저장이 "진행 중"인 구간을 만든다.
+      await gate.future;
+    }
     return saved.path;
   }
 

@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
+import 'package:body_frame/core/dates.dart';
 import 'package:body_frame/core/models/models.dart';
 import 'package:body_frame/core/providers.dart';
 import 'package:body_frame/core/services/app_logger.dart';
@@ -16,7 +17,7 @@ import '../records/providers/records_providers.dart';
 import 'providers/capture_session_provider.dart';
 import 'utils/image_meta.dart';
 import 'utils/temporary_capture.dart';
-import 'widgets/async_status_indicator.dart';
+import 'package:body_frame/core/widgets/async_status_indicator.dart';
 
 /// 연속 촬영 결과 일괄 확인 화면.
 ///
@@ -39,6 +40,14 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
   AsyncStatus _saveStatus = AsyncStatus.idle;
   String? _saveError;
 
+  /// 저장 요청이 이미 진행 중인지. 위젯 비활성화와 무관하게 중복 저장을 막는
+  /// 핸들러 차원의 방어선이다 — 저장 버튼을 연속으로 눌러도 ingest가 두 번
+  /// 돌지 않아야 한다.
+  bool _saveInFlight = false;
+
+  /// 저장 중 조작을 막는지. 위젯 비활성화와 핸들러 가드를 함께 쓴다.
+  bool get _isSaving => _saveStatus == AsyncStatus.busy;
+
   @override
   void initState() {
     super.initState();
@@ -55,19 +64,25 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
   }
 
   Future<void> _pickDate(DateTime current) async {
+    if (_isSaving) return;
     final picked = await showDatePicker(
       context: context,
       initialDate: current,
       firstDate: DateTime(2000),
       lastDate: DateTime.now().add(const Duration(days: 1)),
     );
-    if (picked != null) {
+    if (picked != null && !_isSaving) {
       ref.read(captureSessionProvider.notifier).setShotDate(picked);
     }
   }
 
   /// 해당 단계를 다시 찍는다. 기존 컷을 지우고 카메라 화면으로 돌아간다.
+  ///
+  /// 저장이 진행 중이면 막는다. 저장은 복사 중인 임시 원본 경로를 이미 읽고
+  /// 있는데 그 파일을 지우면 준비 단계가 실패하거나, DB에는 없는 파일을
+  /// 가리키는 기록이 남는다.
   void _retake(int index) {
+    if (_isSaving) return;
     final notifier = ref.read(captureSessionProvider.notifier);
     final path = ref.read(captureSessionProvider).shots[index].imagePath;
     notifier.clearShot(index);
@@ -89,7 +104,18 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
   Future<void> _save(CaptureSessionState session) async {
     final captured = session.capturedShots;
     if (captured.isEmpty) return;
+    // 위젯 비활성화 이전에 들어온 요청까지 막는다.
+    if (_saveInFlight) return;
 
+    // 저장 대상을 스냅샷으로 고정한다. await 사이에 세션(촬영일·라벨·메모)이나
+    // 임시 원본이 바뀌어도 저장은 시작 시점의 값으로만 진행된다.
+    final snapshot = _CaptureSaveRequest.from(
+      session,
+      label: _labelController.text,
+      memo: _memoController.text,
+    );
+
+    _saveInFlight = true;
     setState(() {
       _saveStatus = AsyncStatus.busy;
       _saveError = null;
@@ -101,35 +127,26 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
     logger.phase(
       'capture.save',
       LogPhase.start,
-      context: {'count': captured.length},
+      context: {'count': snapshot.photos.length},
     );
 
     try {
-      final shotDate = DateTime(
-        session.shotDate.year,
-        session.shotDate.month,
-        session.shotDate.day,
-      );
       final now = DateTime.now();
 
-      final label = _labelController.text.trim();
-      final memo = _memoController.text.trim();
-      // 촬영 한 건은 언제나 자기 기록을 갖는다. 같은 날 여러 번 찍으면 그 횟수가
-      // 그대로 남아야 하므로 촬영일이 같은 기존 기록에 합치지 않는다.
       final record = PhotoRecord(
         id: const Uuid().v4(),
-        shotAt: shotDate,
-        label: label.isEmpty ? null : label,
-        memo: memo.isEmpty ? null : memo,
+        shotAt: snapshot.shotDate,
+        label: snapshot.label,
+        memo: snapshot.memo,
         createdAt: now,
         updatedAt: now,
       );
 
       final photos = <BodyPhoto>[];
-      for (final shot in captured) {
+      for (final pending in snapshot.photos) {
         final preparedPath = await storage.saveOriginal(
-          shotAt: shotDate,
-          sourcePath: shot.imagePath!,
+          shotAt: snapshot.shotDate,
+          sourcePath: pending.sourcePath,
         );
         preparedPaths.add(preparedPath);
         final meta = await readImageMeta(preparedPath);
@@ -138,11 +155,11 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
             id: const Uuid().v4(),
             recordId: record.id,
             filePath: preparedPath,
-            direction: shot.direction,
+            direction: pending.direction,
             width: meta.width,
             height: meta.height,
             orientation: meta.orientation,
-            gridSettings: shot.gridSettingsAtCapture ?? GridSettings.defaults,
+            gridSettings: pending.gridSettings,
             createdAt: now,
           ),
         );
@@ -160,8 +177,8 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
       );
 
       // 임시 촬영 파일 정리 후 세션 초기화.
-      for (final shot in captured) {
-        unawaited(_deleteTemporaryCaptureBestEffort(shot.imagePath!));
+      for (final pending in snapshot.photos) {
+        unawaited(_deleteTemporaryCaptureBestEffort(pending.sourcePath));
       }
       ref.read(captureSessionProvider.notifier).reset();
       ref.invalidate(timelineProvider);
@@ -186,6 +203,8 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
         _saveStatus = AsyncStatus.failure;
         _saveError = '사진을 저장하지 못했습니다. 다시 시도해주세요.';
       });
+    } finally {
+      _saveInFlight = false;
     }
   }
 
@@ -212,6 +231,7 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
 
   Widget _buildBody(CaptureSessionState session) {
     final dateLabel = DateFormat('yyyy.MM.dd').format(session.shotDate);
+    final saving = _isSaving;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -232,6 +252,7 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
               itemBuilder: (context, index) => _ShotPreview(
                 shot: session.shots[index],
                 onRetake: () => _retake(index),
+                enabled: !saving,
               ),
             ),
           ),
@@ -242,9 +263,10 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
             identifier: 'capture.review.date.field',
             label: '촬영일 $dateLabel, 탭하여 변경',
             button: true,
+            enabled: !saving,
             child: OutlinedButton(
               key: const ValueKey('capture.review.date.field'),
-              onPressed: () => _pickDate(session.shotDate),
+              onPressed: saving ? null : () => _pickDate(session.shotDate),
               child: Text(dateLabel),
             ),
           ),
@@ -257,6 +279,10 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
             child: TextField(
               key: const ValueKey('capture.review.label.field'),
               controller: _labelController,
+              // 저장이 진행 중이면 입력을 막는다. 저장은 시작 시점 값을
+              // 스냅샷으로 고정해 쓰지만, 입력창에 다르게 보이는 값이 남아
+              // 있으면 사용자가 무엇이 저장됐는지 알 수 없다.
+              readOnly: saving,
               // 다시 촬영을 누르면 이 화면이 닫히고 새 State로 다시 열린다.
               // 입력을 세션에 남겨 두지 않으면 그때 조용히 사라진다.
               onChanged: (value) =>
@@ -277,6 +303,7 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
               key: const ValueKey('capture.review.memo.field'),
               controller: _memoController,
               maxLines: 3,
+              readOnly: saving,
               onChanged: (value) =>
                   ref.read(captureSessionProvider.notifier).setMemo(value),
               decoration: const InputDecoration(
@@ -301,12 +328,10 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
               identifier: 'capture.save.button',
               button: true,
               label: '${session.capturedCount}장 모두 저장',
-              enabled: _saveStatus != AsyncStatus.busy,
+              enabled: !saving,
               child: FilledButton(
                 key: const ValueKey('capture.save.button'),
-                onPressed: _saveStatus == AsyncStatus.busy
-                    ? null
-                    : () => _save(session),
+                onPressed: saving ? null : () => _save(session),
                 child: Text('${session.capturedCount}장 모두 저장'),
               ),
             ),
@@ -317,11 +342,70 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
   }
 }
 
+/// 저장 시작 시점에 고정한, 더 이상 바뀌지 않는 저장 요청.
+///
+/// 파일 경로·방향·촬영일·라벨·메모·격자를 한 번에 복사한다. 복사 도중 세션이
+/// 바뀌어도 저장은 이 값으로만 진행되므로, 임시 원본이 사라지거나 라벨이 뒤섞이는
+/// 일이 없다. 실패해도 이 스냅샷은 그대로 남아 재시도가 같은 내용을 다시 시도한다.
+class _CaptureSaveRequest {
+  final DateTime shotDate;
+  final String? label;
+  final String? memo;
+  final List<_CaptureSavePhoto> photos;
+
+  const _CaptureSaveRequest({
+    required this.shotDate,
+    required this.label,
+    required this.memo,
+    required this.photos,
+  });
+
+  factory _CaptureSaveRequest.from(
+    CaptureSessionState session, {
+    required String label,
+    required String memo,
+  }) {
+    final trimmedLabel = label.trim();
+    final trimmedMemo = memo.trim();
+    return _CaptureSaveRequest(
+      // 촬영일은 날짜만 남긴다. 시각 성분이 경로 버킷과 경과일에 섞이지 않게.
+      shotDate: dateOnly(session.shotDate),
+      label: trimmedLabel.isEmpty ? null : trimmedLabel,
+      memo: trimmedMemo.isEmpty ? null : trimmedMemo,
+      photos: [
+        for (final shot in session.capturedShots)
+          _CaptureSavePhoto(
+            sourcePath: shot.imagePath!,
+            direction: shot.direction,
+            gridSettings: shot.gridSettingsAtCapture ?? GridSettings.defaults,
+          ),
+      ],
+    );
+  }
+}
+
+class _CaptureSavePhoto {
+  final String sourcePath;
+  final BodyDirection direction;
+  final GridSettings gridSettings;
+
+  const _CaptureSavePhoto({
+    required this.sourcePath,
+    required this.direction,
+    required this.gridSettings,
+  });
+}
+
 class _ShotPreview extends StatelessWidget {
   final CaptureShot shot;
   final VoidCallback onRetake;
+  final bool enabled;
 
-  const _ShotPreview({required this.shot, required this.onRetake});
+  const _ShotPreview({
+    required this.shot,
+    required this.onRetake,
+    required this.enabled,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -380,11 +464,12 @@ class _ShotPreview extends StatelessWidget {
             Semantics(
               identifier: 'capture.review.retake.${shot.direction.key}',
               button: true,
+              enabled: enabled,
               label:
                   '${shot.direction.label} ${shot.isCaptured ? '다시' : ''} 촬영',
               child: OutlinedButton(
                 key: ValueKey('capture.review.retake.${shot.direction.key}'),
-                onPressed: onRetake,
+                onPressed: enabled ? onRetake : null,
                 child: Text(shot.isCaptured ? '다시 촬영' : '촬영하기'),
               ),
             ),

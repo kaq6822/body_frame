@@ -6,6 +6,7 @@ import 'package:body_frame/core/models/models.dart';
 import 'package:body_frame/core/photo_frame.dart';
 import 'package:body_frame/core/providers.dart';
 import 'package:body_frame/core/repositories/body_photo_repository.dart';
+import 'package:body_frame/core/repositories/photo_record_repository.dart';
 import 'package:body_frame/core/router/app_routes.dart';
 import 'package:body_frame/features/capture/camera_permission_guide.dart';
 import 'package:body_frame/features/capture/grid_camera_screen.dart';
@@ -325,17 +326,13 @@ void main() {
       await tester.pumpWidget(buildApp(() => fake));
       await tester.pumpAndSettle();
 
-      expect(
-        find.text(keepPhrasesWhole('카메라 권한이 필요합니다.')),
-        findsOneWidget,
-      );
-      expect(
-        find.text(keepPhrasesWhole('카메라를 준비하는 중입니다.')),
-        findsNothing,
-      );
+      expect(find.text(keepPhrasesWhole('카메라 권한이 필요합니다.')), findsOneWidget);
+      expect(find.text(keepPhrasesWhole('카메라를 준비하는 중입니다.')), findsNothing);
       expect(
         tester
-            .getSemantics(find.bySemanticsIdentifier('screen.capture.camera.status'))
+            .getSemantics(
+              find.bySemanticsIdentifier('screen.capture.camera.status'),
+            )
             .value,
         'failure',
       );
@@ -361,10 +358,7 @@ void main() {
 
       expect(fake.initializeCalls, 1);
       // 안내가 사라지면 사용자가 무엇을 해야 할지 알 수 없다.
-      expect(
-        find.text(keepPhrasesWhole('카메라 권한이 필요합니다.')),
-        findsOneWidget,
-      );
+      expect(find.text(keepPhrasesWhole('카메라 권한이 필요합니다.')), findsOneWidget);
     });
 
     testWidgets('설정 열기를 누르면 시스템 설정 화면 열기를 요청한다', (tester) async {
@@ -416,10 +410,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
-      expect(
-        find.text(keepPhrasesWhole('카메라 권한이 필요합니다.')),
-        findsOneWidget,
-      );
+      expect(find.text(keepPhrasesWhole('카메라 권한이 필요합니다.')), findsOneWidget);
       // 버튼이 막힌 기기에서 직접 찾아갈 수 있어야 한다. 화면과 같은 함수로
       // 경로를 만들어 실행 중인 플랫폼 분기까지 함께 확인한다.
       expect(
@@ -441,10 +432,7 @@ void main() {
 
       expect(fake.initializeCalls, 2);
       expect(find.byKey(const ValueKey('fake.camera.preview')), findsOneWidget);
-      expect(
-        find.text(keepPhrasesWhole('카메라 권한이 필요합니다.')),
-        findsNothing,
-      );
+      expect(find.text(keepPhrasesWhole('카메라 권한이 필요합니다.')), findsNothing);
     });
   });
 
@@ -1079,17 +1067,90 @@ void main() {
       _photo(id: 'previous-valid', recordId: 'r1', path: frontGuideFile.path),
     ]);
     final container = ProviderContainer(
-      overrides: [bodyPhotoRepositoryProvider.overrideWithValue(repository)],
+      overrides: [
+        bodyPhotoRepositoryProvider.overrideWithValue(repository),
+        // 가이드는 본인(라벨 없음) 기록만 기준으로 삼는다.
+        photoRecordRepositoryProvider.overrideWithValue(
+          _FakePhotoRecordRepository([_record('r1', DateTime(2026, 1, 1))]),
+        ),
+      ],
     );
     addTearDown(container.dispose);
 
-    final path = await container.read(
-      previousPhotoGuidePathProvider(BodyDirection.front).future,
-    );
+    final path = await _readGuide(container);
 
     expect(path, frontGuideFile.path);
     expect(repository.requestedDirection, BodyDirection.front);
   });
+
+  test('가이드 provider는 다른 사람이 찍은 기록을 기준으로 삼지 않는다', () async {
+    final repository = _FakeBodyPhotoRepository([
+      _photo(id: 'other-front', recordId: 'r-other', path: frontGuideFile.path),
+    ]);
+    final container = ProviderContainer(
+      overrides: [
+        bodyPhotoRepositoryProvider.overrideWithValue(repository),
+        photoRecordRepositoryProvider.overrideWithValue(
+          _FakePhotoRecordRepository([
+            PhotoRecord(
+              id: 'r-other',
+              shotAt: DateTime(2026, 1, 1),
+              label: '동생',
+              createdAt: DateTime(2026, 1, 1),
+              updatedAt: DateTime(2026, 1, 1),
+            ),
+          ]),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final path = await _readGuide(container);
+
+    expect(path, isNull);
+  });
+
+  test('본인 기록의 최신 파일이 유실됐으면 같은 대상의 과거 사진으로 대체한다', () async {
+    final missingPath = '${tempDir.path}/missing-own.png';
+    final repository = _FakeBodyPhotoRepository([
+      _photo(id: 'own-latest', recordId: 'r-own', path: missingPath),
+      _photo(id: 'own-previous', recordId: 'r-own', path: frontGuideFile.path),
+      _photo(id: 'other', recordId: 'r-other', path: frontGuideFile.path),
+    ]);
+    final container = ProviderContainer(
+      overrides: [
+        bodyPhotoRepositoryProvider.overrideWithValue(repository),
+        photoRecordRepositoryProvider.overrideWithValue(
+          _FakePhotoRecordRepository([
+            _record('r-own', DateTime(2026, 2, 1)),
+            PhotoRecord(
+              id: 'r-other',
+              shotAt: DateTime(2026, 3, 1),
+              label: '동생',
+              createdAt: DateTime(2026, 3, 1),
+              updatedAt: DateTime(2026, 3, 1),
+            ),
+          ]),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final path = await _readGuide(container);
+
+    expect(path, frontGuideFile.path);
+  });
+}
+
+/// autoDispose 가이드 provider를 구독을 유지한 채 읽는다.
+///
+/// 값만 읽으면 대기 중인 provider가 먼저 폐기되어 "disposed during loading"
+/// 상태로 실패한다. 촬영 화면이 떠 있는 상황을 흉내 내도록 구독을 끝까지 붙든다.
+Future<String?> _readGuide(ProviderContainer container) {
+  final provider = previousPhotoGuidePathProvider(BodyDirection.front);
+  final subscription = container.listen(provider, (_, _) {});
+  addTearDown(subscription.close);
+  return container.read(provider.future);
 }
 
 PhotoRecord _record(String id, DateTime shotAt) {
@@ -1099,6 +1160,29 @@ PhotoRecord _record(String id, DateTime shotAt) {
     createdAt: shotAt,
     updatedAt: shotAt,
   );
+}
+
+/// 가이드 provider는 라벨 판단을 위해 기록 목록도 함께 읽는다.
+class _FakePhotoRecordRepository implements PhotoRecordRepository {
+  final List<PhotoRecord> records;
+
+  _FakePhotoRecordRepository(this.records);
+
+  @override
+  Future<List<PhotoRecord>> listAll() async => List.of(records);
+
+  @override
+  Future<void> delete(String id) async {}
+
+  @override
+  Future<PhotoRecord?> getById(String id) async =>
+      records.where((record) => record.id == id).firstOrNull;
+
+  @override
+  Future<void> insert(PhotoRecord record) async => records.add(record);
+
+  @override
+  Future<void> update(PhotoRecord record) async {}
 }
 
 BodyPhoto _photo({

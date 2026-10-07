@@ -6,7 +6,10 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/models/models.dart';
 import '../../core/router/app_routes.dart';
+import '../../core/services/settings_save_queue.dart';
 import '../../core/theme/app_tokens.dart';
+import '../../core/widgets/brand_intro.dart';
+import '../../core/widgets/async_status_indicator.dart';
 import 'providers/settings_providers.dart';
 
 /// 전체 설정 화면.
@@ -59,11 +62,39 @@ class _SettingsBodyState extends ConsumerState<_SettingsBody> {
         ref.watch(appSettingsControllerProvider).valueOrNull ??
         AppSettings.defaults;
     final capture = settings.capture;
+    // 저장 진행·실패는 값 상태와 분리해 알린다. 저장 중이어도 현재 값은 곧바로
+    // 반영되므로 토글과 드롭다운이 손에 따라 움직인다.
+    final saveState = ref.watch(appSettingsSaveQueueProvider);
 
     return ListView(
       padding: const EdgeInsets.only(bottom: AppSpacing.sp6),
       children: [
+        const Padding(
+          padding: EdgeInsets.all(AppSpacing.sp4),
+          child: BrandIntro(
+            identifier: 'settings.brand.intro',
+            title: '나의 기록, 나의 기기에',
+            description: '로그인 없이 기록하고, 이 기기에 보관합니다.',
+          ),
+        ),
         const _SectionHeader('촬영'),
+        AsyncStatusIndicator(
+          statusId: 'screen.settings.save.status',
+          status: switch (saveState.status) {
+            SettingsSaveStatus.idle => AsyncStatus.idle,
+            SettingsSaveStatus.saving => AsyncStatus.busy,
+            SettingsSaveStatus.success => AsyncStatus.success,
+            SettingsSaveStatus.failure => AsyncStatus.failure,
+          },
+          busyLabel: '설정을 저장하는 중입니다.',
+          successLabel: '설정을 저장했습니다.',
+          failureMessage: '설정을 저장하지 못했습니다. 다시 시도해주세요.',
+          // 실패해도 화면에 반영된 값은 그대로 두어 마지막 선택 의도를 보존한다.
+          onRetry: saveState.canRetry
+              ? () =>
+                    ref.read(appSettingsControllerProvider.notifier).retrySave()
+              : null,
+        ),
         Semantics(
           identifier: 'settings.capture.timer.field',
           label: '셀프 타이머 기본값',
@@ -105,13 +136,17 @@ class _SettingsBodyState extends ConsumerState<_SettingsBody> {
           ),
         ),
         const _SectionHeader('데이터'),
-        ListTile(
-          key: const ValueKey('settings.storage.item'),
-          leading: const Icon(Icons.storage_outlined),
-          title: const Text('저장 공간 관리'),
-          subtitle: const Text('사진 저장 용량 확인'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => context.pushNamed(AppRoutes.storage),
+        Semantics(
+          identifier: 'settings.storage.item',
+          button: true,
+          child: ListTile(
+            key: const ValueKey('settings.storage.item'),
+            leading: const Icon(Icons.storage_outlined),
+            title: const Text('저장 공간 관리'),
+            subtitle: const Text('사진 저장 용량 확인'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.pushNamed(AppRoutes.storage),
+          ),
         ),
         const _SectionHeader('정보'),
         Padding(
@@ -156,7 +191,8 @@ class _SettingsBodyState extends ConsumerState<_SettingsBody> {
   static String _timerLabel(int seconds) => seconds == 0 ? '끔' : '$seconds초';
 
   void _updateCapture(CaptureOptions next) {
-    // 조작하는 즉시 저장한다. 저장 버튼을 따로 두지 않는다.
+    // 조작하는 즉시 반영하고, 저장은 큐가 순서대로 이어서 처리한다.
+    // 실패하면 저장 상태가 별도로 알려 준다.
     unawaited(
       ref
           .read(appSettingsControllerProvider.notifier)

@@ -1,5 +1,10 @@
+import '../../core/dates.dart';
 import '../../core/models/models.dart';
 import 'providers/records_providers.dart';
+
+// 타임라인 경과일 계산은 공용 함수 하나로 통일한다. 화면마다 날짜 공식을
+// 따로 두면 서머타임 경계에서 값이 어긋난다(compare_dates_screen 참조).
+export '../../core/dates.dart' show dateOnly, daysBetween;
 
 /// 타임라인 한 행. 화면은 이 값만 읽어 그린다.
 class TimelineRow {
@@ -51,27 +56,6 @@ String? normalizeLabel(String? label) {
   return trimmed;
 }
 
-/// 날짜만 남긴 값. 경과일은 시각이 아니라 날짜 차이로 센다.
-///
-/// 같은 달력 날짜끼리 묶는 용도이므로 기기 지역 시간대를 그대로 쓴다.
-DateTime _dateOnly(DateTime value) =>
-    DateTime(value.year, value.month, value.day);
-
-/// 두 촬영일 사이의 일수. 시각 성분과 서머타임 영향을 받지 않게 날짜로 자른다.
-///
-/// 지역 시간의 자정끼리 빼면 서머타임이 낀 구간은 23시간 또는 25시간이 되어
-/// `inDays`가 하루를 깎거나 더한다. 날짜만 남긴 뒤에는 시간대가 의미 없으므로
-/// UTC 자정으로 옮겨 하루를 항상 24시간으로 고정한다.
-int daysBetween(DateTime older, DateTime newer) {
-  final from = _dateOnly(older);
-  final to = _dateOnly(newer);
-  return DateTime.utc(
-    to.year,
-    to.month,
-    to.day,
-  ).difference(DateTime.utc(from.year, from.month, from.day)).inDays;
-}
-
 /// 타임라인 행 목록을 만든다.
 ///
 /// [entries]는 촬영일 최신순으로 정렬돼 있다고 가정한다([timelineProvider]가
@@ -85,7 +69,7 @@ List<TimelineRow> buildTimelineRows(List<RecordWithPhotos> entries) {
 
   final totalsByDay = <DateTime, int>{};
   for (final entry in entries) {
-    final day = _dateOnly(entry.record.shotAt);
+    final day = dateOnly(entry.record.shotAt);
     totalsByDay[day] = (totalsByDay[day] ?? 0) + 1;
   }
   final seenByDay = <DateTime, int>{};
@@ -110,7 +94,7 @@ List<TimelineRow> buildTimelineRows(List<RecordWithPhotos> entries) {
         previousShotAt.month != shotAt.month;
 
     // 최신순으로 훑고 있으므로 오래된 촬영이 1번이 되도록 뒤집어 센다.
-    final day = _dateOnly(shotAt);
+    final day = dateOnly(shotAt);
     final sameDayTotal = totalsByDay[day] ?? 1;
     final seen = (seenByDay[day] ?? 0) + 1;
     seenByDay[day] = seen;
@@ -147,8 +131,9 @@ String formatDayLabel(DateTime date) {
 /// 한 방향만 모아 최신순으로 나열한다.
 ///
 /// 스크롤이 곧 시간축이 되도록 같은 방향 사진만 남기고, 각 사진에 직전 사진과의
-/// 간격을 붙인다. 경과일은 [buildTimelineRows]와 달리 라벨을 구분하지 않고
-/// 걸러진 목록 안에서만 센다 — 호출부가 이미 대상을 좁혀 놓는다.
+/// 간격을 붙인다. 경과일은 [buildTimelineRows]와 마찬가지로 **같은 대상 라벨끼리만**
+/// 센다. 모아보기는 라벨로 걸러지지 않은 전체 목록을 받으므로, 다른 사람 기록이
+/// 사이에 끼어도 본인 기록의 간격이 어긋나면 안 된다.
 List<DirectionRow> collectByDirection(
   List<RecordWithPhotos> entries,
   BodyDirection direction,
@@ -167,7 +152,14 @@ List<DirectionRow> collectByDirection(
 
   for (var i = 0; i < matched.length; i++) {
     final current = matched[i];
-    final older = i + 1 < matched.length ? matched[i + 1] : null;
+    final label = normalizeLabel(current.record.label);
+    // 같은 라벨의 직전(더 오래된) 사진만 기준점으로 삼는다.
+    ({PhotoRecord record, BodyPhoto photo})? older;
+    for (var j = i + 1; j < matched.length; j++) {
+      if (normalizeLabel(matched[j].record.label) != label) continue;
+      older = matched[j];
+      break;
+    }
     rows.add(
       DirectionRow(
         record: current.record,
@@ -224,6 +216,47 @@ List<BodyDirection> availableDirections(List<RecordWithPhotos> entries) {
     if (shared.isEmpty) continue;
     shared.sort((a, b) => a.index.compareTo(b.index));
     return (before: candidate, direction: shared.first);
+  }
+
+  return null;
+}
+
+/// 비교 날짜 선택 화면이 처음 제안할 쌍(기록 id).
+///
+/// 자동 제안은 **본인 기록끼리만** 한다. 다른 사람 기록은 `PhotoRecord.label`
+/// 자유 문자열로 구분될 뿐 별도 개념이 없으므로, 본인 사진만으로 비교할 쌍이
+/// 없으면 다른 사람 기록을 조용히 채우지 않고 null을 돌려 호출부가 수동 선택을
+/// 안내하게 한다. 쌍 안에는 두 기록 모두에 존재하는 방향이 있어야 비교 화면으로
+/// 진행할 수 있다.
+///
+/// 쌍 후보는 최신 기록부터 살펴보고, 그 기록과 공통 방향이 있는 **가장 가까운**
+/// 과거 기록을 짝으로 고른다. 바로 다음 기록과 겹치지 않더라도 더 과거의 기록과
+/// 겹칠 수 있으므로 인접 기록만 보면 놓치는 비교가 생긴다.
+///
+/// [entries]는 촬영일 최신순으로 정렬돼 있다고 가정한다([timelineProvider]).
+/// 반환값의 `before`가 더 오래된 기록이다.
+({String beforeRecordId, String afterRecordId})? findDefaultComparePair(
+  List<RecordWithPhotos> entries,
+) {
+  final own = entries
+      .where(
+        (entry) =>
+            normalizeLabel(entry.record.label) == null &&
+            entry.photos.isNotEmpty,
+      )
+      .toList();
+
+  for (var i = 0; i + 1 < own.length; i++) {
+    final newer = own[i];
+    final newerDirections = newer.photos.map((p) => p.direction).toSet();
+    for (var j = i + 1; j < own.length; j++) {
+      final older = own[j];
+      final shared = older.photos.any(
+        (photo) => newerDirections.contains(photo.direction),
+      );
+      if (!shared) continue;
+      return (beforeRecordId: older.record.id, afterRecordId: newer.record.id);
+    }
   }
 
   return null;

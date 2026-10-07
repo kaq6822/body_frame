@@ -47,7 +47,7 @@ class _BodyFrameAppState extends ConsumerState<BodyFrameApp> {
     // Android image_picker의 Activity 종료 결과를 앱 루트에서 한 번만 회수한다.
     ref.read(appImagePickerCoordinatorProvider);
     return MaterialApp.router(
-      title: '체형 변화 기록',
+      title: 'Body Frame',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,

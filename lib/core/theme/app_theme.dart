@@ -20,8 +20,68 @@ class AppTheme {
   static ThemeData _build(ColorScheme scheme, AppSemanticColors semantic) {
     final base = ThemeData(useMaterial3: true, colorScheme: scheme);
 
+    final texts = base.textTheme.copyWith(
+      headlineSmall: base.textTheme.headlineSmall?.copyWith(
+        fontWeight: FontWeight.w700,
+        letterSpacing: -0.6,
+      ),
+      titleLarge: base.textTheme.titleLarge?.copyWith(
+        fontWeight: FontWeight.w700,
+        letterSpacing: -0.4,
+      ),
+      titleMedium: base.textTheme.titleMedium?.copyWith(
+        fontWeight: FontWeight.w600,
+      ),
+      bodyMedium: base.textTheme.bodyMedium?.copyWith(height: 1.5),
+      bodySmall: base.textTheme.bodySmall?.copyWith(height: 1.5),
+    );
+    final buttonShape = RoundedRectangleBorder(borderRadius: AppRadius.lgAll);
     return base.copyWith(
-      appBarTheme: const AppBarTheme(centerTitle: true),
+      textTheme: texts,
+      scaffoldBackgroundColor: scheme.surface,
+      appBarTheme: AppBarTheme(
+        centerTitle: false,
+        backgroundColor: scheme.surface,
+        surfaceTintColor: Colors.transparent,
+        titleTextStyle: texts.titleLarge?.copyWith(color: scheme.onSurface),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          minimumSize: const Size(48, 52),
+          shape: buttonShape,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+        ),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          elevation: 0,
+          backgroundColor: scheme.primary,
+          foregroundColor: scheme.onPrimary,
+          minimumSize: const Size(48, 52),
+          shape: buttonShape,
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(48, 52),
+          shape: buttonShape,
+          side: BorderSide(color: scheme.outlineVariant),
+        ),
+      ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: scheme.primary,
+        foregroundColor: scheme.onPrimary,
+        elevation: 2,
+        shape: const RoundedRectangleBorder(borderRadius: AppRadius.lgAll),
+      ),
+      dividerTheme: DividerThemeData(
+        color: scheme.outlineVariant,
+        thickness: 0.5,
+      ),
+      snackBarTheme: base.snackBarTheme.copyWith(
+        behavior: SnackBarBehavior.floating,
+        shape: const RoundedRectangleBorder(borderRadius: AppRadius.mdAll),
+      ),
 
       // 입력 테두리를 여기서 한 번 정의해 호출부에서 border를 반복하지 않는다.
       inputDecorationTheme: InputDecorationTheme(
@@ -46,7 +106,13 @@ class AppTheme {
       ),
 
       cardTheme: base.cardTheme.copyWith(
-        shape: const RoundedRectangleBorder(borderRadius: AppRadius.mdAll),
+        elevation: 0,
+        color: scheme.surfaceContainerLowest,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: AppRadius.mdAll,
+          side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.6)),
+        ),
       ),
 
       dialogTheme: base.dialogTheme.copyWith(
@@ -64,7 +130,7 @@ class AppTheme {
       extensions: <ThemeExtension<dynamic>>[
         semantic,
         const AppPhotoColors(),
-        AppNumericTextStyles.from(base.textTheme),
+        AppNumericTextStyles.from(texts),
       ],
     );
   }

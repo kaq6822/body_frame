@@ -9,6 +9,7 @@ import '../../core/router/app_routes.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/async_value_view.dart';
 import '../../core/widgets/brand_symbol.dart';
+import '../../core/widgets/brand_intro.dart';
 import '../../core/widgets/photo_grid_overlay.dart';
 import '../compare/compare_dates_screen.dart' show CompareQueryKeys;
 import 'providers/records_providers.dart';
@@ -99,6 +100,19 @@ class _RecordsScreenState extends ConsumerState<RecordsScreen> {
             ),
           ],
         ),
+        floatingActionButton: timeline.valueOrNull?.isNotEmpty == true
+            ? Semantics(
+                identifier: 'records.capture.button',
+                button: true,
+                label: '새 기록 촬영',
+                child: FloatingActionButton.extended(
+                  key: const ValueKey('records.capture.button'),
+                  onPressed: () => context.goNamed(AppRoutes.home),
+                  icon: const Icon(Icons.add_a_photo_outlined),
+                  label: const Text('새 기록'),
+                ),
+              )
+            : null,
         body: RefreshIndicator(
           onRefresh: () async => ref.invalidate(timelineProvider),
           child: AsyncValueView<List<RecordWithPhotos>>(
@@ -143,6 +157,26 @@ class _RecordsBody extends StatelessWidget {
 
     return Column(
       children: [
+        Semantics(
+          identifier: 'records.summary',
+          child: Padding(
+            key: const ValueKey('records.summary'),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('쌓이는 변화', style: context.texts.headlineSmall),
+                const SizedBox(height: AppSpacing.sp1),
+                Text(
+                  '${entries.length}개 기록 · ${entries.fold<int>(0, (sum, entry) => sum + entry.photos.length)}장',
+                  style: context.numericTexts.bodySmall.copyWith(
+                    color: context.colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
         if (directions.length > 1)
           _DirectionFilterBar(
             directions: directions,
@@ -177,7 +211,7 @@ class _DirectionFilterBar extends StatelessWidget {
       identifier: 'records.filter',
       label: '방향 모아보기 필터',
       child: SizedBox(
-        height: 56,
+        height: 48 + MediaQuery.textScalerOf(context).scale(16),
         child: ListView(
           key: const ValueKey('records.filter'),
           scrollDirection: Axis.horizontal,
@@ -252,7 +286,7 @@ class _Timeline extends StatelessWidget {
 
     return ListView.builder(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.only(bottom: AppSpacing.sp6),
+      padding: const EdgeInsets.only(bottom: 96),
       itemCount: rows.length,
       itemBuilder: (context, index) {
         final row = rows[index];
@@ -366,12 +400,14 @@ class _RecordCard extends StatelessWidget {
                   AppSpacing.sp2,
                   AppSpacing.sp2,
                 ),
-                child: Row(
+                child: Wrap(
+                  spacing: AppSpacing.sp2,
+                  runSpacing: AppSpacing.sp1,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(dateLabel, style: context.numericTexts.titleMedium),
                     // 같은 날 여러 건이면 제목이 같아지므로 촬영 회차를 붙인다.
                     if (ordinalLabel != null) ...[
-                      const SizedBox(width: AppSpacing.sp2),
                       Text(
                         ordinalLabel,
                         style: context.numericTexts.bodySmall.copyWith(
@@ -381,22 +417,20 @@ class _RecordCard extends StatelessWidget {
                     ],
                     // 같은 날 기록끼리는 간격이 0이라 알릴 것이 없다.
                     if ((row.daysSincePrevious ?? 0) > 0) ...[
-                      const SizedBox(width: AppSpacing.sp2),
                       _ElapsedBadge(days: row.daysSincePrevious!),
                     ],
                     if (label != null) ...[
-                      const SizedBox(width: AppSpacing.sp2),
-                      Flexible(
-                        child: Chip(
-                          key: ValueKey('records.item.$index.label'),
-                          label: Text(label),
-                          visualDensity: VisualDensity.compact,
-                          materialTapTargetSize:
-                              MaterialTapTargetSize.shrinkWrap,
+                      Chip(
+                        key: ValueKey('records.item.$index.label'),
+                        label: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
                     ],
-                    const Spacer(),
                     if (etcCount > 0)
                       Padding(
                         padding: const EdgeInsets.only(right: AppSpacing.sp2),
@@ -423,7 +457,10 @@ class _RecordCard extends StatelessWidget {
                           key: ValueKey('records.item.$index.compare.button'),
                           icon: const Icon(Icons.compare, size: 18),
                           tooltip: '직전 기록과 비교',
-                          visualDensity: VisualDensity.compact,
+                          constraints: const BoxConstraints(
+                            minWidth: 48,
+                            minHeight: 48,
+                          ),
                           onPressed: () => context.pushNamed(
                             AppRoutes.compareDirection,
                             queryParameters: {
@@ -551,7 +588,7 @@ class _StripCell extends StatelessWidget {
               children: [
                 Image.file(
                   File(current.filePath),
-                  fit: BoxFit.cover,
+                  fit: BoxFit.contain,
                   cacheWidth: cacheWidth,
                   errorBuilder: (_, _, _) => Icon(
                     Icons.image_not_supported_outlined,
@@ -627,12 +664,7 @@ class _DirectionGallery extends StatelessWidget {
 
     return ListView.separated(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sp3,
-        0,
-        AppSpacing.sp3,
-        AppSpacing.sp6,
-      ),
+      padding: const EdgeInsets.fromLTRB(AppSpacing.sp3, 0, AppSpacing.sp3, 96),
       itemCount: rows.length,
       separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sp3),
       itemBuilder: (context, index) => _DirectionTile(
@@ -769,18 +801,16 @@ class _EmptyRecords extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // 브래킷(실선) 안에 인물(점선) — "이 프레임을 채운다".
-                  BrandSymbol(
-                    size: 88,
-                    color: context.colors.primaryContainer,
-                    figureColor: context.colors.primary,
-                    style: BrandSymbolStyle.outlined,
+                  const BrandIntro(
+                    identifier: 'records.empty.intro',
+                    title: '같은 프레임,\n쌓이는 변화',
+                    description: '오늘의 모습을 남기고, 나만의 속도로 변화를 살펴보세요.',
                   ),
-                  const SizedBox(height: AppSpacing.sp4),
+                  const SizedBox(height: AppSpacing.sp6),
                   Text('아직 기록이 없습니다', style: context.texts.titleMedium),
-                  const SizedBox(height: AppSpacing.sp1),
+                  const SizedBox(height: AppSpacing.sp2),
                   Text(
-                    '촬영 화면에서 정면·좌측면·우측면·후면을\n한 번에 기록해 보세요.',
+                    '정면·좌측면·우측면·후면을 차례로 촬영하거나\n갤러리에 있는 사진으로 시작하세요.',
                     textAlign: TextAlign.center,
                     style: context.texts.bodyMedium?.copyWith(
                       color: context.colors.onSurfaceVariant,
@@ -793,9 +823,21 @@ class _EmptyRecords extends StatelessWidget {
                     label: '촬영 화면으로',
                     child: FilledButton.icon(
                       key: const ValueKey('records.empty.capture.button'),
-                      onPressed: () => Navigator.of(context).maybePop(),
+                      onPressed: () => context.goNamed(AppRoutes.home),
                       icon: const Icon(Icons.photo_camera),
                       label: const Text('촬영하기'),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sp2),
+                  Semantics(
+                    identifier: 'records.empty.import.button',
+                    button: true,
+                    child: TextButton.icon(
+                      key: const ValueKey('records.empty.import.button'),
+                      onPressed: () =>
+                          context.pushNamed(AppRoutes.galleryImport),
+                      icon: const Icon(Icons.photo_library_outlined),
+                      label: const Text('갤러리에서 가져오기'),
                     ),
                   ),
                 ],

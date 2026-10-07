@@ -20,7 +20,7 @@ import 'providers/capture_providers.dart';
 import 'providers/capture_session_provider.dart';
 import 'utils/capture_guides.dart';
 import 'utils/temporary_capture.dart';
-import 'widgets/async_status_indicator.dart';
+import 'package:body_frame/core/widgets/async_status_indicator.dart';
 import 'widgets/camera_notice_card.dart';
 import 'widgets/capture_progress_bar.dart';
 import 'widgets/grid_overlay.dart';

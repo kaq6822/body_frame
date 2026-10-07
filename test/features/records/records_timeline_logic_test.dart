@@ -176,6 +176,98 @@ void main() {
 
       expect(rows, isEmpty);
     });
+
+    test('경과일은 같은 대상 라벨끼리만 센다', () {
+      // 본인(8/8) → 어머니(8/4) → 본인(8/1). 모아보기는 라벨로 걸러지지 않은
+      // 전체 목록을 받으므로, 중간에 끼인 다른 사람 기록 때문에 본인 간격이
+      // 어긋나면 안 된다.
+      final rows = collectByDirection([
+        _entry(id: 'a', shotAt: DateTime(2026, 8, 8)),
+        _entry(id: 'b', shotAt: DateTime(2026, 8, 4), label: '어머니'),
+        _entry(id: 'c', shotAt: DateTime(2026, 8, 1)),
+      ], BodyDirection.front);
+
+      expect(rows.map((r) => r.record.id), ['a', 'b', 'c']);
+      expect(rows[0].daysSincePrevious, 7);
+      // 어머니 기록은 같은 라벨의 직전 기록이 없으므로 null.
+      expect(rows[1].daysSincePrevious, isNull);
+      expect(rows[2].daysSincePrevious, isNull);
+    });
+
+    test('공백만 있는 라벨은 본인 기록과 같은 대상으로 본다', () {
+      final rows = collectByDirection([
+        _entry(id: 'a', shotAt: DateTime(2026, 8, 8), label: '   '),
+        _entry(id: 'b', shotAt: DateTime(2026, 8, 1)),
+      ], BodyDirection.front);
+
+      expect(rows[0].daysSincePrevious, 7);
+    });
+  });
+
+  group('findDefaultComparePair', () {
+    test('본인 기록 중 공통 방향이 있는 최신 쌍을 고른다', () {
+      final pair = findDefaultComparePair([
+        _entry(id: 'a', shotAt: DateTime(2026, 8, 8)),
+        _entry(
+          id: 'b',
+          shotAt: DateTime(2026, 8, 4),
+          directions: [BodyDirection.back],
+        ),
+        _entry(id: 'c', shotAt: DateTime(2026, 8, 1)),
+      ]);
+
+      expect(pair!.beforeRecordId, 'c');
+      expect(pair.afterRecordId, 'a');
+    });
+
+    test('다른 사람 기록은 자동 제안에 섞지 않는다', () {
+      // 본인 기록이 하나뿐이면 쌍이 없다. 가장 최근 기록 두 건을 그대로
+      // 채우면 다른 사람 기록이 비교 대상으로 조용히 들어간다.
+      final pair = findDefaultComparePair([
+        _entry(id: 'a', shotAt: DateTime(2026, 8, 8)),
+        _entry(id: 'b', shotAt: DateTime(2026, 8, 4), label: '어머니'),
+      ]);
+
+      expect(pair, isNull);
+    });
+
+    test('본인 기록이 둘이어도 공통 방향이 없으면 제안하지 않는다', () {
+      final pair = findDefaultComparePair([
+        _entry(
+          id: 'a',
+          shotAt: DateTime(2026, 8, 8),
+          directions: [BodyDirection.front],
+        ),
+        _entry(
+          id: 'b',
+          shotAt: DateTime(2026, 8, 1),
+          directions: [BodyDirection.back],
+        ),
+      ]);
+
+      expect(pair, isNull);
+    });
+
+    test('사진이 없는 기록은 자동 제안에서 제외한다', () {
+      final pair = findDefaultComparePair([
+        RecordWithPhotos(
+          record: PhotoRecord(
+            id: 'empty',
+            shotAt: DateTime(2026, 8, 8),
+            createdAt: DateTime(2026, 8, 8),
+            updatedAt: DateTime(2026, 8, 8),
+          ),
+          photos: const [],
+        ),
+        _entry(id: 'b', shotAt: DateTime(2026, 8, 1)),
+      ]);
+
+      expect(pair, isNull);
+    });
+
+    test('빈 목록은 null을 준다', () {
+      expect(findDefaultComparePair(const []), isNull);
+    });
   });
 
   group('availableDirections', () {

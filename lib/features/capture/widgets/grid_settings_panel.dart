@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:body_frame/core/models/models.dart';
+import 'package:body_frame/core/services/settings_save_queue.dart';
 import 'package:body_frame/core/theme/app_tokens.dart';
 import '../providers/capture_providers.dart';
-import 'async_status_indicator.dart';
+import 'package:body_frame/core/widgets/async_status_indicator.dart';
 
 /// 격자 표시/투명도/굵기/간격/색상 설정 패널.
 ///
@@ -25,9 +26,12 @@ class GridSettingsPanel extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(gridSettingsControllerProvider);
     final notifier = ref.read(gridSettingsControllerProvider.notifier);
+    // 저장은 값 상태와 분리해 진행·실패를 알린다. 실패해도 미리보기 값은 유지된다.
+    final saveState = ref.watch(gridSettingsSaveQueueProvider);
 
     return async.when(
-      data: (settings) => _buildControls(context, settings, notifier),
+      data: (settings) =>
+          _buildControls(context, settings, notifier, saveState),
       loading: () => const Padding(
         padding: EdgeInsets.all(16),
         child: AsyncStatusIndicator(
@@ -52,6 +56,7 @@ class GridSettingsPanel extends ConsumerWidget {
     BuildContext context,
     GridSettings settings,
     GridSettingsController notifier,
+    SettingsSaveState saveState,
   ) {
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -59,6 +64,20 @@ class GridSettingsPanel extends ConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          AsyncStatusIndicator(
+            statusId: 'capture.grid.save.status',
+            status: switch (saveState.status) {
+              SettingsSaveStatus.idle => AsyncStatus.idle,
+              SettingsSaveStatus.saving => AsyncStatus.busy,
+              SettingsSaveStatus.success => AsyncStatus.success,
+              SettingsSaveStatus.failure => AsyncStatus.failure,
+            },
+            busyLabel: '격자 설정을 저장하는 중입니다.',
+            successLabel: '격자 설정을 저장했습니다.',
+            failureMessage: '격자 설정을 저장하지 못했습니다. 다시 시도해주세요.',
+            // 실패해도 현재 값은 유지되므로 재시도만 제공하면 된다.
+            onRetry: saveState.canRetry ? notifier.retrySave : null,
+          ),
           Row(
             children: [
               Semantics(
