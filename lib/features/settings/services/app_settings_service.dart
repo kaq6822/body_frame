@@ -43,7 +43,11 @@ class AppSettingsServiceImpl implements AppSettingsService {
       throw ArgumentError.value(settings, 'settings', '안전한 앱 설정이어야 합니다.');
     }
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_key, settings.toJson());
+    // 실패를 성공으로 넘기면 사용자는 재시도할 수 없고 설정만 조용히 남지 않는다.
+    final saved = await prefs.setString(_key, settings.toJson());
+    if (!saved) {
+      throw StateError('앱 설정을 shared_preferences에 저장하지 못했습니다.');
+    }
     _logger.info('settings.save');
   }
 

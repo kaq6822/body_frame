@@ -128,20 +128,23 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
     setState(() => _defaultsSaveStatus = _DefaultsSaveStatus.saving);
     final logger = ref.read(appLoggerProvider);
     logger.phase('compare.export.defaults.save', LogPhase.start);
-    try {
-      await ref
-          .read(appSettingsControllerProvider.notifier)
-          .updateSettings(
-            (settings) => settings.copyWith(defaultExportOptions: _options),
-          );
-      logger.phase('compare.export.defaults.save', LogPhase.success);
-      if (!mounted) return;
-      setState(() => _defaultsSaveStatus = _DefaultsSaveStatus.success);
-    } catch (error) {
-      logger.phase('compare.export.defaults.save', LogPhase.failure);
-      if (!mounted) return;
-      setState(() => _defaultsSaveStatus = _DefaultsSaveStatus.failure);
-    }
+    // 저장은 큐가 순서대로 이어서 처리하고 결과를 상태로 돌려준다. 예외가
+    // 아니라 저장 상태로 판정하므로 조용히 실패한 저장을 놓치지 않는다.
+    final result = await ref
+        .read(appSettingsControllerProvider.notifier)
+        .updateSettings(
+          (settings) => settings.copyWith(defaultExportOptions: _options),
+        );
+    logger.phase(
+      'compare.export.defaults.save',
+      result.isFailure ? LogPhase.failure : LogPhase.success,
+    );
+    if (!mounted) return;
+    setState(
+      () => _defaultsSaveStatus = result.isFailure
+          ? _DefaultsSaveStatus.failure
+          : _DefaultsSaveStatus.success,
+    );
   }
 
   String _fileName(CompareExportRequest req) {

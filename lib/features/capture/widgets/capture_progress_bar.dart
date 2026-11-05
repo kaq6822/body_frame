@@ -40,25 +40,20 @@ class CaptureProgressBar extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 6),
-          // 방향 4개가 항상 한 줄에 다 보여야 진행 상황을 읽을 수 있다.
-          // 좁은 화면에서는 잘라내는 대신 축소한다.
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (var i = 0; i < shots.length; i++)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 3),
-                    child: _StepChip(
-                      shot: shots[i],
-                      isCurrent: i == currentIndex,
-                      foreground: foreground,
-                      onTap: () => onStepSelected(i),
-                    ),
-                  ),
-              ],
-            ),
+          // 글꼴을 축소하지 않고 줄바꿈해 터치 영역과 읽기 크기를 보존한다.
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (var i = 0; i < shots.length; i++)
+                _StepChip(
+                  shot: shots[i],
+                  isCurrent: i == currentIndex,
+                  foreground: foreground,
+                  onTap: () => onStepSelected(i),
+                ),
+            ],
           ),
         ],
       ),
@@ -88,13 +83,15 @@ class _StepChip extends StatelessWidget {
       identifier: id,
       button: true,
       selected: isCurrent,
+      value: state,
       label: '${shot.direction.label} $state, 탭하여 이 단계로 이동',
       child: InkWell(
         key: ValueKey(id),
         onTap: onTap,
         borderRadius: BorderRadius.circular(14),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
             color: shot.isCaptured

@@ -49,14 +49,22 @@ class GridSettingsServiceImpl implements GridSettingsService {
       throw ArgumentError.value(settings, 'settings', '안전한 격자 설정이어야 합니다.');
     }
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_key, settings.toJson());
+    // setString/remove가 false를 돌려도 저장은 실패한 것이다. 성공으로 처리하면
+    // 재시도할 단서가 사라지고 설정은 조용히 이전 값으로 남는다.
+    final saved = await prefs.setString(_key, settings.toJson());
+    if (!saved) {
+      throw StateError('격자 설정을 shared_preferences에 저장하지 못했습니다.');
+    }
     _logger.info('grid.save');
   }
 
   @override
   Future<void> reset() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_key);
+    final removed = await prefs.remove(_key);
+    if (!removed) {
+      throw StateError('격자 설정을 shared_preferences에서 지우지 못했습니다.');
+    }
     _logger.info('grid.reset');
   }
 

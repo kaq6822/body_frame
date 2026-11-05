@@ -20,7 +20,23 @@ class AppTheme {
   static ThemeData _build(ColorScheme scheme, AppSemanticColors semantic) {
     final base = ThemeData(useMaterial3: true, colorScheme: scheme);
 
+    final texts = base.textTheme.copyWith(
+      headlineSmall: base.textTheme.headlineSmall?.copyWith(
+        fontWeight: FontWeight.w700,
+        letterSpacing: -0.6,
+      ),
+      titleLarge: base.textTheme.titleLarge?.copyWith(
+        fontWeight: FontWeight.w700,
+        letterSpacing: -0.4,
+      ),
+      titleMedium: base.textTheme.titleMedium?.copyWith(
+        fontWeight: FontWeight.w600,
+      ),
+      bodyMedium: base.textTheme.bodyMedium?.copyWith(height: 1.5),
+      bodySmall: base.textTheme.bodySmall?.copyWith(height: 1.5),
+    );
     return base.copyWith(
+      textTheme: texts,
       scaffoldBackgroundColor: scheme.brightness == Brightness.light
           ? const Color(0xFFF8FAF9)
           : scheme.surface,
@@ -99,7 +115,7 @@ class AppTheme {
       extensions: <ThemeExtension<dynamic>>[
         semantic,
         const AppPhotoColors(),
-        AppNumericTextStyles.from(base.textTheme),
+        AppNumericTextStyles.from(texts),
       ],
     );
   }

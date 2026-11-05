@@ -289,8 +289,8 @@ class AppNumericTextStyles extends ThemeExtension<AppNumericTextStyles> {
 
 /// 명시적 [ColorScheme].
 ///
-/// 기존 `ColorScheme.fromSeed(0xFF3D5AFE)`의 인디고 색조는 유지하되 채도를 낮춰
-/// (`#3D5AFE` → `#414CB8`) 사진 옆에서 UI가 먼저 눈에 들어오지 않게 한다.
+/// 포레스트 그린과 따뜻한 뉴트럴로 기록 도구의 차분한 인상을 만든다.
+/// 사진 영역에는 이 팔레트를 적용하지 않고 고정 중립색을 유지한다.
 abstract final class AppColorSchemes {
   static const light = ColorScheme(
     brightness: Brightness.light,
@@ -304,8 +304,8 @@ abstract final class AppColorSchemes {
     onSecondaryContainer: Color(0xFF2C2F43),
     tertiary: Color(0xFF74566E),
     onTertiary: Color(0xFFFFFFFF),
-    tertiaryContainer: Color(0xFFFFD8EE),
-    onTertiaryContainer: Color(0xFF43263E),
+    tertiaryContainer: Color(0xFFF5E5D2),
+    onTertiaryContainer: Color(0xFF493622),
     error: Color(0xFFB3261E),
     onError: Color(0xFFFFFFFF),
     errorContainer: Color(0xFFF9DEDC),
