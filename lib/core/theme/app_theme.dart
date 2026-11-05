@@ -21,7 +21,38 @@ class AppTheme {
     final base = ThemeData(useMaterial3: true, colorScheme: scheme);
 
     return base.copyWith(
-      appBarTheme: const AppBarTheme(centerTitle: true),
+      scaffoldBackgroundColor: scheme.brightness == Brightness.light
+          ? const Color(0xFFF8FAF9)
+          : scheme.surface,
+      appBarTheme: AppBarTheme(
+        centerTitle: false,
+        backgroundColor: scheme.surface,
+        surfaceTintColor: Colors.transparent,
+        titleTextStyle: TextStyle(
+          color: scheme.onSurface,
+          fontSize: 22,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          minimumSize: const Size(48, 48),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(48, 48),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+      ),
 
       // 입력 테두리를 여기서 한 번 정의해 호출부에서 border를 반복하지 않는다.
       inputDecorationTheme: InputDecorationTheme(
@@ -46,6 +77,10 @@ class AppTheme {
       ),
 
       cardTheme: base.cardTheme.copyWith(
+        color: scheme.brightness == Brightness.light
+            ? Colors.white
+            : scheme.surfaceContainer,
+        elevation: 0,
         shape: const RoundedRectangleBorder(borderRadius: AppRadius.mdAll),
       ),
 

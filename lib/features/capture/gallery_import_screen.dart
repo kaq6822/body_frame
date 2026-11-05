@@ -7,12 +7,12 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
-import 'package:body_frame/core/models/models.dart';
-import 'package:body_frame/core/providers.dart';
-import 'package:body_frame/core/services/app_image_picker.dart';
-import 'package:body_frame/core/services/app_logger.dart';
-import 'package:body_frame/core/theme/app_tokens.dart';
-import 'package:body_frame/core/widgets/photo_grid_overlay.dart';
+import 'package:bodymark/core/models/models.dart';
+import 'package:bodymark/core/providers.dart';
+import 'package:bodymark/core/services/app_image_picker.dart';
+import 'package:bodymark/core/services/app_logger.dart';
+import 'package:bodymark/core/theme/app_tokens.dart';
+import 'package:bodymark/core/widgets/photo_grid_overlay.dart';
 import '../records/providers/records_providers.dart';
 import 'utils/image_meta.dart';
 import 'widgets/async_status_indicator.dart';

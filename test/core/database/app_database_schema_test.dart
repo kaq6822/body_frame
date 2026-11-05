@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:body_frame/core/database/app_database.dart';
+import 'package:bodymark/core/database/app_database.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -78,9 +78,7 @@ void main() {
     );
   });
 
-  test('더 높은 버전으로 만들어진 옛 DB는 지우고 현재 스키마로 새로 만든다', () async {
-    // 마이그레이션이 없으므로 옛 스키마가 남으면 모든 조회가 실패한다.
-    // onDowngrade가 없을 때 sqflite는 버전만 덮어써 그 상태를 굳혀 버린다.
+  test('더 높은 버전의 DB는 삭제하지 않고 열기를 거부한다', () async {
     final legacy = await openDatabase(
       dbPath,
       version: 3,
@@ -94,20 +92,57 @@ void main() {
       'updated_at': 0,
     });
     await legacy.close();
-
     final appDatabase = AppDatabase(path: dbPath);
-    addTearDown(appDatabase.close);
-    final db = await appDatabase.database;
+    await expectLater(appDatabase.database, throwsStateError);
+    final untouched = await openDatabase(dbPath, readOnly: true);
+    expect((await untouched.query('photo_records')).single['id'], 'r1');
+    expect(await untouched.getVersion(), 3);
+    await untouched.close();
+  });
 
-    expect(await db.getVersion(), AppDatabase.schemaVersion);
-    // 옛 데이터는 남지 않고, 현재 스키마의 컬럼으로 다시 만들어진다.
-    expect(await db.query(AppDatabase.tablePhotoRecords), isEmpty);
-    final columns = await db.rawQuery(
-      'PRAGMA table_info(${AppDatabase.tablePhotoRecords})',
+  test('버전 1의 사진·메모·상대경로를 보존하고 회원 미연결로 이전한다', () async {
+    final old = await openDatabase(
+      dbPath,
+      version: 1,
+      onCreate: (db, _) async {
+        await db.execute(
+          'CREATE TABLE photo_records(id TEXT PRIMARY KEY, shot_at INTEGER NOT NULL, label TEXT, memo TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)',
+        );
+        await db.execute(
+          "CREATE TABLE body_photos(id TEXT PRIMARY KEY, record_id TEXT NOT NULL, file_path TEXT NOT NULL, direction TEXT NOT NULL DEFAULT 'etc', width INTEGER NOT NULL DEFAULT 0, height INTEGER NOT NULL DEFAULT 0, orientation INTEGER NOT NULL DEFAULT 1, grid_settings TEXT, capture_grid_settings TEXT, memo TEXT, created_at INTEGER NOT NULL, FOREIGN KEY(record_id) REFERENCES photo_records(id) ON DELETE CASCADE)",
+        );
+      },
     );
-    final names = columns.map((c) => c['name']).toList();
-    expect(names, contains('label'));
-    expect(names, isNot(contains('member_id')));
+    await old.insert('photo_records', {
+      'id': 'r',
+      'shot_at': 123,
+      'label': '기존 라벨',
+      'memo': '기존 메모',
+      'created_at': 456,
+      'updated_at': 789,
+    });
+    await old.insert('body_photos', {
+      'id': 'p',
+      'record_id': 'r',
+      'file_path': 'photos/202611/original.jpg',
+      'direction': 'front',
+      'created_at': 456,
+    });
+    await old.close();
+    final migrated = AppDatabase(path: dbPath);
+    addTearDown(migrated.close);
+    final db = await migrated.database;
+    final record = (await db.query('photo_records')).single;
+    final photo = (await db.query('body_photos')).single;
+    expect(record['member_id'], isNull);
+    expect(record['memo'], '기존 메모');
+    expect(record['shot_at'], 123);
+    expect(record['created_at'], 456);
+    expect(photo['file_path'], 'photos/202611/original.jpg');
+    expect(photo['phase'], 'regular');
+    expect(photo['captured_at'], isNull);
+    expect(await db.query('members'), isEmpty);
+    expect(await db.getVersion(), 2);
   });
 
   test('같은 DB를 두 번 열어도 스키마가 그대로 유지된다', () async {

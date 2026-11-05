@@ -1,3 +1,5 @@
+import '../members/member_providers.dart';
+import '../members/ui.dart' show lessonDate;
 import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -20,8 +22,6 @@ import 'services/compare_export_sink.dart';
 import 'widgets/compare_missing_context.dart';
 import 'widgets/compare_photo_pane.dart';
 import 'widgets/labeled_switch.dart';
-
-final _dateFormat = DateFormat('yyyy.MM.dd');
 
 enum _DefaultsSaveStatus { idle, saving, success, failure }
 
@@ -283,10 +283,10 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
     TransformationController afterCtrl,
   ) {
     final beforeDate = _options.includeShotDate
-        ? _dateFormat.format(req.beforeRecord.shotAt)
+        ? lessonDate(req.beforeRecord.shotAt)
         : '';
     final afterDate = _options.includeShotDate
-        ? _dateFormat.format(req.afterRecord.shotAt)
+        ? lessonDate(req.afterRecord.shotAt)
         : '';
 
     if (req.mode != CompareMode.sideBySide) {
@@ -348,8 +348,14 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
   /// 보면 "라벨 포함"을 켜도 아무것도 나오지 않으므로 양쪽을 함께 본다. 서로
   /// 다른 대상을 비교한 이미지가 한쪽 이름만 달고 나가지 않게 둘 다 밝힌다.
   String _labelText(CompareExportRequest req) {
-    final before = req.beforeRecord.label?.trim();
-    final after = req.afterRecord.label?.trim();
+    final members = req.beforeRecord.memberId == null
+        ? null
+        : ref.watch(membersProvider).valueOrNull;
+    String? name(PhotoRecord r) =>
+        members?.where((m) => m.id == r.memberId).firstOrNull?.name ??
+        r.label?.trim();
+    final before = name(req.beforeRecord);
+    final after = name(req.afterRecord);
     final beforeLabel = (before == null || before.isEmpty) ? null : before;
     final afterLabel = (after == null || after.isEmpty) ? null : after;
     if (beforeLabel == null) return afterLabel ?? '';
@@ -512,7 +518,7 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
           Text('포함 항목', style: Theme.of(context).textTheme.titleSmall),
           LabeledSwitch(
             id: 'compare.export.label.toggle',
-            title: '대상 라벨 포함',
+            title: '회원 이름 표시',
             value: _options.includeLabel,
             onChanged: (v) => _updateComposition(
               () => _options = _options.copyWith(includeLabel: v),
@@ -521,7 +527,7 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
           ),
           LabeledSwitch(
             id: 'compare.export.date.toggle',
-            title: '촬영일 포함',
+            title: '레슨 날짜·시간 표시',
             value: _options.includeShotDate,
             onChanged: (v) => _updateComposition(
               () => _options = _options.copyWith(includeShotDate: v),

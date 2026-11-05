@@ -1,19 +1,22 @@
 import 'dart:async';
 import 'dart:io';
 
+import '../members/member_providers.dart';
+import '../../core/services/photo_storage_service.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:body_frame/core/models/models.dart';
-import 'package:body_frame/core/photo_frame.dart';
-import 'package:body_frame/core/providers.dart';
-import 'package:body_frame/core/router/app_routes.dart';
-import 'package:body_frame/core/services/app_logger.dart';
-import 'package:body_frame/core/theme/app_tokens.dart';
-import 'package:body_frame/features/records/providers/records_providers.dart';
-import 'package:body_frame/features/settings/providers/settings_providers.dart';
+import 'package:bodymark/core/models/models.dart';
+import 'package:bodymark/core/photo_frame.dart';
+import 'package:bodymark/core/providers.dart';
+import 'package:bodymark/core/router/app_routes.dart';
+import 'package:bodymark/core/services/app_logger.dart';
+import 'package:bodymark/core/theme/app_tokens.dart';
+import 'package:bodymark/features/records/providers/records_providers.dart';
+import 'package:bodymark/features/settings/providers/settings_providers.dart';
 import 'camera/capture_camera_controller.dart';
 import 'camera_permission_guide.dart';
 import 'providers/capture_providers.dart';
@@ -58,6 +61,12 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
   Future<void> _cameraOperations = Future<void>.value();
   _CameraStatus _status = _CameraStatus.initializing;
   bool _capturing = false;
+  bool _returnedDraft = false;
+  bool _lessonCapture = false;
+  List<CaptureShot> _draftShots = [];
+  late final PhotoStorageService _draftStorage;
+  late final AppLogger _draftLogger;
+
   bool _showQuickPanel = false;
   bool _cameraSuspended = false;
   bool _screenDisposed = false;
@@ -70,7 +79,7 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
   bool _permissionDenied = false;
 
   bool _showPreviousPhotoGuide = true;
-  double _previousPhotoGuideOpacity = 0.35;
+  double _previousPhotoGuideOpacity = 0.3;
   String? _failedPreviousPhotoGuidePath;
   bool _useFrontLens = false;
 
@@ -94,6 +103,14 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _controller = ref.read(captureCameraControllerFactoryProvider)();
+    _draftStorage = ref.read(photoStorageServiceProvider);
+    _draftLogger = ref.read(appLoggerProvider);
+    _lessonCapture = ref.read(lessonCaptureContextProvider) != null;
+    ref.listenManual(
+      captureSessionProvider,
+      (_, next) => _draftShots = next.capturedShots,
+      fireImmediately: true,
+    );
     final lifecycleState = WidgetsBinding.instance.lifecycleState;
     _cameraSuspended =
         lifecycleState != null && lifecycleState != AppLifecycleState.resumed;
@@ -112,6 +129,8 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
   void _applyTimerDefault(CaptureOptions? options) {
     if (options == null || _timerDefaultApplied) return;
     _timerDefaultApplied = true;
+    _showPreviousPhotoGuide = options.previousGuide;
+    _previousPhotoGuideOpacity = options.guideOpacity;
     final seconds = CaptureOptions.normalizeTimer(options.timerSeconds);
     if (seconds == _timerSeconds) return;
     if (!mounted) {
@@ -240,6 +259,17 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
   @override
   void dispose() {
     _screenDisposed = true;
+    if (_lessonCapture && !_returnedDraft) {
+      for (final shot in _draftShots) {
+        unawaited(
+          deleteTemporaryCaptureBestEffort(
+            shot.imagePath!,
+            storage: _draftStorage,
+            logger: _draftLogger,
+          ),
+        );
+      }
+    }
     _cameraSuspended = true;
     _countdownTimer?.cancel();
     _countdownTimer = null;
@@ -335,7 +365,11 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
       final notifier = ref.read(captureSessionProvider.notifier);
       final wasLastRemaining =
           ref.read(captureSessionProvider).nextUncapturedIndex == null;
-      final replaced = notifier.captureCurrent(path, gridSettings: grid);
+      final replaced = notifier.captureCurrent(
+        path,
+        gridSettings: grid,
+        capturedAt: ref.read(clockProvider)(),
+      );
       if (replaced != null) {
         // 이미 찍은 단계를 다시 찍으면 밀려난 임시 파일은 아무도 참조하지 않는다.
         unawaited(
@@ -366,9 +400,17 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
 
   // --- 이동 ---
 
-  void _goToReview() {
+  Future<void> _goToReview() async {
     _stopCountdown();
-    context.pushNamed(AppRoutes.captureReview);
+    final result = await context.pushNamed<List<CaptureShot>>(
+      AppRoutes.captureReview,
+    );
+    if (mounted &&
+        result != null &&
+        ref.read(lessonCaptureContextProvider) != null) {
+      _returnedDraft = true;
+      context.pop(result);
+    }
   }
 
   void _openRecords() {
@@ -438,39 +480,40 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
           body: SafeArea(
             child: Stack(
               children: [
-                Positioned.fill(
-                  child: _buildCameraArea(
-                    gridAsync.value,
-                    previousPhotoGuideAsync,
-                    direction,
-                  ),
-                ),
-                Positioned(
-                  top: AppSpacing.sp2,
-                  left: AppSpacing.sp2,
-                  right: AppSpacing.sp2,
-                  child: _buildTopBar(session),
-                ),
-                Positioned(
-                  left: AppSpacing.sp2,
-                  right: AppSpacing.sp2,
-                  bottom: 100,
-                  child: switch (_status) {
-                    _ when _showQuickPanel => _buildQuickPanel(
-                      previousPhotoGuideAsync,
+                Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: _buildTopBar(session),
                     ),
-                    // 미리보기가 없으면 "정면을 바라보고 서세요" 같은 안내는
-                    // 따라 할 수 없다. 그 자리를 비워 안내 카드가 겹치지 않게
-                    // 하고, 사용자가 지금 읽어야 할 것만 남긴다.
-                    _CameraStatus.ready => _buildAssistPanel(direction),
-                    _ => const SizedBox.shrink(),
-                  },
-                ),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: AppSpacing.sp4,
-                  child: _buildBottomBar(session),
+                    Expanded(
+                      child: _buildCameraArea(
+                        gridAsync.value,
+                        previousPhotoGuideAsync,
+                        direction,
+                      ),
+                    ),
+                    if (_showQuickPanel)
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: MediaQuery.sizeOf(context).height * 0.3,
+                        ),
+                        child: _buildQuickPanel(previousPhotoGuideAsync),
+                      )
+                    else if (_status == _CameraStatus.ready)
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: MediaQuery.sizeOf(context).height * 0.18,
+                        ),
+                        child: SingleChildScrollView(
+                          child: _buildAssistPanel(direction),
+                        ),
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      child: _buildBottomBar(session),
+                    ),
+                  ],
                 ),
                 if (remaining != null)
                   Positioned.fill(child: _buildCountdownOverlay(remaining)),
@@ -1016,7 +1059,16 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        _buildRecordsButton(),
+        if (ref.watch(lessonCaptureContextProvider) == null)
+          _buildRecordsButton()
+        else
+          _buildCompactAction(
+            id: 'capture.close.button',
+            icon: Icons.close,
+            label: '닫기',
+            semanticsLabel: '촬영을 닫고 일지로 돌아가기',
+            onPressed: () => context.pop(),
+          ),
         _buildCompactAction(
           id: 'capture.skip.button',
           icon: Icons.skip_next,
@@ -1123,7 +1175,7 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
                           )
                         : Image.file(
                             File(thumbnail.filePath),
-                            fit: BoxFit.cover,
+                            fit: BoxFit.contain,
                             cacheWidth: cacheWidth,
                             errorBuilder: (_, _, _) => Center(
                               child: Icon(

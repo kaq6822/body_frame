@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:body_frame/core/models/models.dart';
-import 'package:body_frame/core/theme/app_tokens.dart';
+import 'package:bodymark/core/models/models.dart';
+import 'package:bodymark/core/theme/app_tokens.dart';
 import '../providers/capture_providers.dart';
 import 'async_status_indicator.dart';
 

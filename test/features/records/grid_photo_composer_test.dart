@@ -1,8 +1,8 @@
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:body_frame/core/models/models.dart';
-import 'package:body_frame/features/records/services/grid_photo_composer.dart';
+import 'package:bodymark/core/models/models.dart';
+import 'package:bodymark/features/records/services/grid_photo_composer.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

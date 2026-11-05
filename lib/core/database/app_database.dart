@@ -11,18 +11,12 @@ import '../services/app_logger.dart';
 /// 스키마 정의를 담당한다. 사진 파일 자체는 저장하지 않고
 /// body_photos.file_path에는 앱 저장소 기준 상대경로만 저장한다.
 ///
-/// **마이그레이션은 두지 않는다.** 아직 출시하지 않은 앱이라 지켜야 할 사용자
-/// 데이터가 없다. 스키마가 바뀌면 [schemaVersion]을 올리는 대신 이 파일의
-/// [_onCreate]를 고치고 앱을 재설치한다. 다른 스키마로 만들어진 DB 파일이
-/// 남아 있으면 [onDatabaseDowngradeDelete]가 지우고 새로 만든다 — 재설치와 같은
-/// 결과를 자동으로 얻어, 옛 스키마가 남아 조회가 전부 실패하는 상태를 막는다.
-///
-/// 테스트에서는 [AppDatabase.forTesting]으로 인메모리 DB를 주입한다.
+/// 이전 버전의 사진과 메모를 보존하는 누적 마이그레이션을 수행한다.
 class AppDatabase {
   static const String dbName = 'body_frame.db';
 
-  /// 스키마 버전. 마이그레이션이 없으므로 항상 1이며 올리지 않는다.
-  static const int schemaVersion = 1;
+  /// 회원·레슨 정보와 촬영 목적/시각을 추가한 버전.
+  static const int schemaVersion = 2;
 
   static const String tablePhotoRecords = 'photo_records';
   static const String tableBodyPhotos = 'body_photos';
@@ -63,10 +57,10 @@ class AppDatabase {
       version: schemaVersion,
       onConfigure: _onConfigure,
       onCreate: _onCreate,
-      // 더 높은 버전으로 만들어진 DB가 남아 있으면 지우고 새로 만든다.
-      // 없으면 sqflite는 아무 일도 하지 않은 채 버전만 덮어써서, 옛 스키마가
-      // 그대로 남아 모든 조회가 실패하는 상태로 굳는다.
-      onDowngrade: onDatabaseDowngradeDelete,
+      onUpgrade: _onUpgrade,
+      onDowngrade: (db, oldVersion, newVersion) async {
+        throw StateError('더 새로운 앱에서 만든 데이터입니다. 앱을 업데이트해주세요.');
+      },
     );
   }
 
@@ -115,6 +109,32 @@ class AppDatabase {
     );
 
     await batch.commit(noResult: true);
+    await _addMemberSchema(db);
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) await _addMemberSchema(db);
+  }
+
+  Future<void> _addMemberSchema(DatabaseExecutor db) async {
+    await db.execute('''CREATE TABLE members (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '',
+      goal TEXT NOT NULL DEFAULT '', precautions TEXT NOT NULL DEFAULT '',
+      report TEXT NOT NULL DEFAULT '', observation TEXT NOT NULL DEFAULT '',
+      memo TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )''');
+    await db.execute(
+      'ALTER TABLE photo_records ADD COLUMN member_id TEXT REFERENCES members(id)',
+    );
+    await db.execute('ALTER TABLE photo_records ADD COLUMN condition TEXT');
+    await db.execute(
+      "ALTER TABLE body_photos ADD COLUMN phase TEXT NOT NULL DEFAULT 'regular'",
+    );
+    await db.execute('ALTER TABLE body_photos ADD COLUMN captured_at INTEGER');
+    await db.execute(
+      'CREATE INDEX idx_records_member ON photo_records(member_id, shot_at)',
+    );
   }
 
   Future<void> close() async {

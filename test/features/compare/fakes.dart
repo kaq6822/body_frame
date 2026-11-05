@@ -1,11 +1,11 @@
 import 'dart:typed_data';
 import 'dart:ui';
 
-import 'package:body_frame/core/models/models.dart';
-import 'package:body_frame/core/repositories/body_photo_repository.dart';
-import 'package:body_frame/core/repositories/photo_record_repository.dart';
-import 'package:body_frame/core/services/grid_settings_service.dart';
-import 'package:body_frame/features/compare/services/compare_export_sink.dart';
+import 'package:bodymark/core/models/models.dart';
+import 'package:bodymark/core/repositories/body_photo_repository.dart';
+import 'package:bodymark/core/repositories/photo_record_repository.dart';
+import 'package:bodymark/core/services/grid_settings_service.dart';
+import 'package:bodymark/features/compare/services/compare_export_sink.dart';
 
 /// compare 테스트 전용 인메모리 Fake 모음.
 ///
@@ -61,9 +61,7 @@ class FakeBodyPhotoRepository implements BodyPhotoRepository {
 
   @override
   Future<List<BodyPhoto>> listByDirection(BodyDirection direction) async {
-    final list = photos.values
-        .where((p) => p.direction == direction)
-        .toList();
+    final list = photos.values.where((p) => p.direction == direction).toList();
     list.sort((a, b) {
       final left = recordShotAt[a.recordId];
       final right = recordShotAt[b.recordId];

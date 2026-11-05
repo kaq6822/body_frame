@@ -1,4 +1,4 @@
-import 'package:body_frame/core/widgets/brand_symbol.dart';
+import 'package:bodymark/core/widgets/brand_symbol.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -55,12 +55,12 @@ void main() {
   testWidgets('라벨을 주면 이미지로 노출된다', (tester) async {
     await tester.pumpWidget(
       host(
-        const BrandSymbol(color: Colors.black, semanticLabel: 'Body Frame 심벌'),
+        const BrandSymbol(color: Colors.black, semanticLabel: 'BodyMark 심벌'),
       ),
     );
 
     expect(
-      tester.getSemantics(find.bySemanticsLabel('Body Frame 심벌')),
+      tester.getSemantics(find.bySemanticsLabel('BodyMark 심벌')),
       isNotNull,
     );
   });
@@ -69,6 +69,6 @@ void main() {
     await tester.pumpWidget(host(const BrandWordmark(color: Colors.black)));
 
     expect(tester.takeException(), isNull);
-    expect(find.bySemanticsLabel('Body Frame'), findsOneWidget);
+    expect(find.bySemanticsLabel('BodyMark'), findsOneWidget);
   });
 }

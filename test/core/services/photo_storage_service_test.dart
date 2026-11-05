@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:body_frame/core/services/photo_storage_service.dart';
+import 'package:bodymark/core/services/photo_storage_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 

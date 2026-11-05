@@ -1,9 +1,9 @@
-import 'package:body_frame/core/models/models.dart';
-import 'package:body_frame/core/providers.dart';
-import 'package:body_frame/features/compare/compare_export_models.dart';
-import 'package:body_frame/features/compare/compare_export_screen.dart';
-import 'package:body_frame/features/compare/services/compare_export_sink.dart';
-import 'package:body_frame/features/compare/widgets/compare_layered_pane.dart';
+import 'package:bodymark/core/models/models.dart';
+import 'package:bodymark/core/providers.dart';
+import 'package:bodymark/features/compare/compare_export_models.dart';
+import 'package:bodymark/features/compare/compare_export_screen.dart';
+import 'package:bodymark/features/compare/services/compare_export_sink.dart';
+import 'package:bodymark/features/compare/widgets/compare_layered_pane.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

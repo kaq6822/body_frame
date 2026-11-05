@@ -1,3 +1,4 @@
+import '../members/ui.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -28,7 +29,8 @@ class SettingsScreen extends ConsumerWidget {
       label: '앱 설정',
       child: Scaffold(
         key: const ValueKey(screenId),
-        appBar: AppBar(title: const Text('앱 설정')),
+        appBar: AppBar(title: const Text('설정')),
+        bottomNavigationBar: const MainNavigation(2),
         body: settingsAsync.when(
           data: (settings) => const _SettingsBody(),
           loading: () => const Center(
@@ -104,7 +106,56 @@ class _SettingsBodyState extends ConsumerState<_SettingsBody> {
                 _updateCapture(capture.copyWith(countdownFeedback: value)),
           ),
         ),
+        Semantics(
+          identifier: 'settings.capture.guide.switch',
+          child: SwitchListTile(
+            key: const ValueKey('settings.capture.guide.switch'),
+            secondary: const Icon(Icons.layers_outlined),
+            title: const Text('이전 사진 표시 기본값'),
+            subtitle: const Text('선택한 회원·같은 방향의 기준 사진'),
+            value: capture.previousGuide,
+            onChanged: (v) =>
+                _updateCapture(capture.copyWith(previousGuide: v)),
+          ),
+        ),
+        Semantics(
+          identifier: 'settings.capture.opacity.slider',
+          label: '이전 사진 기본 투명도',
+          value: '${(capture.guideOpacity * 100).round()}%',
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('이전 사진 투명도 ${(capture.guideOpacity * 100).round()}%'),
+                Slider(
+                  key: const ValueKey('settings.capture.opacity.slider'),
+                  value: capture.guideOpacity,
+                  divisions: 20,
+                  label: '${(capture.guideOpacity * 100).round()}%',
+                  onChanged: (v) =>
+                      _updateCapture(capture.copyWith(guideOpacity: v)),
+                ),
+              ],
+            ),
+          ),
+        ),
         const _SectionHeader('데이터'),
+        ListTile(
+          key: const ValueKey('settings.data.item'),
+          leading: const Icon(Icons.phone_android_outlined),
+          title: const Text('데이터 보관 안내'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => context.push('/settings/data'),
+        ),
+        ListTile(
+          key: const ValueKey('settings.privacy.item'),
+          leading: const Icon(Icons.privacy_tip_outlined),
+          title: const Text('개인정보 안내'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => context.push('/settings/privacy'),
+        ),
+
         ListTile(
           key: const ValueKey('settings.storage.item'),
           leading: const Icon(Icons.storage_outlined),

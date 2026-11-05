@@ -1,10 +1,10 @@
-import 'package:body_frame/core/models/models.dart';
-import 'package:body_frame/core/providers.dart';
-import 'package:body_frame/core/repositories/body_photo_repository.dart';
-import 'package:body_frame/core/repositories/photo_record_repository.dart';
-import 'package:body_frame/core/router/app_routes.dart';
-import 'package:body_frame/features/records/providers/records_providers.dart';
-import 'package:body_frame/features/records/records_screen.dart';
+import 'package:bodymark/core/models/models.dart';
+import 'package:bodymark/core/providers.dart';
+import 'package:bodymark/core/repositories/body_photo_repository.dart';
+import 'package:bodymark/core/repositories/photo_record_repository.dart';
+import 'package:bodymark/core/router/app_routes.dart';
+import 'package:bodymark/features/records/providers/records_providers.dart';
+import 'package:bodymark/features/records/records_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

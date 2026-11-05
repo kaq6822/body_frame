@@ -1,4 +1,4 @@
-import 'package:body_frame/core/photo_frame.dart';
+import 'package:bodymark/core/photo_frame.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 

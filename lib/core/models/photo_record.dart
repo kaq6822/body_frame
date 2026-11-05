@@ -1,16 +1,14 @@
-/// 특정 날짜에 촬영한 사진 묶음.
-///
-/// 하나의 촬영 기록은 특정 날짜에 촬영한 사진 묶음을 의미한다.
-/// 개별 사진은 [BodyPhoto]로 분리되어 recordId로 이 기록을 참조한다.
+/// 회원의 실제 레슨 기록. 사진과 일지는 각각 선택이다.
+/// 기존 미연결 기록의 식별자와 날짜는 마이그레이션으로 유지한다.
 class PhotoRecord {
   final String id;
+  final String? memberId;
+  final String? condition;
 
-  /// 촬영일 (사용자가 지정, 갤러리 등록 시 EXIF에서 제안 가능).
+  /// 실제 레슨 일시. 기존 미연결 사진 기록은 종전 촬영일을 유지한다.
   final DateTime shotAt;
 
-  /// 촬영 대상 라벨 (선택). 비어 있으면 본인 기록으로 본다.
-  ///
-  /// 본인 외의 사람을 찍었을 때 타임라인에서 구분하기 위한 자유 문자열이다.
+  /// 이전 개인 기록의 자유 라벨. 회원 이름의 대체 식별자로 사용하지 않는다.
   final String? label;
 
   /// 기록 메모 (선택).
@@ -24,6 +22,8 @@ class PhotoRecord {
 
   const PhotoRecord({
     required this.id,
+    this.memberId,
+    this.condition,
     required this.shotAt,
     this.label,
     this.memo,
@@ -33,6 +33,9 @@ class PhotoRecord {
 
   PhotoRecord copyWith({
     DateTime? shotAt,
+    String? memberId,
+    String? condition,
+    bool clearCondition = false,
     String? label,
     bool clearLabel = false,
     String? memo,
@@ -42,6 +45,8 @@ class PhotoRecord {
   }) {
     return PhotoRecord(
       id: id,
+      memberId: memberId ?? this.memberId,
+      condition: clearCondition ? null : condition ?? this.condition,
       shotAt: shotAt ?? this.shotAt,
       label: clearLabel ? null : (label ?? this.label),
       // null은 "바꾸지 않음"이므로 비우려면 clearMemo를 써야 한다.
@@ -54,6 +59,8 @@ class PhotoRecord {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      'member_id': memberId,
+      'condition': condition,
       'shot_at': shotAt.millisecondsSinceEpoch,
       'label': label,
       'memo': memo,
@@ -65,6 +72,8 @@ class PhotoRecord {
   factory PhotoRecord.fromMap(Map<String, dynamic> map) {
     return PhotoRecord(
       id: map['id'] as String,
+      memberId: map['member_id'] as String?,
+      condition: map['condition'] as String?,
       shotAt: DateTime.fromMillisecondsSinceEpoch(map['shot_at'] as int),
       label: map['label'] as String?,
       memo: map['memo'] as String?,

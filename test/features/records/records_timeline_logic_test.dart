@@ -1,6 +1,6 @@
-import 'package:body_frame/core/models/models.dart';
-import 'package:body_frame/features/records/providers/records_providers.dart';
-import 'package:body_frame/features/records/records_timeline_logic.dart';
+import 'package:bodymark/core/models/models.dart';
+import 'package:bodymark/features/records/providers/records_providers.dart';
+import 'package:bodymark/features/records/records_timeline_logic.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// 고정 날짜만 사용한다. 현재 시각에 의존하면 경과일 검증이 날마다 달라진다.

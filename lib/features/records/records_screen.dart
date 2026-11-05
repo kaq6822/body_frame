@@ -551,7 +551,7 @@ class _StripCell extends StatelessWidget {
               children: [
                 Image.file(
                   File(current.filePath),
-                  fit: BoxFit.cover,
+                  fit: BoxFit.contain,
                   cacheWidth: cacheWidth,
                   errorBuilder: (_, _, _) => Icon(
                     Icons.image_not_supported_outlined,

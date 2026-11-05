@@ -10,7 +10,7 @@ enum BrandSymbolStyle {
   outlined,
 }
 
-/// Body Frame 브랜드 심벌.
+/// BodyMark 브랜드 심벌.
 ///
 /// 카메라 뷰파인더의 코너 브래킷 안에 인물 실루엣을 둔 형태다. "같은 프레임에
 /// 몸을 다시 세운다"는 핵심 경험을 그대로 형상화한 것이라, 장식이 아니라 기능적
@@ -209,7 +209,7 @@ class BrandWordmark extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      label: 'Body Frame',
+      label: 'BodyMark',
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

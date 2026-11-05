@@ -1,14 +1,14 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 
-import 'package:body_frame/core/models/models.dart';
-import 'package:body_frame/core/providers.dart';
-import 'package:body_frame/core/repositories/photo_ingest_repository.dart';
-import 'package:body_frame/core/repositories/photo_record_repository.dart';
-import 'package:body_frame/core/router/app_routes.dart';
-import 'package:body_frame/core/services/photo_storage_service.dart';
-import 'package:body_frame/features/capture/capture_review_screen.dart';
-import 'package:body_frame/features/capture/providers/capture_session_provider.dart';
+import 'package:bodymark/core/models/models.dart';
+import 'package:bodymark/core/providers.dart';
+import 'package:bodymark/core/repositories/photo_ingest_repository.dart';
+import 'package:bodymark/core/repositories/photo_record_repository.dart';
+import 'package:bodymark/core/router/app_routes.dart';
+import 'package:bodymark/core/services/photo_storage_service.dart';
+import 'package:bodymark/features/capture/capture_review_screen.dart';
+import 'package:bodymark/features/capture/providers/capture_session_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

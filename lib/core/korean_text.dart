@@ -11,7 +11,7 @@ const String _noBreakSpace = '\u00a0';
 ///
 /// 줄바꿈이 낱자 단위로 일어나는 것은 이 범위의 글자들이다. 영문과 숫자는 이미
 /// 단어 단위로 끊기므로 손대지 않는다. 불필요하게 보조 문자를 끼우면 문자열이
-/// 부풀고, 복사한 텍스트나 `Body Frame` 같은 고유명사 검색이 어긋난다.
+/// 부풀고, 복사한 텍스트나 `BodyMark` 같은 고유명사 검색이 어긋난다.
 bool _breaksBetweenLetters(int rune) =>
     (rune >= 0xac00 && rune <= 0xd7a3) || // 가–힣
     (rune >= 0x1100 && rune <= 0x11ff) || // 초성·중성·종성
@@ -48,7 +48,7 @@ String keepPhrasesWhole(String text) {
 
 /// 설정 경로 같은 단계 목록을 한 줄 문자열로 잇는다.
 ///
-/// 단계 하나는 통째로 남아야 한다. 한글은 [keepPhrasesWhole]로 묶고, `Body Frame`
+/// 단계 하나는 통째로 남아야 한다. 한글은 [keepPhrasesWhole]로 묶고, `BodyMark`
 /// 처럼 단계 이름 안에 든 공백은 줄바꿈 없는 공백으로 바꿔 단계가 두 줄로 갈라지지
 /// 않게 한다.
 ///

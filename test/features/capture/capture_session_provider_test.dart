@@ -1,5 +1,5 @@
-import 'package:body_frame/core/models/models.dart';
-import 'package:body_frame/features/capture/providers/capture_session_provider.dart';
+import 'package:bodymark/core/models/models.dart';
+import 'package:bodymark/features/capture/providers/capture_session_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 

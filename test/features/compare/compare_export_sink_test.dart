@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui';
 
-import 'package:body_frame/features/compare/services/compare_export_sink.dart';
+import 'package:bodymark/features/compare/services/compare_export_sink.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

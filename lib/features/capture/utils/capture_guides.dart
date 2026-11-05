@@ -1,4 +1,4 @@
-import 'package:body_frame/core/models/models.dart';
+import 'package:bodymark/core/models/models.dart';
 
 /// 촬영 방향별 보조 안내 문구. 카메라 높이/서는 위치/발 위치/
 /// 촬영 거리를 반복 가능한 조건으로 안내한다.

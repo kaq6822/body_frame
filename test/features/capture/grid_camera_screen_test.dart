@@ -1,17 +1,17 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:body_frame/core/korean_text.dart';
-import 'package:body_frame/core/models/models.dart';
-import 'package:body_frame/core/photo_frame.dart';
-import 'package:body_frame/core/providers.dart';
-import 'package:body_frame/core/repositories/body_photo_repository.dart';
-import 'package:body_frame/core/router/app_routes.dart';
-import 'package:body_frame/features/capture/camera_permission_guide.dart';
-import 'package:body_frame/features/capture/grid_camera_screen.dart';
-import 'package:body_frame/features/capture/providers/capture_providers.dart';
-import 'package:body_frame/features/capture/providers/capture_session_provider.dart';
-import 'package:body_frame/features/records/providers/records_providers.dart';
+import 'package:bodymark/core/korean_text.dart';
+import 'package:bodymark/core/models/models.dart';
+import 'package:bodymark/core/photo_frame.dart';
+import 'package:bodymark/core/providers.dart';
+import 'package:bodymark/core/repositories/body_photo_repository.dart';
+import 'package:bodymark/core/router/app_routes.dart';
+import 'package:bodymark/features/capture/camera_permission_guide.dart';
+import 'package:bodymark/features/capture/grid_camera_screen.dart';
+import 'package:bodymark/features/capture/providers/capture_providers.dart';
+import 'package:bodymark/features/capture/providers/capture_session_provider.dart';
+import 'package:bodymark/features/records/providers/records_providers.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -325,17 +325,13 @@ void main() {
       await tester.pumpWidget(buildApp(() => fake));
       await tester.pumpAndSettle();
 
-      expect(
-        find.text(keepPhrasesWhole('카메라 권한이 필요합니다.')),
-        findsOneWidget,
-      );
-      expect(
-        find.text(keepPhrasesWhole('카메라를 준비하는 중입니다.')),
-        findsNothing,
-      );
+      expect(find.text(keepPhrasesWhole('카메라 권한이 필요합니다.')), findsOneWidget);
+      expect(find.text(keepPhrasesWhole('카메라를 준비하는 중입니다.')), findsNothing);
       expect(
         tester
-            .getSemantics(find.bySemanticsIdentifier('screen.capture.camera.status'))
+            .getSemantics(
+              find.bySemanticsIdentifier('screen.capture.camera.status'),
+            )
             .value,
         'failure',
       );
@@ -361,10 +357,7 @@ void main() {
 
       expect(fake.initializeCalls, 1);
       // 안내가 사라지면 사용자가 무엇을 해야 할지 알 수 없다.
-      expect(
-        find.text(keepPhrasesWhole('카메라 권한이 필요합니다.')),
-        findsOneWidget,
-      );
+      expect(find.text(keepPhrasesWhole('카메라 권한이 필요합니다.')), findsOneWidget);
     });
 
     testWidgets('설정 열기를 누르면 시스템 설정 화면 열기를 요청한다', (tester) async {
@@ -416,10 +409,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
-      expect(
-        find.text(keepPhrasesWhole('카메라 권한이 필요합니다.')),
-        findsOneWidget,
-      );
+      expect(find.text(keepPhrasesWhole('카메라 권한이 필요합니다.')), findsOneWidget);
       // 버튼이 막힌 기기에서 직접 찾아갈 수 있어야 한다. 화면과 같은 함수로
       // 경로를 만들어 실행 중인 플랫폼 분기까지 함께 확인한다.
       expect(
@@ -441,10 +431,7 @@ void main() {
 
       expect(fake.initializeCalls, 2);
       expect(find.byKey(const ValueKey('fake.camera.preview')), findsOneWidget);
-      expect(
-        find.text(keepPhrasesWhole('카메라 권한이 필요합니다.')),
-        findsNothing,
-      );
+      expect(find.text(keepPhrasesWhole('카메라 권한이 필요합니다.')), findsNothing);
     });
   });
 
@@ -596,7 +583,7 @@ void main() {
         matching: find.byType(Opacity),
       ),
     );
-    expect(opacity.opacity, 0.35);
+    expect(opacity.opacity, 0.3);
 
     final toggleFinder = find.byKey(
       const ValueKey('capture.previousGuide.toggle'),

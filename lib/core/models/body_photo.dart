@@ -8,6 +8,8 @@ import 'grid_settings.dart';
 /// [width]/[height]/[orientation]으로 올바른 표시 정보를 유지한다.
 class BodyPhoto {
   final String id;
+  final String phase;
+  final DateTime? capturedAt;
 
   /// 소속 촬영 기록 식별자.
   final String recordId;
@@ -49,6 +51,8 @@ class BodyPhoto {
 
   const BodyPhoto({
     required this.id,
+    this.phase = 'regular',
+    this.capturedAt,
     required this.recordId,
     required this.filePath,
     required this.direction,
@@ -69,6 +73,9 @@ class BodyPhoto {
 
   BodyPhoto copyWith({
     String? recordId,
+    String? phase,
+    DateTime? capturedAt,
+    bool clearCapturedAt = false,
     String? filePath,
     BodyDirection? direction,
     int? width,
@@ -81,6 +88,8 @@ class BodyPhoto {
   }) {
     return BodyPhoto(
       id: id,
+      phase: phase ?? this.phase,
+      capturedAt: clearCapturedAt ? null : capturedAt ?? this.capturedAt,
       recordId: recordId ?? this.recordId,
       filePath: filePath ?? this.filePath,
       direction: direction ?? this.direction,
@@ -100,6 +109,8 @@ class BodyPhoto {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      'phase': phase,
+      'captured_at': capturedAt?.millisecondsSinceEpoch,
       'record_id': recordId,
       'file_path': filePath,
       'direction': direction.key,
@@ -116,6 +127,10 @@ class BodyPhoto {
   factory BodyPhoto.fromMap(Map<String, dynamic> map) {
     return BodyPhoto(
       id: map['id'] as String,
+      phase: map['phase'] as String? ?? 'regular',
+      capturedAt: map['captured_at'] == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(map['captured_at'] as int),
       recordId: map['record_id'] as String,
       filePath: map['file_path'] as String,
       direction: BodyDirection.fromKey(map['direction'] as String?),

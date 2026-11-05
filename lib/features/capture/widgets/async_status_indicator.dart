@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:body_frame/core/theme/app_tokens.dart';
+import 'package:bodymark/core/theme/app_tokens.dart';
 
 /// 비동기 작업의 대기/진행/성공/실패를 구분한다.
 enum AsyncStatus { idle, busy, success, failure }

@@ -27,7 +27,7 @@
          false로 두면 제조사에 따라 D2D까지 막히므로 true로 두고, 무엇을 넘길지는
          dataExtractionRules에서만 결정한다. -->
     <application
-        android:label="Body Frame"
+        android:label="BodyMark"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="true"

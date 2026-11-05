@@ -1,6 +1,6 @@
-import 'package:body_frame/core/export_album.dart';
-import 'package:body_frame/features/compare/services/compare_export_sink.dart';
-import 'package:body_frame/features/records/services/photo_export_sink.dart';
+import 'package:bodymark/core/export_album.dart';
+import 'package:bodymark/features/compare/services/compare_export_sink.dart';
+import 'package:bodymark/features/records/services/photo_export_sink.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 

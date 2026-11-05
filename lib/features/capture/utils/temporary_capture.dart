@@ -1,7 +1,7 @@
 import 'dart:io';
 
-import 'package:body_frame/core/services/app_logger.dart';
-import 'package:body_frame/core/services/photo_storage_service.dart';
+import 'package:bodymark/core/services/app_logger.dart';
+import 'package:bodymark/core/services/photo_storage_service.dart';
 
 /// 카메라가 만든 임시 촬영 파일을 최선 노력으로 지운다.
 ///

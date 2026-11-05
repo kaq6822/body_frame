@@ -1,5 +1,5 @@
-import 'package:body_frame/core/models/models.dart';
-import 'package:body_frame/features/compare/compare_logic.dart';
+import 'package:bodymark/core/models/models.dart';
+import 'package:bodymark/features/compare/compare_logic.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 BodyPhoto _photo(String id, BodyDirection direction, {String recordId = 'r'}) {

@@ -1,13 +1,14 @@
+import '../../members/member_providers.dart';
 import 'dart:io';
 
 // 이 앱에도 같은 이름의 설정 모델(core/models/app_settings.dart)이 있어 구분한다.
 import 'package:app_settings/app_settings.dart' as platform_settings;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:body_frame/core/models/models.dart';
-import 'package:body_frame/core/providers.dart';
-import 'package:body_frame/core/services/grid_settings_service.dart';
-import 'package:body_frame/features/records/providers/records_providers.dart';
+import 'package:bodymark/core/models/models.dart';
+import 'package:bodymark/core/providers.dart';
+import 'package:bodymark/core/services/grid_settings_service.dart';
+import 'package:bodymark/features/records/providers/records_providers.dart';
 import '../camera/capture_camera_controller.dart';
 
 /// 실제 카메라 컨트롤러 생성 팩토리. 테스트에서
@@ -41,10 +42,32 @@ final previousPhotoGuidePathProvider = FutureProvider.autoDispose
       // 값이 아니라 무효화 신호만 쓰므로 타임라인 조회 실패는 가이드에 옮기지
       // 않는다 — 사진 조회 자체는 아래에서 독립적으로 수행한다.
       ref.watch(timelineProvider);
+      final captureContext = ref.watch(lessonCaptureContextProvider);
+      if (captureContext != null && !captureContext.useBaseline) return null;
+      final draft = captureContext?.baselinePhotos?[direction];
+      if (captureContext?.baselinePhotos != null) {
+        return draft != null && await File(draft).exists() ? draft : null;
+      }
       final photos = await ref
           .watch(bodyPhotoRepositoryProvider)
           .listByDirection(direction);
+      final records = captureContext == null
+          ? <PhotoRecord>[]
+          : await ref.watch(photoRecordRepositoryProvider).listAll();
+      final allowed = captureContext == null
+          ? null
+          : records
+                .where(
+                  (r) =>
+                      r.memberId == captureContext.memberId &&
+                      (captureContext.baselineRecordId == null ||
+                          r.id == captureContext.baselineRecordId),
+                )
+                .map((r) => r.id)
+                .toSet();
+      if (captureContext != null && !captureContext.useBaseline) return null;
       for (final photo in photos) {
+        if (allowed != null && !allowed.contains(photo.recordId)) continue;
         try {
           final file = File(photo.filePath);
           if (await file.exists() && await file.length() > 0) {

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/providers.dart';
@@ -9,21 +10,21 @@ import 'core/services/app_image_picker.dart';
 import 'core/theme/app_theme.dart';
 
 void main() {
-  runApp(const ProviderScope(child: BodyFrameApp()));
+  runApp(const ProviderScope(child: BodyMarkApp()));
 }
 
 /// 체형 변화 기록 앱.
 ///
 /// 로그인/서버 없는 스탠드얼론 앱. ProviderScope + MaterialApp.router로
 /// Riverpod과 go_router를 연결한다.
-class BodyFrameApp extends ConsumerStatefulWidget {
-  const BodyFrameApp({super.key});
+class BodyMarkApp extends ConsumerStatefulWidget {
+  const BodyMarkApp({super.key});
 
   @override
-  ConsumerState<BodyFrameApp> createState() => _BodyFrameAppState();
+  ConsumerState<BodyMarkApp> createState() => _BodyMarkAppState();
 }
 
-class _BodyFrameAppState extends ConsumerState<BodyFrameApp> {
+class _BodyMarkAppState extends ConsumerState<BodyMarkApp> {
   late final _router = createAppRouter();
 
   @override
@@ -47,7 +48,10 @@ class _BodyFrameAppState extends ConsumerState<BodyFrameApp> {
     // Android image_picker의 Activity 종료 결과를 앱 루트에서 한 번만 회수한다.
     ref.read(appImagePickerCoordinatorProvider);
     return MaterialApp.router(
-      title: '체형 변화 기록',
+      title: 'BodyMark',
+      locale: const Locale('ko', 'KR'),
+      supportedLocales: const [Locale('ko', 'KR'), Locale('en', 'US')],
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,

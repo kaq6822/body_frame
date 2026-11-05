@@ -1,0 +1,707 @@
+{
+  "project_id": "2398877984889259331",
+  "project_url": "https://stitch.withgoogle.com/projects/2398877984889259331",
+  "reviewed_at": "2026-11-04T16:20:56.728116+00:00",
+  "scope": "46 static mobile designs, including normal/empty/error/modal states; no app implementation",
+  "verification": {
+    "screens": 46,
+    "remote_mobile_resources": 46,
+    "png_metadata_matches": 46,
+    "canvas_visible": 46,
+    "original_instances_preserved": 20,
+    "comparison_preview_same_sources_and_frame_aspect": true,
+    "camera_fixed_viewport": 3
+  },
+  "screens": [
+    {
+      "number": 1,
+      "role": "첫 시작",
+      "id": "a58deaadf03444b1a4b08096614de98d",
+      "resource_name": "projects/2398877984889259331/screens/a58deaadf03444b1a4b08096614de98d",
+      "title": "검수 v2 · 첫 시작 (모바일)",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "2f0232a3dd19211a5fdee6a7db0818b98e75a7b1d111c4ef2bce01d8299e8b9e",
+      "html_sha256": "9dd2603c1b75a6ad6455f89e06af70ed2d2223d5a770bc4b33c8e2f28ae3dd30",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 2,
+      "role": "회원 목록",
+      "id": "91992747fefd4d1fb8f1aeb3952f1f37",
+      "resource_name": "projects/2398877984889259331/screens/91992747fefd4d1fb8f1aeb3952f1f37",
+      "title": "검수 v1 · 회원 목록 (모바일)",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "e2a8a2c6963c8ba284c99f6c967b248493c6fc0620fb349ef711920e032b0a65",
+      "html_sha256": "bc5a1b1781a80638c2cd28d1df24dcd46edbe80c17a3de565753e6f4868c2ef1",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 3,
+      "role": "검색 결과 없음",
+      "id": "8579f216dffe40fdb662088fbd6a0660",
+      "resource_name": "projects/2398877984889259331/screens/8579f216dffe40fdb662088fbd6a0660",
+      "title": "검수 v1 · 검색 결과 없음",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "83971e13c5619bf85b23c116453d89664765071139ba5bdc5f6717dafcf4ef1a",
+      "html_sha256": "ce0062982c39a2537fb5e41825f616f62cf3387b692992dab36dd28baf296892",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 4,
+      "role": "회원 등록",
+      "id": "a3062b0ab6fd4fa4b4f8aaf0b5431b99",
+      "resource_name": "projects/2398877984889259331/screens/a3062b0ab6fd4fa4b4f8aaf0b5431b99",
+      "title": "전체 v2 · 회원 등록",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "8fd29309db852b280e4b129be8832c8a14e2ef5ca9f2a09227fd2952ad29d303",
+      "html_sha256": "a5b5c302cb4ecd8dc88e12bd6efc9b1cd58b1104ff0623e30e9defdc104dc3bc",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 5,
+      "role": "회원 상세",
+      "id": "3e71e4fd7ae942ea9921159df010103f",
+      "resource_name": "projects/2398877984889259331/screens/3e71e4fd7ae942ea9921159df010103f",
+      "title": "검수 v1 · 회원 상세 (모바일)",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "1c97694e0e6fad4409a8abd8142f01aef73ef71cc25166a28f63325ec08b4b4c",
+      "html_sha256": "bdc0ebab4d0cd77ad60545d1d75cdf519bf89a4c1ebf0f38d7faf77225c7e757",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 6,
+      "role": "회원 기록 없음",
+      "id": "c8b2fcd2ab0b4f328f299418150d8db7",
+      "resource_name": "projects/2398877984889259331/screens/c8b2fcd2ab0b4f328f299418150d8db7",
+      "title": "검수 v1 · 회원 기록 없음",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "4bc1103fa6bc438e198ee740e2fa924b29e6a55917a763dd2cba0b6942430d5a",
+      "html_sha256": "81f90f0c410a6bbded4abc0f7c57b069729c4eb8fcaf32eba19555c5136522ec",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 7,
+      "role": "일지 작성",
+      "id": "1081e819f9754eb78aa4ad109ee5a3a8",
+      "resource_name": "projects/2398877984889259331/screens/1081e819f9754eb78aa4ad109ee5a3a8",
+      "title": "검수 v2 · 일지 작성 (모바일)",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "796536444ed32e3d24ab7d0f2622c76df88b5f51ac9ffa46de62605f423c10dd",
+      "html_sha256": "6281760967b6ecd2dd00b4145d07051bae4755c7bb4ca9dc83418716eda52e76",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 8,
+      "role": "사진 포함 작성",
+      "id": "b46e92124f8f492ab37df89d50b9fec8",
+      "resource_name": "projects/2398877984889259331/screens/b46e92124f8f492ab37df89d50b9fec8",
+      "title": "검수 v4 · 사진 포함 작성",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        2122
+      ],
+      "png_sha256": "ca8f42e85e45b9c421781d844c3acca1709baa1540a8390c2f4af66a26369788",
+      "html_sha256": "58516ffe1ce121cf2481c02ad8837a0e6a71a92f579ad10ca394f14df9da3833",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 9,
+      "role": "사진만 기록",
+      "id": "3f8beaf2315b4f00a3799b465ccf1010",
+      "resource_name": "projects/2398877984889259331/screens/3f8beaf2315b4f00a3799b465ccf1010",
+      "title": "검수 v3 · 사진만 기록",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "0342e260e6712fedec74e9f55115d9a74f2b07aac3b15c966affa9cf3dfdd3a0",
+      "html_sha256": "0d8e4432229a7742d57de0859371b23450f751ffef6435c5083d587213a7d70f",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 10,
+      "role": "키보드 입력",
+      "id": "1aec715c65d944318d2f3b41791fe191",
+      "resource_name": "projects/2398877984889259331/screens/1aec715c65d944318d2f3b41791fe191",
+      "title": "전체 v1 · 키보드 입력 (모바일)",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "3c6b0215a77d84943aba82a91c8cba2e2184d5c60f5a845834e58d39bdf01b48",
+      "html_sha256": "7bf656aeeb12dcc8f96b51e664d7537d8dc5d0f32e052fa87a123fe9d66424c2",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 11,
+      "role": "레슨 일시 선택",
+      "id": "455b89ec2caf4698be887922e9c59f6a",
+      "resource_name": "projects/2398877984889259331/screens/455b89ec2caf4698be887922e9c59f6a",
+      "title": "검수 v2 · 레슨 일시 선택 (모바일)",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "3cec6cf69f33d19062196c290fbb955164526cadd45d443f5ff8f55a7a3288ce",
+      "html_sha256": "493dde89fad5d597e5bec93dc7d33628a149db3c09971c687082909590e07e12",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 12,
+      "role": "일지 상세",
+      "id": "a152ff40a1a8412dabb22f178ada2d2c",
+      "resource_name": "projects/2398877984889259331/screens/a152ff40a1a8412dabb22f178ada2d2c",
+      "title": "검수 v1 · 일지 상세 (모바일)",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "b5638cf8c2030253edda99db5ece811d3032b5bf312e2ccb7efb3e48548ecbbf",
+      "html_sha256": "6145d98aa32afadcf2ada51a047b65f36eec71c1335f53d9b793775f9d842f7f",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 13,
+      "role": "사진 있는 레슨 상세",
+      "id": "1bf44b75179a42da98f2196891068909",
+      "resource_name": "projects/2398877984889259331/screens/1bf44b75179a42da98f2196891068909",
+      "title": "검수 v4 · 사진 있는 레슨 상세",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1966
+      ],
+      "png_sha256": "b05e9bccd1d7e232f3327b1c95e24b4a05945c45b11334d073092bbcd69e88e3",
+      "html_sha256": "317dcaa9a667e0d70b7611bffc6fe0bf41aea67c9ea6cfe5b89342c19df4e924",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 14,
+      "role": "전체 기록",
+      "id": "cffbdf17a54c4457ac098670046b8145",
+      "resource_name": "projects/2398877984889259331/screens/cffbdf17a54c4457ac098670046b8145",
+      "title": "검수 v4 · 전체 기록",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "13e8ffe0445fc5d6990cb1a2f9cfa5a39cf38384b2a20eec95bd61b86dadc347",
+      "html_sha256": "102558e5dc282553520751e380e0bf8289ddd80defeedb83802cd38a5b87386f",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 15,
+      "role": "기록 불러오기 실패",
+      "id": "3e156dcbfddb40f8942ed09cce693bc2",
+      "resource_name": "projects/2398877984889259331/screens/3e156dcbfddb40f8942ed09cce693bc2",
+      "title": "전체 v1 · 기록 불러오기 실패 (모바일)",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "1cf88e86314a2bb4dcf37d7f35071db32e0114ef1ae8ed73feda5389fa42eb51",
+      "html_sha256": "b9515e1368811741f2dc41143b29d88985778392d0b0b2dcee5eff4ae4ca5b0e",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 16,
+      "role": "바로 촬영 준비",
+      "id": "d47ca9261e424149ba80af3575b81b8b",
+      "resource_name": "projects/2398877984889259331/screens/d47ca9261e424149ba80af3575b81b8b",
+      "title": "검수 v4 · 바로 촬영 준비",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "20032294691697dd7123b5da276838eb97eaeed2e9bb9c68005126d5798fef6d",
+      "html_sha256": "7776a0476e064a872ce5c32a6c744af32cb0568399e324b0f4a9ce0aa84a806f",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 17,
+      "role": "기준 기록 선택",
+      "id": "1c61482a80eb475d9d414ba34f2d32fc",
+      "resource_name": "projects/2398877984889259331/screens/1c61482a80eb475d9d414ba34f2d32fc",
+      "title": "검수 v4 · 기준 기록 선택",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "944fbb35a3a687bb9221007c83e16e0799afb66e2838fec8503452d1bef8d6b4",
+      "html_sha256": "6d1252b8801d4685ee51b7c628fb52432a457a14cafb561009811a61bc199dda",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 18,
+      "role": "카메라",
+      "id": "aa56d10d9f244f81997fc5b16f1d9685",
+      "resource_name": "projects/2398877984889259331/screens/aa56d10d9f244f81997fc5b16f1d9685",
+      "title": "검수 v3 · 카메라",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "e6b0cdef441c207e6d58648b82d46fdc8edfe335e7bdff622eada0974e4eb7be",
+      "html_sha256": "39b8c32281ec16ec9455f3e9148a1ee7ffb01a681b6759695bee57c161ac90f9",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 19,
+      "role": "첫 촬영 카메라",
+      "id": "3331ff7cd6dc4ad08ad1096aaeb40922",
+      "resource_name": "projects/2398877984889259331/screens/3331ff7cd6dc4ad08ad1096aaeb40922",
+      "title": "검수 v3 · 첫 촬영 카메라",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "1a73b4f345ed03af992ee40f95663875f4b3b82440df2c77e048dd859e334da5",
+      "html_sha256": "0ec9cff7fe2aeb050d229e318f6106e29a2c8efb5e782b10ba02777360b52771",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 20,
+      "role": "이전 사진 표시 설정",
+      "id": "80be52be9fe0440bb6a0d9af6ff56437",
+      "resource_name": "projects/2398877984889259331/screens/80be52be9fe0440bb6a0d9af6ff56437",
+      "title": "검수 v3 · 이전 사진 표시 설정",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "8919b6114fc6d26cb78f2f50dee4794a1e22db8025ab2401d26824c73757e490",
+      "html_sha256": "b80768920da551f8ac8cf493984ac1d952a716706947450674f211a8fbebdec4",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 21,
+      "role": "촬영 가이드",
+      "id": "9baa9e57253b4d81924ca4da2fd6bfa4",
+      "resource_name": "projects/2398877984889259331/screens/9baa9e57253b4d81924ca4da2fd6bfa4",
+      "title": "검수 v2 · 촬영 가이드 (모바일)",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "3c0cfd00edec3e2124bab0c08ba79ccd346cc4f804ec05d1f78f1441cf98403d",
+      "html_sha256": "fd63e31b56980b02cb8ec607d2122cd843c18dc491baa9f7a95fcbaad854f243",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 22,
+      "role": "카메라 권한 안내",
+      "id": "b108954a22824ec186e3808fa039e3d2",
+      "resource_name": "projects/2398877984889259331/screens/b108954a22824ec186e3808fa039e3d2",
+      "title": "검수 v1 · 카메라 권한 안내",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "866f9e22a2e7baa43a9ce60fc6a7b365260b8ab5f1c602b6e73e4cde77b273db",
+      "html_sha256": "d1284b8a9141fe82ddd46fb5ebf19249f691553825db15668f380dbc3de7873e",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 23,
+      "role": "촬영 확인",
+      "id": "c6f19dd141d842efaa4661a162375340",
+      "resource_name": "projects/2398877984889259331/screens/c6f19dd141d842efaa4661a162375340",
+      "title": "검수 v1 · 촬영 확인 (모바일)",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "7de2e66c209242fbe2a2b3c0d251ca3a2e197ca40ddf28b921be43df1ec646d2",
+      "html_sha256": "73711571203b7c12c45585ee873437ebdaca2de89d9a91e4410a67891775fdfc",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 24,
+      "role": "일부 방향 촬영",
+      "id": "f727ba89cadf45a8af45e26a2b4252b1",
+      "resource_name": "projects/2398877984889259331/screens/f727ba89cadf45a8af45e26a2b4252b1",
+      "title": "검수 v2 · 일부 방향 촬영 (모바일)",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "2b7378a3487b9053a1ac4ffe0166086d64a8f4ee01012cb3b51eb9ebfe50b1bf",
+      "html_sha256": "5e2efa24706ea661e99b843d0667a63f9dbce4532bb4f50d46dba2d66648b506",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 25,
+      "role": "사진 연결",
+      "id": "012b163841ac4ebca011ca574923013a",
+      "resource_name": "projects/2398877984889259331/screens/012b163841ac4ebca011ca574923013a",
+      "title": "전체 v1 · 사진 연결 (모바일)",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1872
+      ],
+      "png_sha256": "b1fcf130e3d1aaefcce6179be7d2101ce522c6f583d523648e932f4fad30fb6d",
+      "html_sha256": "45c9bf0f5215bcd518254c9c8933d1870561e41778645a5f52408582a2b608bd",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 26,
+      "role": "사진 상세",
+      "id": "cabc71d8a4614c28b7b5b442a6e20f6c",
+      "resource_name": "projects/2398877984889259331/screens/cabc71d8a4614c28b7b5b442a6e20f6c",
+      "title": "전체 v1 · 사진 상세",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "0fb2546409d713ceaef61183424eb458ff5ea56718fda66282c1594ae71777a6",
+      "html_sha256": "c5b8b03e855c4b0e068fb211722f2fbb941e78a2ea96dca0fb1615e4ed5ca0fd",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 27,
+      "role": "사진 불러오기 실패",
+      "id": "9852cf0d019d4d73889c546b1599937f",
+      "resource_name": "projects/2398877984889259331/screens/9852cf0d019d4d73889c546b1599937f",
+      "title": "검수 v2 · 사진 불러오기 실패",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "223089eccf3f890d2296a6f089d55923ed8ad8b0f4aaa4c17547233f21dfd92a",
+      "html_sha256": "b5655eafdf325f1e95c62efcb24e6066bda7ce21ef828e830e2a7f53dadf7f72",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 28,
+      "role": "비교 기록 선택",
+      "id": "a9f8e675fd094d9e9b41f7a57ba37caa",
+      "resource_name": "projects/2398877984889259331/screens/a9f8e675fd094d9e9b41f7a57ba37caa",
+      "title": "검수 v4 · 비교 기록 선택",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "3201070e266f0caa7adccc7495521fc5b678f6d2cf8e2596a29c7cfa3e8fb54e",
+      "html_sha256": "1b9ae01c85b63dca0ab01ce5e54f8c3d4c3d267473728549cc4d44db165ee77e",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 29,
+      "role": "비교할 사진 부족",
+      "id": "ef2edd70641445efad9b3bcee4cfdbe7",
+      "resource_name": "projects/2398877984889259331/screens/ef2edd70641445efad9b3bcee4cfdbe7",
+      "title": "전체 v1 · 비교할 사진 부족 (모바일)",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "3207385f3b79410081f1b5e58d91af77bc4b702f43bd8f4cc17d36b25868c1a7",
+      "html_sha256": "7047fe24506de40870e43ce151bda1913ddf73754d9c3fbf9c8c700b74ea6d60",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 30,
+      "role": "비교 방향 없음",
+      "id": "edda61ed290a4d50b01e18990503a357",
+      "resource_name": "projects/2398877984889259331/screens/edda61ed290a4d50b01e18990503a357",
+      "title": "전체 v1 · 비교 방향 없음 (모바일)",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "223fedc4da721fd5b7261ed5dc3cb269a20f0d4316b505e660db9f5b9eee0b57",
+      "html_sha256": "9516c2241d83f63c2d31dbc46170c5570ceba34b825b86f4e1ea60374c29765d",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 31,
+      "role": "나란히 비교",
+      "id": "965d50b197fd475388fa35cec7448dc0",
+      "resource_name": "projects/2398877984889259331/screens/965d50b197fd475388fa35cec7448dc0",
+      "title": "검수 v1 · 나란히 비교 (모바일)",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "25bd9bb12feeb7fc09b3e9be66dcdcd140df7be13091cb879d3e9ab9a3316b28",
+      "html_sha256": "d101da673518e9417350d978a4f3870280dbbea8c4104722bcd327035f5fdaa9",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 32,
+      "role": "겹쳐 비교",
+      "id": "9a9b4569cad14ea5ad7620bb7733e66d",
+      "resource_name": "projects/2398877984889259331/screens/9a9b4569cad14ea5ad7620bb7733e66d",
+      "title": "검수 v1 · 겹쳐 비교 (모바일)",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1786
+      ],
+      "png_sha256": "08b49031fb24b9fdb44b971479bbf41d48c982c67c89fcd6fdd6d0f39e47130f",
+      "html_sha256": "26afb4a0da829f659f9a40317507826147133a97c937de27b37f46b66823ab20",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 33,
+      "role": "공유 이미지 구성",
+      "id": "eca1893c725b41bb86203f19c854b0d2",
+      "resource_name": "projects/2398877984889259331/screens/eca1893c725b41bb86203f19c854b0d2",
+      "title": "검수 v2 · 공유 이미지 구성 (모바일)",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "5bfb0e41bfb67cbc7cc80ff288fcdacf3f11f7c05c7cc725f46011fcea74ecb8",
+      "html_sha256": "aae61fe86c720495a05d1e22af642b2fe2cfd221ca244465979551d4dbcc3682",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 34,
+      "role": "공유 미리보기",
+      "id": "8d2687a26d71471d8363a1a5f32bca8c",
+      "resource_name": "projects/2398877984889259331/screens/8d2687a26d71471d8363a1a5f32bca8c",
+      "title": "검수 v1 · 공유 미리보기 (모바일)",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "c293b94bc444c18cb3008783d3c69d67cc9df06058ab82ad92cd0ce248342e47",
+      "html_sha256": "b72b6680e4c796039e10c43c4c7cec1c7b1a9af06197913c71cfbc61c43d884e",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 35,
+      "role": "공유 이미지 생성 중",
+      "id": "6427a37ba3184de29d4007af23d8cc1c",
+      "resource_name": "projects/2398877984889259331/screens/6427a37ba3184de29d4007af23d8cc1c",
+      "title": "검수 v2 · 공유 이미지 생성 중",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "b1aad0e8cc80de5bd1a1466bb356c8eefd2b3cbf2048ba6d2352dce8f9ccbf76",
+      "html_sha256": "2acfdbaba50c5be92e7cf4b84c4f0b457283e09c870a41bd97527e7f15ad30a4",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 36,
+      "role": "공유 생성 실패",
+      "id": "be5557efc4c1486484dca50266b18f10",
+      "resource_name": "projects/2398877984889259331/screens/be5557efc4c1486484dca50266b18f10",
+      "title": "검수 v3 · 공유 생성 실패",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1880
+      ],
+      "png_sha256": "f0e8d428ef743ac378b7d96af864e628a64c5e9317da3ac1d937b1504d2f48e5",
+      "html_sha256": "b3ab8e656deb9ee25e40baf6ff211bef76c6e349a61c48c9c54fb652abecf8cd",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 37,
+      "role": "레슨 저장 중",
+      "id": "7709838ff16c4518ab3f2e295ec34a8d",
+      "resource_name": "projects/2398877984889259331/screens/7709838ff16c4518ab3f2e295ec34a8d",
+      "title": "검수 v2 · 레슨 저장 중",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "a3163eeed8f0db1e831dfe045340f651efa064ae11de2b8a1e404c77bf9800a0",
+      "html_sha256": "9d10e3b95da6be9b02f69d3591250c8f885a1e169d95a93cc21904aaf553412e",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 38,
+      "role": "저장 실패",
+      "id": "06595c58f2d9432f8e32b8eabd7e37e2",
+      "resource_name": "projects/2398877984889259331/screens/06595c58f2d9432f8e32b8eabd7e37e2",
+      "title": "검수 v4 · 저장 실패",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        2262
+      ],
+      "png_sha256": "426be165cee79833e05efeab5fc6703449efc9d933aa8a787bafc7b3a745828e",
+      "html_sha256": "71f02e228e268371329c97b68f67b3deb3e7b573d85d9f2027028cdb03c92c87",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 39,
+      "role": "작성 중 나가기",
+      "id": "7463576ba3b64d12b439faaf332cebcd",
+      "resource_name": "projects/2398877984889259331/screens/7463576ba3b64d12b439faaf332cebcd",
+      "title": "전체 v1 · 작성 중 나가기 (모바일)",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "ea78e9d8c75a6ec8b5d35fdf9e8369ebd104e0934563f186f69c52f506f7a65c",
+      "html_sha256": "ddafaf9b5204fff5f075009af20f3efc4420af7035b980deb78dfef29351eca6",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 40,
+      "role": "사진 삭제 확인",
+      "id": "34b296756d3246dd873083a5d0da61aa",
+      "resource_name": "projects/2398877984889259331/screens/34b296756d3246dd873083a5d0da61aa",
+      "title": "전체 v1 · 사진 삭제 확인 (모바일)",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "8cae2b692641c2fd69ccf26d247c3710f9ac9d3012b76fa4bcce989e2b09afcc",
+      "html_sha256": "58b65d02d5dff2888f5b6d26202f8ce11edbe750c95bad98b56c50c29f05af2a",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 41,
+      "role": "레슨 삭제 확인",
+      "id": "00c2850cbf4d4bea9ce887edca2926bb",
+      "resource_name": "projects/2398877984889259331/screens/00c2850cbf4d4bea9ce887edca2926bb",
+      "title": "전체 v1 · 삭제 확인 (모바일)",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "a1c87a28fdafff01f2510d5a8fb3431e606dd4d34b4e2a9bb808338caa101cc1",
+      "html_sha256": "ade31f6c513b0c8f2ca1639642d29c1c0713237d0ed1144325afed058c3d73f1",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 42,
+      "role": "회원 삭제 확인",
+      "id": "14317e5e88fd4c21b07fb273217636cb",
+      "resource_name": "projects/2398877984889259331/screens/14317e5e88fd4c21b07fb273217636cb",
+      "title": "전체 v1 · 회원 삭제 확인 (모바일)",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "c7c9d24e6affe869742bf098aa40f1d7a029b83414290778a9bea4f7e29adbaa",
+      "html_sha256": "eb4584746e12d1f50bae37576708c7804ce8ada4ebc3be3f58c52072c4073bc3",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 43,
+      "role": "기존 기록 연결",
+      "id": "cc82b4e5e007486c8d2549a704fb6116",
+      "resource_name": "projects/2398877984889259331/screens/cc82b4e5e007486c8d2549a704fb6116",
+      "title": "검수 v4 · 기존 기록 연결",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "4e525993831628c2a2999cd704fa977501d6caa74b97becce97362ca3c9df3d6",
+      "html_sha256": "3931de106be03ac83053d1862a5a1899393b66e6b7ae460e264ad1caa71aefca",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 44,
+      "role": "설정",
+      "id": "494bb84921334b2387420bddaec440e3",
+      "resource_name": "projects/2398877984889259331/screens/494bb84921334b2387420bddaec440e3",
+      "title": "검수 v2 · 설정 (모바일)",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1830
+      ],
+      "png_sha256": "340f94e947f416c6e84100a4636b6c765f3070a51755b294a727aed3c87f88a7",
+      "html_sha256": "bc805dedff4831316210a01c6a297d8c33828aed2d6973c108e8424ce1322b0d",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 45,
+      "role": "데이터 보관 안내",
+      "id": "8e922ffe55084af8ac63173422b2e4ee",
+      "resource_name": "projects/2398877984889259331/screens/8e922ffe55084af8ac63173422b2e4ee",
+      "title": "검수 v3 · 데이터 보관 안내 (모바일)",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "3a54354109cf446a6d5ae6c84d3e05585f879e8f2a990f3d63bfab1b9cce7c2a",
+      "html_sha256": "fd95fac7c57ea5c456916e7e025ddb63f5828f06cd47477b008d46a32620bd46",
+      "visual_review": "rendered screenshot inspected; static design"
+    },
+    {
+      "number": 46,
+      "role": "개인정보 안내",
+      "id": "53f4bd1e29364897bc356fa40a850323",
+      "resource_name": "projects/2398877984889259331/screens/53f4bd1e29364897bc356fa40a850323",
+      "title": "검수 v2 · 개인정보 안내 (모바일)",
+      "device_type": "MOBILE",
+      "png_size": [
+        780,
+        1768
+      ],
+      "png_sha256": "2d9f240da11bbf97fd98ed44d37e1696c16dbc85dc1536257e550624c4fd7bd5",
+      "html_sha256": "b4db1f607831fb4df9af3f99d933bb3f7d8ed34956234aedb6d230071dd8b8d3",
+      "visual_review": "rendered screenshot inspected; static design"
+    }
+  ]
+}

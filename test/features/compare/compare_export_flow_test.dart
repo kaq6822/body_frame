@@ -1,9 +1,9 @@
-import 'package:body_frame/core/models/models.dart';
-import 'package:body_frame/core/providers.dart';
-import 'package:body_frame/features/compare/compare_export_screen.dart';
-import 'package:body_frame/features/compare/services/compare_export_sink.dart';
-import 'package:body_frame/features/settings/providers/settings_providers.dart';
-import 'package:body_frame/features/settings/services/app_settings_service.dart';
+import 'package:bodymark/core/models/models.dart';
+import 'package:bodymark/core/providers.dart';
+import 'package:bodymark/features/compare/compare_export_screen.dart';
+import 'package:bodymark/features/compare/services/compare_export_sink.dart';
+import 'package:bodymark/features/settings/providers/settings_providers.dart';
+import 'package:bodymark/features/settings/services/app_settings_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -114,8 +114,8 @@ void main() {
       find.byKey(const ValueKey(CompareExportScreen.screenId)),
       findsOneWidget,
     );
-    // 대상 라벨은 기본 포함이다.
-    expect(find.text('동생'), findsOneWidget);
+    // 회원 이름은 기본 비포함이다.
+    expect(find.text('동생'), findsNothing);
 
     // 라벨 포함 토글을 끄면 미리보기에서 사라진다.
     // SingleChildScrollView 콘텐츠가 테스트 뷰포트보다 길므로 탭 전에
@@ -127,7 +127,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(labelToggle);
     await tester.pumpAndSettle();
-    expect(find.text('동생'), findsNothing);
+    expect(find.text('동생'), findsOneWidget);
 
     // 생성 전 상태 확인.
     expect(find.text('이미지를 생성해 주세요.'), findsOneWidget);
@@ -271,6 +271,10 @@ void main() {
     records.records['r2'] = records.records['r2']!.copyWith(label: '동생');
 
     await openExport(tester);
+    final toggle = find.byKey(const ValueKey('compare.export.label.toggle'));
+    await tester.ensureVisible(toggle);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
 
     expect(find.text('동생'), findsWidgets);
   });
@@ -279,6 +283,10 @@ void main() {
     records.records['r2'] = records.records['r2']!.copyWith(label: '누나');
 
     await openExport(tester);
+    final toggle = find.byKey(const ValueKey('compare.export.label.toggle'));
+    await tester.ensureVisible(toggle);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
 
     expect(find.text('이전: 동생 · 이후: 누나'), findsOneWidget);
   });
@@ -425,7 +433,7 @@ void main() {
 
     expect(find.text('기본 내보내기 옵션으로 저장했습니다.'), findsOneWidget);
     expect(settingsService.saveAttempts, 1);
-    expect(settingsService.current.defaultExportOptions.includeLabel, isFalse);
+    expect(settingsService.current.defaultExportOptions.includeLabel, isTrue);
     expect(settingsService.current.defaultExportOptions.includeMemo, isTrue);
     // 내보내기 옵션 외의 설정은 건드리지 않는다.
     expect(settingsService.current.defaultGrid.spacing, 55);

@@ -1,4 +1,4 @@
-import 'package:body_frame/core/korean_text.dart';
+import 'package:bodymark/core/korean_text.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -29,9 +29,7 @@ void main() {
     for (final metrics in painter.computeLineMetrics()) {
       // 줄 끝 지점을 오른쪽 끝 살짝 안쪽 좌표로 되짚어 경계를 찾는다.
       final end = painter
-          .getPositionForOffset(
-            Offset(metrics.width, metrics.baseline),
-          )
+          .getPositionForOffset(Offset(metrics.width, metrics.baseline))
           .offset;
       if (end <= start) continue;
       lines.add(text.substring(start, end));
@@ -60,9 +58,9 @@ void main() {
     });
 
     test('영문과 숫자에는 보조 문자를 넣지 않는다', () {
-      // 영문은 이미 단어 단위로 끊긴다. 끼워 넣으면 문자열이 부풀고 'Body Frame'
+      // 영문은 이미 단어 단위로 끊긴다. 끼워 넣으면 문자열이 부풀고 'BodyMark'
       // 같은 고유명사 검색과 복사가 어긋난다.
-      expect(keepPhrasesWhole('Body Frame'), 'Body Frame');
+      expect(keepPhrasesWhole('BodyMark'), 'BodyMark');
       expect(keepPhrasesWhole('iOS 18'), 'iOS 18');
     });
 
@@ -111,22 +109,16 @@ void main() {
     });
 
     test('단계 이름 안의 공백은 줄바꿈되지 않아 단계가 쪼개지지 않는다', () {
-      final joined = joinBreadcrumb(['설정', 'Body Frame']);
+      final joined = joinBreadcrumb(['설정', 'App Settings']);
 
-      // 'Body Frame'이 두 줄로 갈라지면 경로의 한 단계가 쪼개진 것이다.
-      expect(joined.contains('Body\u00a0Frame'), isTrue);
-      expect(joined.contains('Body Frame'), isFalse);
-      expect(visible(joined), '설정 › Body Frame');
+      // 단계 이름의 공백을 줄바꿈 없는 공백으로 바꾼다.
+      expect(joined.contains('App\u00a0Settings'), isTrue);
+      expect(joined.contains('App Settings'), isFalse);
+      expect(visible(joined), '설정 › App Settings');
     });
 
     test('줄이 넘어갈 때 다음 줄이 구분자로 시작하지 않는다', () {
-      final path = joinBreadcrumb([
-        '설정',
-        '애플리케이션',
-        'Body Frame',
-        '권한',
-        '카메라',
-      ]);
+      final path = joinBreadcrumb(['설정', '애플리케이션', 'BodyMark', '권한', '카메라']);
 
       final lines = layoutLines(path, 180);
       expect(lines.length, greaterThan(1), reason: '여러 줄이어야 비교가 의미 있다');

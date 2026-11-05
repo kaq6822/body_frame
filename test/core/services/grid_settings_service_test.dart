@@ -1,5 +1,5 @@
-import 'package:body_frame/core/models/models.dart';
-import 'package:body_frame/core/services/grid_settings_service.dart';
+import 'package:bodymark/core/models/models.dart';
+import 'package:bodymark/core/services/grid_settings_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

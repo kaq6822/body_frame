@@ -1,4 +1,4 @@
-import 'package:body_frame/features/capture/camera/capture_camera_controller.dart';
+import 'package:bodymark/features/capture/camera/capture_camera_controller.dart';
 import 'package:flutter/widgets.dart';
 
 /// 위젯 테스트용 [CaptureCameraController] 대역.

@@ -12,7 +12,7 @@ class CompareMissingContext extends StatelessWidget {
 
   const CompareMissingContext({
     super.key,
-    this.message = '비교 날짜 선택 화면에서 다시 진입해 주세요.',
+    this.message = '회원 상세에서 비교할 사진 기록을 다시 선택해주세요.',
     this.backButtonId = 'compare.missingContext.backToDates.button',
   });
 
@@ -28,11 +28,11 @@ class CompareMissingContext extends StatelessWidget {
             const SizedBox(height: 12),
             Semantics(
               identifier: backButtonId,
-              label: '비교 날짜 선택으로 이동',
+              label: '회원 선택으로 이동',
               child: ElevatedButton(
                 key: ValueKey(backButtonId),
                 onPressed: () => context.goNamed(AppRoutes.compareDates),
-                child: const Text('비교 날짜 선택으로 이동'),
+                child: const Text('회원 선택으로 이동'),
               ),
             ),
           ],

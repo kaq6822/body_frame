@@ -1,6 +1,6 @@
-import 'package:body_frame/core/models/models.dart';
-import 'package:body_frame/core/widgets/grid_painter.dart';
-import 'package:body_frame/features/compare/widgets/compare_grid_overlay.dart';
+import 'package:bodymark/core/models/models.dart';
+import 'package:bodymark/core/widgets/grid_painter.dart';
+import 'package:bodymark/features/compare/widgets/compare_grid_overlay.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 

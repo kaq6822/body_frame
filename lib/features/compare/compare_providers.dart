@@ -55,7 +55,7 @@ final compareViewBundleProvider =
       if (beforePhoto == null || afterPhoto == null) {
         throw StateError('비교할 사진을 찾을 수 없습니다.');
       }
-      if (beforePhoto.recordId == afterPhoto.recordId) {
+      if (beforePhoto.id == afterPhoto.id) {
         throw StateError('같은 촬영 기록의 사진끼리는 비교할 수 없습니다.');
       }
 
@@ -65,6 +65,10 @@ final compareViewBundleProvider =
         throw StateError('촬영 기록을 찾을 수 없습니다.');
       }
 
+      if (beforeRecord.memberId != afterRecord.memberId ||
+          beforePhoto.direction != afterPhoto.direction) {
+        throw StateError('같은 회원·같은 방향의 사진만 비교할 수 있습니다.');
+      }
       final grid = await grids.load();
 
       return CompareViewBundle(

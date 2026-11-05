@@ -1,9 +1,9 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 
-import 'package:body_frame/core/models/models.dart';
-import 'package:body_frame/features/compare/compare_export_models.dart';
-import 'package:body_frame/features/compare/widgets/compare_layered_pane.dart';
+import 'package:bodymark/core/models/models.dart';
+import 'package:bodymark/features/compare/compare_export_models.dart';
+import 'package:bodymark/features/compare/widgets/compare_layered_pane.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -98,9 +98,7 @@ void main() {
     }
   });
 
-  testWidgets('내보내기 프레임의 슬라이더는 경계선만 남기고 드래그 손잡이를 그리지 않는다', (
-    tester,
-  ) async {
+  testWidgets('내보내기 프레임의 슬라이더는 경계선만 남기고 드래그 손잡이를 그리지 않는다', (tester) async {
     final photo = BodyPhoto(
       id: 'wide',
       recordId: 'r1',

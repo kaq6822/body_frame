@@ -1,7 +1,7 @@
 import 'dart:ui' as ui;
 
-import 'package:body_frame/core/models/models.dart';
-import 'package:body_frame/core/widgets/grid_painter.dart';
+import 'package:bodymark/core/models/models.dart';
+import 'package:bodymark/core/widgets/grid_painter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -24,7 +24,10 @@ void main() {
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder);
 
-      expect(() => painter.paint(canvas, const Size(360, 640)), returnsNormally);
+      expect(
+        () => painter.paint(canvas, const Size(360, 640)),
+        returnsNormally,
+      );
 
       recorder.endRecording().dispose();
     });
@@ -34,7 +37,10 @@ void main() {
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder);
 
-      expect(() => painter.paint(canvas, const Size(360, 640)), returnsNormally);
+      expect(
+        () => painter.paint(canvas, const Size(360, 640)),
+        returnsNormally,
+      );
 
       recorder.endRecording().dispose();
     });
@@ -54,7 +60,10 @@ void main() {
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder);
 
-      expect(() => painter.paint(canvas, const Size(200, 200)), returnsNormally);
+      expect(
+        () => painter.paint(canvas, const Size(200, 200)),
+        returnsNormally,
+      );
 
       recorder.endRecording().dispose();
     });

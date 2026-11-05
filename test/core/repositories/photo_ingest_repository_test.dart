@@ -1,9 +1,9 @@
 import 'dart:io';
 
-import 'package:body_frame/core/database/app_database.dart';
-import 'package:body_frame/core/models/models.dart';
-import 'package:body_frame/core/repositories/photo_ingest_repository.dart';
-import 'package:body_frame/core/services/photo_storage_service.dart';
+import 'package:bodymark/core/database/app_database.dart';
+import 'package:bodymark/core/models/models.dart';
+import 'package:bodymark/core/repositories/photo_ingest_repository.dart';
+import 'package:bodymark/core/services/photo_storage_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -61,14 +61,20 @@ void main() {
       where: 'id = ?',
       whereArgs: [created.id],
     );
-    final photoRows = await db.query(AppDatabase.tableBodyPhotos, orderBy: 'id');
+    final photoRows = await db.query(
+      AppDatabase.tableBodyPhotos,
+      orderBy: 'id',
+    );
     expect(recordRows, hasLength(1));
     expect(photoRows, hasLength(2));
     expect(
       photoRows.map((row) => row['file_path']),
       everyElement(startsWith('photos/202601/')),
     );
-    expect(photoRows.map((row) => row['file_path']), isNot(contains(firstPath)));
+    expect(
+      photoRows.map((row) => row['file_path']),
+      isNot(contains(firstPath)),
+    );
   });
 
   test('두 번째 사진 conflict 시 앞선 새 기록과 사진도 실제 transaction에서 rollback한다', () async {
@@ -165,10 +171,7 @@ void main() {
 
   test('사진이 하나도 없으면 등록하지 않는다', () async {
     await expectLater(
-      ingest.insertPrepared(
-        newRecords: [_record('r-empty')],
-        photos: const [],
-      ),
+      ingest.insertPrepared(newRecords: [_record('r-empty')], photos: const []),
       throwsArgumentError,
     );
   });

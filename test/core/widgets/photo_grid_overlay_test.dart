@@ -1,5 +1,5 @@
-import 'package:body_frame/core/models/models.dart';
-import 'package:body_frame/core/widgets/photo_grid_overlay.dart';
+import 'package:bodymark/core/models/models.dart';
+import 'package:bodymark/core/widgets/photo_grid_overlay.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 

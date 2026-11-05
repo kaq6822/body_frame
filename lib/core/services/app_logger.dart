@@ -69,7 +69,7 @@ class AppLogger {
 
     developer.log(
       jsonEncode(entry),
-      name: 'body_frame',
+      name: 'bodymark',
       level: _levelValue(level),
       stackTrace: stack,
     );

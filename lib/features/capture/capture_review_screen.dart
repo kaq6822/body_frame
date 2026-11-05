@@ -7,13 +7,14 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
-import 'package:body_frame/core/models/models.dart';
-import 'package:body_frame/core/providers.dart';
-import 'package:body_frame/core/services/app_logger.dart';
-import 'package:body_frame/core/theme/app_tokens.dart';
-import 'package:body_frame/core/widgets/photo_grid_overlay.dart';
+import 'package:bodymark/core/models/models.dart';
+import 'package:bodymark/core/providers.dart';
+import 'package:bodymark/core/services/app_logger.dart';
+import 'package:bodymark/core/theme/app_tokens.dart';
+import 'package:bodymark/core/widgets/photo_grid_overlay.dart';
 import '../records/providers/records_providers.dart';
 import 'providers/capture_session_provider.dart';
+import '../members/member_providers.dart';
 import 'utils/image_meta.dart';
 import 'utils/temporary_capture.dart';
 import 'widgets/async_status_indicator.dart';
@@ -87,6 +88,10 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
   }
 
   Future<void> _save(CaptureSessionState session) async {
+    if (ref.read(lessonCaptureContextProvider) != null) {
+      context.pop(session.capturedShots);
+      return;
+    }
     final captured = session.capturedShots;
     if (captured.isEmpty) return;
 
@@ -236,55 +241,57 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
             ),
           ),
           const SizedBox(height: 20),
-          const Text('촬영일', style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Semantics(
-            identifier: 'capture.review.date.field',
-            label: '촬영일 $dateLabel, 탭하여 변경',
-            button: true,
-            child: OutlinedButton(
-              key: const ValueKey('capture.review.date.field'),
-              onPressed: () => _pickDate(session.shotDate),
-              child: Text(dateLabel),
-            ),
-          ),
-          const SizedBox(height: 16),
-          const Text('대상 라벨', style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Semantics(
-            identifier: 'capture.review.label.field',
-            label: '촬영 대상 라벨',
-            child: TextField(
-              key: const ValueKey('capture.review.label.field'),
-              controller: _labelController,
-              // 다시 촬영을 누르면 이 화면이 닫히고 새 State로 다시 열린다.
-              // 입력을 세션에 남겨 두지 않으면 그때 조용히 사라진다.
-              onChanged: (value) =>
-                  ref.read(captureSessionProvider.notifier).setLabel(value),
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                hintText: '비워두면 내 기록으로 저장됩니다',
+          if (ref.watch(lessonCaptureContextProvider) == null) ...[
+            const Text('촬영일', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Semantics(
+              identifier: 'capture.review.date.field',
+              label: '촬영일 $dateLabel, 탭하여 변경',
+              button: true,
+              child: OutlinedButton(
+                key: const ValueKey('capture.review.date.field'),
+                onPressed: () => _pickDate(session.shotDate),
+                child: Text(dateLabel),
               ),
             ),
-          ),
-          const SizedBox(height: 16),
-          const Text('메모', style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Semantics(
-            identifier: 'capture.review.memo.field',
-            label: '기록 메모',
-            child: TextField(
-              key: const ValueKey('capture.review.memo.field'),
-              controller: _memoController,
-              maxLines: 3,
-              onChanged: (value) =>
-                  ref.read(captureSessionProvider.notifier).setMemo(value),
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                hintText: '기록에 대한 메모(선택)',
+            const SizedBox(height: 16),
+            const Text('대상 라벨', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Semantics(
+              identifier: 'capture.review.label.field',
+              label: '촬영 대상 라벨',
+              child: TextField(
+                key: const ValueKey('capture.review.label.field'),
+                controller: _labelController,
+                // 다시 촬영을 누르면 이 화면이 닫히고 새 State로 다시 열린다.
+                // 입력을 세션에 남겨 두지 않으면 그때 조용히 사라진다.
+                onChanged: (value) =>
+                    ref.read(captureSessionProvider.notifier).setLabel(value),
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: '비워두면 내 기록으로 저장됩니다',
+                ),
               ),
             ),
-          ),
+            const SizedBox(height: 16),
+            const Text('메모', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Semantics(
+              identifier: 'capture.review.memo.field',
+              label: '기록 메모',
+              child: TextField(
+                key: const ValueKey('capture.review.memo.field'),
+                controller: _memoController,
+                maxLines: 3,
+                onChanged: (value) =>
+                    ref.read(captureSessionProvider.notifier).setMemo(value),
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: '기록에 대한 메모(선택)',
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 24),
           AsyncStatusIndicator(
             statusId: 'screen.capture.review.status',
@@ -300,14 +307,20 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
             child: Semantics(
               identifier: 'capture.save.button',
               button: true,
-              label: '${session.capturedCount}장 모두 저장',
+              label: ref.watch(lessonCaptureContextProvider) == null
+                  ? '${session.capturedCount}장 모두 저장'
+                  : '${session.capturedCount}장 레슨에 연결',
               enabled: _saveStatus != AsyncStatus.busy,
               child: FilledButton(
                 key: const ValueKey('capture.save.button'),
                 onPressed: _saveStatus == AsyncStatus.busy
                     ? null
                     : () => _save(session),
-                child: Text('${session.capturedCount}장 모두 저장'),
+                child: Text(
+                  ref.watch(lessonCaptureContextProvider) == null
+                      ? '${session.capturedCount}장 모두 저장'
+                      : '${session.capturedCount}장 레슨에 연결',
+                ),
               ),
             ),
           ),

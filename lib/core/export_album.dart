@@ -4,4 +4,4 @@
 /// 않으면 gal은 보관함 루트에 저장하므로, 한쪽만 지정하면 같은 앱에서 내보낸
 /// 결과물이 `Pictures/BodyFrame/`과 `Pictures/`로 흩어진다. 사용자가 내보낸
 /// 기록을 한곳에서 찾을 수 있도록 이 상수를 공유한다.
-const String kExportAlbumName = 'BodyFrame';
+const String kExportAlbumName = 'BodyMark';

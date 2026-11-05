@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:body_frame/core/models/models.dart';
+import 'package:bodymark/core/models/models.dart';
 
 /// 촬영 방향(정면/좌측면/우측면/후면/기타) 선택 위젯.
 ///

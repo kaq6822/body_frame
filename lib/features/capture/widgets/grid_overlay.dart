@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:body_frame/core/models/models.dart';
+import 'package:bodymark/core/models/models.dart';
 import '../../../core/widgets/grid_painter.dart';
 
 /// 카메라 미리보기 위에 겹치는 격자 오버레이.

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:body_frame/core/services/app_logger.dart';
+import 'package:bodymark/core/services/app_logger.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

@@ -1,3 +1,4 @@
+import '../capture/utils/image_meta.dart' show readExifShotDate;
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
@@ -202,6 +203,7 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
     // 기록 목록과 홈 카메라의 썸네일이 같은 provider를 읽는다. 사진을 바꾸거나
     // 지운 사실을 알리지 않으면 목록이 옛 사진을 계속 그린다.
     ref.invalidate(timelineProvider);
+    ref.invalidate(recordPhotosProvider(widget.detailKey.recordId));
   }
 
   Future<void> _saveMemo() async {
@@ -380,6 +382,7 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
       final bytes = await picked.readAsBytes();
       final size = await _decodeImageSize(bytes);
       final orientation = await _readOrientation(bytes);
+      final capturedAt = await readExifShotDate(bytes);
       final storage = ref.read(photoStorageServiceProvider);
       final newPath = await storage.saveOriginal(
         shotAt: widget.data.record.shotAt,
@@ -399,6 +402,8 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
       await repo.update(
         latestPhoto.copyWith(
           filePath: newPath,
+          capturedAt: capturedAt,
+          clearCapturedAt: capturedAt == null,
           width: size.$1,
           height: size.$2,
           orientation: orientation,
@@ -500,7 +505,7 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
     try {
       final sink = ref.read(photoExportSinkProvider);
       final name =
-          'body_frame_${photo.id}_${DateTime.now().microsecondsSinceEpoch}';
+          'bodymark_${photo.id}_${DateTime.now().microsecondsSinceEpoch}';
       if (includeGrid) {
         final sourceBytes = await File(photo.filePath).readAsBytes();
         final png = await ref
@@ -608,6 +613,7 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
       await repo.delete(photo.id);
       logger.phase('photo.delete', LogPhase.success, context: {'id': photo.id});
       ref.invalidate(timelineProvider);
+      ref.invalidate(recordPhotosProvider(widget.detailKey.recordId));
       if (!mounted) return;
       setState(() => _deleteState = _OpState.success);
       Navigator.of(context).pop(true);

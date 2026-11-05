@@ -14,7 +14,7 @@ class ExportImageOptions {
 
   const ExportImageOptions({
     this.includeShotDate = true,
-    this.includeLabel = true,
+    this.includeLabel = false,
     this.includeMemo = false,
     this.includeGrid = true,
   });
@@ -45,7 +45,7 @@ class ExportImageOptions {
   factory ExportImageOptions.fromMap(Map<String, dynamic> map) {
     return ExportImageOptions(
       includeShotDate: (map['includeShotDate'] as bool?) ?? true,
-      includeLabel: (map['includeLabel'] as bool?) ?? true,
+      includeLabel: (map['includeLabel'] as bool?) ?? false,
       includeMemo: (map['includeMemo'] as bool?) ?? false,
       includeGrid: (map['includeGrid'] as bool?) ?? true,
     );
@@ -65,8 +65,15 @@ class CaptureOptions {
 
   /// 카운트다운 중 소리·햅틱 피드백. 화면을 보고 있지 않을 때 남은 시간을 알린다.
   final bool countdownFeedback;
+  final bool previousGuide;
+  final double guideOpacity;
 
-  const CaptureOptions({this.timerSeconds = 0, this.countdownFeedback = true});
+  const CaptureOptions({
+    this.timerSeconds = 0,
+    this.countdownFeedback = true,
+    this.previousGuide = true,
+    this.guideOpacity = 0.3,
+  });
 
   static const CaptureOptions defaults = CaptureOptions();
 
@@ -77,9 +84,16 @@ class CaptureOptions {
   static int normalizeTimer(int value) =>
       timerChoices.contains(value) ? value : 0;
 
-  CaptureOptions copyWith({int? timerSeconds, bool? countdownFeedback}) {
+  CaptureOptions copyWith({
+    int? timerSeconds,
+    bool? countdownFeedback,
+    bool? previousGuide,
+    double? guideOpacity,
+  }) {
     return CaptureOptions(
       timerSeconds: timerSeconds ?? this.timerSeconds,
+      previousGuide: previousGuide ?? this.previousGuide,
+      guideOpacity: guideOpacity ?? this.guideOpacity,
       countdownFeedback: countdownFeedback ?? this.countdownFeedback,
     );
   }
@@ -87,12 +101,19 @@ class CaptureOptions {
   Map<String, dynamic> toMap() => {
     'timerSeconds': timerSeconds,
     'countdownFeedback': countdownFeedback,
+    'previousGuide': previousGuide,
+    'guideOpacity': guideOpacity,
   };
 
   factory CaptureOptions.fromMap(Map<String, dynamic> map) {
     return CaptureOptions(
       timerSeconds: normalizeTimer((map['timerSeconds'] as int?) ?? 0),
       countdownFeedback: (map['countdownFeedback'] as bool?) ?? true,
+      previousGuide: (map['previousGuide'] as bool?) ?? true,
+      guideOpacity: ((map['guideOpacity'] as num?)?.toDouble() ?? 0.3).clamp(
+        0.0,
+        1.0,
+      ),
     );
   }
 
@@ -100,10 +121,13 @@ class CaptureOptions {
   bool operator ==(Object other) =>
       other is CaptureOptions &&
       other.timerSeconds == timerSeconds &&
-      other.countdownFeedback == countdownFeedback;
+      other.countdownFeedback == countdownFeedback &&
+      other.previousGuide == previousGuide &&
+      other.guideOpacity == guideOpacity;
 
   @override
-  int get hashCode => Object.hash(timerSeconds, countdownFeedback);
+  int get hashCode =>
+      Object.hash(timerSeconds, countdownFeedback, previousGuide, guideOpacity);
 }
 
 /// 앱 전역 설정. shared_preferences에 JSON으로 영속화한다.

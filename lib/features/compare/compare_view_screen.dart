@@ -1,7 +1,7 @@
+import '../members/ui.dart' show lessonDate;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 import '../../core/models/models.dart';
 import '../../core/providers.dart';
@@ -12,8 +12,6 @@ import 'widgets/compare_layered_pane.dart';
 import 'widgets/compare_missing_context.dart';
 import 'widgets/compare_photo_pane.dart';
 import 'widgets/labeled_switch.dart';
-
-final _dateFormat = DateFormat('yyyy.MM.dd');
 
 /// 전후 사진 비교 화면.
 ///
@@ -210,9 +208,7 @@ class _CompareViewBodyState extends ConsumerState<_CompareViewBody> {
                       Expanded(
                         child: ComparePhotoPane(
                           label: '이전',
-                          dateLabel: _dateFormat.format(
-                            bundle.beforeRecord.shotAt,
-                          ),
+                          dateLabel: lessonDate(bundle.beforeRecord.shotAt),
                           photo: bundle.beforePhoto,
                           controller: _beforeCtrl,
                           interactive: true,
@@ -226,9 +222,7 @@ class _CompareViewBodyState extends ConsumerState<_CompareViewBody> {
                       Expanded(
                         child: ComparePhotoPane(
                           label: '이후',
-                          dateLabel: _dateFormat.format(
-                            bundle.afterRecord.shotAt,
-                          ),
+                          dateLabel: lessonDate(bundle.afterRecord.shotAt),
                           photo: bundle.afterPhoto,
                           controller: _afterCtrl,
                           interactive: true,
@@ -246,12 +240,8 @@ class _CompareViewBodyState extends ConsumerState<_CompareViewBody> {
                     mode: _mode,
                     beforePhoto: bundle.beforePhoto,
                     afterPhoto: bundle.afterPhoto,
-                    beforeDateLabel: _dateFormat.format(
-                      bundle.beforeRecord.shotAt,
-                    ),
-                    afterDateLabel: _dateFormat.format(
-                      bundle.afterRecord.shotAt,
-                    ),
+                    beforeDateLabel: lessonDate(bundle.beforeRecord.shotAt),
+                    afterDateLabel: lessonDate(bundle.afterRecord.shotAt),
                     beforeController: _beforeCtrl,
                     afterController: _afterCtrl,
                     interactive: true,

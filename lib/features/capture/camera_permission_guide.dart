@@ -11,8 +11,8 @@ import 'dart:io';
 List<String> cameraPermissionSettingsPath({bool? isIOS}) {
   final ios = isIOS ?? Platform.isIOS;
   return ios
-      ? const ['설정', '앱', 'Body Frame', '카메라']
-      : const ['설정', '앱', 'Body Frame', '권한', '카메라'];
+      ? const ['설정', '앱', 'BodyMark', '카메라']
+      : const ['설정', '앱', 'BodyMark', '권한', '카메라'];
 }
 
 /// 경로 안내 위에 붙는 한 줄.

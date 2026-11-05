@@ -1,4 +1,4 @@
-package com.bodyframe.body_frame
+package com.bodymark.bodymark
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 

@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:body_frame/core/services/app_image_picker.dart';
+import 'package:bodymark/core/services/app_image_picker.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -205,9 +205,7 @@ void main() {
     );
     final store = MemoryImagePickerRequestStore(expected);
     final picker = FakeAppImagePicker(
-      lostResponse: LostDataResponse(
-        file: XFile('/cache/replacement.jpg'),
-      ),
+      lostResponse: LostDataResponse(file: XFile('/cache/replacement.jpg')),
       store: store,
     )..throwOnRetrieve = true;
     final coordinator = AppImagePickerCoordinator(

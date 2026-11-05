@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:body_frame/core/models/models.dart';
+import 'package:bodymark/core/models/models.dart';
 
 /// 한 세션에서 순서대로 촬영하는 방향. 정면 → 좌측면 → 우측면 → 후면.
 const List<BodyDirection> kSessionDirections = [
@@ -17,11 +17,13 @@ const List<BodyDirection> kSessionDirections = [
 class CaptureShot {
   final BodyDirection direction;
   final String? imagePath;
+  final DateTime? capturedAt;
   final GridSettings? gridSettingsAtCapture;
 
   const CaptureShot({
     required this.direction,
     this.imagePath,
+    this.capturedAt,
     this.gridSettingsAtCapture,
   });
 
@@ -29,11 +31,13 @@ class CaptureShot {
 
   CaptureShot copyWith({
     String? imagePath,
+    DateTime? capturedAt,
     bool clearImage = false,
     GridSettings? gridSettingsAtCapture,
   }) {
     return CaptureShot(
       direction: direction,
+      capturedAt: capturedAt ?? this.capturedAt,
       imagePath: clearImage ? null : (imagePath ?? this.imagePath),
       gridSettingsAtCapture: clearImage
           ? null
@@ -132,11 +136,16 @@ class CaptureSessionNotifier extends StateNotifier<CaptureSessionState> {
   /// 이미 찍힌 단계를 다시 찍으면 **밀려난 이전 임시 파일 경로**를 돌려준다.
   /// 그 파일은 더 이상 세션에 없어 저장 시점의 정리 대상에도 들지 않으므로,
   /// 호출부가 받아서 지워야 카메라 캐시에 고아 파일이 남지 않는다.
-  String? captureCurrent(String path, {GridSettings? gridSettings}) {
+  String? captureCurrent(
+    String path, {
+    GridSettings? gridSettings,
+    DateTime? capturedAt,
+  }) {
     final replaced = state.shots[state.currentIndex].imagePath;
     final shots = [...state.shots];
     shots[state.currentIndex] = shots[state.currentIndex].copyWith(
       imagePath: path,
+      capturedAt: capturedAt ?? DateTime.now(),
       gridSettingsAtCapture: gridSettings,
     );
     final next = state.copyWith(shots: shots).nextUncapturedIndex;

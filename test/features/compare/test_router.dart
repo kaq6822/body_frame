@@ -1,8 +1,8 @@
-import 'package:body_frame/core/router/app_routes.dart';
-import 'package:body_frame/features/compare/compare_dates_screen.dart';
-import 'package:body_frame/features/compare/compare_direction_screen.dart';
-import 'package:body_frame/features/compare/compare_export_screen.dart';
-import 'package:body_frame/features/compare/compare_view_screen.dart';
+import 'package:bodymark/core/router/app_routes.dart';
+import 'package:bodymark/features/compare/compare_dates_screen.dart';
+import 'package:bodymark/features/compare/compare_direction_screen.dart';
+import 'package:bodymark/features/compare/compare_export_screen.dart';
+import 'package:bodymark/features/compare/compare_view_screen.dart';
 import 'package:go_router/go_router.dart';
 
 /// compare 화면 테스트 전용 라우터.

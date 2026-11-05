@@ -1,5 +1,5 @@
-import 'package:body_frame/core/models/models.dart';
-import 'package:body_frame/features/settings/services/app_settings_service.dart';
+import 'package:bodymark/core/models/models.dart';
+import 'package:bodymark/features/settings/services/app_settings_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -14,7 +14,7 @@ void main() {
 
       expect(settings.defaultGrid, GridSettings.defaults);
       expect(settings.defaultExportOptions.includeShotDate, isTrue);
-      expect(settings.defaultExportOptions.includeLabel, isTrue);
+      expect(settings.defaultExportOptions.includeLabel, isFalse);
       expect(settings.defaultExportOptions.includeMemo, isFalse);
       // 앱 안에서 사진을 늘 격자와 함께 보므로 내보낼 때도 격자가 기본이다.
       expect(settings.defaultExportOptions.includeGrid, isTrue);

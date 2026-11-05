@@ -1,4 +1,4 @@
-import 'package:body_frame/features/capture/camera_permission_guide.dart';
+import 'package:bodymark/features/capture/camera_permission_guide.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// 카메라 권한 설정 경로 검증.
@@ -11,7 +11,7 @@ void main() {
       expect(cameraPermissionSettingsPath(isIOS: true), [
         '설정',
         '앱',
-        'Body Frame',
+        'BodyMark',
         '카메라',
       ]);
     });
@@ -20,7 +20,7 @@ void main() {
       expect(cameraPermissionSettingsPath(isIOS: false), [
         '설정',
         '앱',
-        'Body Frame',
+        'BodyMark',
         '권한',
         '카메라',
       ]);
@@ -37,7 +37,7 @@ void main() {
     test('앱 이름은 두 플랫폼의 표시 이름과 같다', () {
       // Info.plist의 CFBundleDisplayName, AndroidManifest의 android:label 값.
       for (final ios in [true, false]) {
-        expect(cameraPermissionSettingsPath(isIOS: ios), contains('Body Frame'));
+        expect(cameraPermissionSettingsPath(isIOS: ios), contains('BodyMark'));
       }
     });
   });

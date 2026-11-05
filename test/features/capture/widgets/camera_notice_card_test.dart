@@ -1,5 +1,5 @@
-import 'package:body_frame/core/theme/app_theme.dart';
-import 'package:body_frame/features/capture/widgets/camera_notice_card.dart';
+import 'package:bodymark/core/theme/app_theme.dart';
+import 'package:bodymark/features/capture/widgets/camera_notice_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -75,7 +75,7 @@ void main() {
           statusId: 'screen.capture.camera.status',
           tone: CameraNoticeTone.actionNeeded,
           title: '카메라 권한이 필요합니다.',
-          settingsPath: ['설정', '애플리케이션', 'Body Frame', '권한', '카메라'],
+          settingsPath: ['설정', '애플리케이션', 'BodyMark', '권한', '카메라'],
         ),
         size: const Size(200, 720),
       ),

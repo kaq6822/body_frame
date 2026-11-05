@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.bodyframe.body_frame"
+    namespace = "com.bodymark.bodymark"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -16,7 +16,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.bodyframe.body_frame"
+        applicationId = "com.bodymark.bodymark"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

@@ -2,14 +2,14 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:body_frame/core/database/app_database.dart';
-import 'package:body_frame/core/models/models.dart';
-import 'package:body_frame/core/providers.dart';
-import 'package:body_frame/core/repositories/body_photo_repository.dart';
-import 'package:body_frame/core/repositories/photo_record_repository.dart';
-import 'package:body_frame/core/services/photo_storage_service.dart';
-import 'package:body_frame/features/capture/providers/capture_providers.dart';
-import 'package:body_frame/features/records/providers/records_providers.dart';
+import 'package:bodymark/core/database/app_database.dart';
+import 'package:bodymark/core/models/models.dart';
+import 'package:bodymark/core/providers.dart';
+import 'package:bodymark/core/repositories/body_photo_repository.dart';
+import 'package:bodymark/core/repositories/photo_record_repository.dart';
+import 'package:bodymark/core/services/photo_storage_service.dart';
+import 'package:bodymark/features/capture/providers/capture_providers.dart';
+import 'package:bodymark/features/records/providers/records_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -54,12 +54,7 @@ void main() {
     required DateTime shotAt,
   }) async {
     await records.insert(
-      PhotoRecord(
-        id: id,
-        shotAt: shotAt,
-        createdAt: shotAt,
-        updatedAt: shotAt,
-      ),
+      PhotoRecord(id: id, shotAt: shotAt, createdAt: shotAt, updatedAt: shotAt),
     );
     final path = await storage.saveBytes(
       shotAt: shotAt,
@@ -93,7 +88,10 @@ void main() {
   }
 
   test('새 촬영이 저장되면 가이드가 방금 찍은 사진을 가리킨다', () async {
-    final older = await saveFrontRecord(id: 'r1', shotAt: DateTime(2026, 1, 10));
+    final older = await saveFrontRecord(
+      id: 'r1',
+      shotAt: DateTime(2026, 1, 10),
+    );
     final container = buildContainer();
 
     // 촬영 화면이 떠 있는 동안을 재현한다. 구독이 살아 있으면 autoDispose가
@@ -105,15 +103,24 @@ void main() {
     expect(await container.read(guide.future), older);
 
     // 촬영 후 저장(capture_review_screen)이 하는 일과 같다.
-    final newer = await saveFrontRecord(id: 'r2', shotAt: DateTime(2026, 2, 10));
+    final newer = await saveFrontRecord(
+      id: 'r2',
+      shotAt: DateTime(2026, 2, 10),
+    );
     container.invalidate(timelineProvider);
 
     expect(await container.read(guide.future), newer);
   });
 
   test('사진이 삭제되면 가이드가 남아 있는 이전 사진으로 물러난다', () async {
-    final older = await saveFrontRecord(id: 'r1', shotAt: DateTime(2026, 1, 10));
-    final newer = await saveFrontRecord(id: 'r2', shotAt: DateTime(2026, 2, 10));
+    final older = await saveFrontRecord(
+      id: 'r1',
+      shotAt: DateTime(2026, 1, 10),
+    );
+    final newer = await saveFrontRecord(
+      id: 'r2',
+      shotAt: DateTime(2026, 2, 10),
+    );
     final container = buildContainer();
 
     final guide = previousPhotoGuidePathProvider(BodyDirection.front);
