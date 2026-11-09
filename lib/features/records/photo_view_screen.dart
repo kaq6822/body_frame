@@ -8,7 +8,6 @@ import 'package:exif/exif.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:intl/intl.dart';
 import 'package:photo_view/photo_view.dart';
 
 import '../../core/models/models.dart';
@@ -16,7 +15,11 @@ import '../../core/providers.dart';
 import '../../core/services/app_image_picker.dart';
 import '../../core/services/app_logger.dart';
 import '../../core/theme/app_tokens.dart';
+import '../../core/widgets/app_confirm_dialog.dart';
+import '../../core/photo_frame.dart';
+import '../../core/widgets/info_row.dart';
 import '../../core/widgets/photo_grid_overlay.dart';
+import '../members/ui.dart' show lessonDate;
 import 'providers/records_providers.dart';
 import 'services/grid_photo_composer.dart';
 import 'services/photo_export_sink.dart';
@@ -50,7 +53,7 @@ class PhotoViewScreen extends ConsumerWidget {
       label: '원본 사진 보기',
       child: Scaffold(
         key: const ValueKey(screenId),
-        appBar: AppBar(title: const Text('원본 사진 보기')),
+        appBar: AppBar(title: const Text('사진 상세')),
         body: async.when(
           data: (data) => _PhotoViewBody(detailKey: detailKey, data: data),
           loading: () => const _PaneStatus(
@@ -60,7 +63,7 @@ class PhotoViewScreen extends ConsumerWidget {
           error: (error, stack) => _PaneStatus(
             key: const ValueKey('screen.records.photo.status'),
             state: _OpState.failure,
-            message: '사진 정보를 불러오지 못했습니다.',
+            message: '사진 정보를 불러오지 못했어요.',
             onRetry: () => ref.invalidate(_photoDetailProvider(detailKey)),
           ),
         ),
@@ -493,6 +496,8 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
   bool get _willComposeGrid => _includeGridOnExport && _grid.visible;
 
   Future<void> _export() async {
+    // 화면 오버레이와 같은 기준 폭. await 이후에는 context를 쓰지 않는다.
+    final referenceWidth = MediaQuery.sizeOf(context).width;
     setState(() => _exportState = _OpState.running);
     final photo = widget.data.photo;
     final includeGrid = _willComposeGrid;
@@ -510,7 +515,7 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
         final sourceBytes = await File(photo.filePath).readAsBytes();
         final png = await ref
             .read(gridPhotoComposerProvider)
-            .compose(sourceBytes, _grid);
+            .compose(sourceBytes, _grid, referenceWidth: referenceWidth);
         await sink.savePng(png, name: '${name}_grid');
       } else {
         await sink.saveOriginalFile(photo.filePath, name: name);
@@ -534,6 +539,7 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
   }
 
   Future<void> _share() async {
+    final referenceWidth = MediaQuery.sizeOf(context).width;
     setState(() => _shareState = _OpState.running);
     final photo = widget.data.photo;
     final includeGrid = _willComposeGrid;
@@ -552,7 +558,7 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
         final sourceBytes = await File(photo.filePath).readAsBytes();
         final png = await ref
             .read(gridPhotoComposerProvider)
-            .compose(sourceBytes, _grid);
+            .compose(sourceBytes, _grid, referenceWidth: referenceWidth);
         await sink.sharePng(
           png,
           name: '${photo.id}_grid',
@@ -579,27 +585,17 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
   }
 
   Future<void> _confirmDelete() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        key: const ValueKey('records.viewer.delete.confirm.dialog'),
-        title: const Text('사진 삭제'),
-        content: const Text('이 사진을 삭제합니다. 삭제 후에는 복구할 수 없습니다.'),
-        actions: [
-          TextButton(
-            key: const ValueKey('records.viewer.delete.cancel.button'),
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            key: const ValueKey('records.viewer.delete.confirm.button'),
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('삭제'),
-          ),
-        ],
-      ),
+    final confirmed = await showAppConfirm(
+      context,
+      title: '사진을 삭제할까요?',
+      warning: '삭제 후 되돌릴 수 없어요.',
+      confirmLabel: '삭제',
+      destructive: true,
+      dialogKey: 'records.viewer.delete.confirm.dialog',
+      cancelKey: 'records.viewer.delete.cancel.button',
+      confirmKey: 'records.viewer.delete.confirm.button',
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
     await _deletePhoto();
   }
 
@@ -640,89 +636,117 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
         Navigator.of(context).pop(_hasChanges);
       },
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: AppSpacing.content,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            AspectRatio(
-              aspectRatio: 1,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(8),
+            // 촬영 프레임과 같은 3:4 상자. 사진은 그 안에 contain되고 격자는
+            // 사진 사각형 위에만 놓인다. 긴 화면에서 정보가 밀려나지 않게
+            // 높이를 제한한다.
+            Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(context).height * 0.62,
                 ),
-                clipBehavior: Clip.antiAlias,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Semantics(
-                      identifier: 'records.viewer.image',
-                      label: '${photo.direction.label} 원본 사진, 확대 및 이동 가능',
-                      child: PhotoView.customChild(
-                        key: const ValueKey('records.viewer.image'),
-                        backgroundDecoration: const BoxDecoration(
-                          color: Colors.transparent,
-                        ),
-                        minScale: PhotoViewComputedScale.contained,
-                        maxScale: PhotoViewComputedScale.covered * 3,
-                        initialScale: PhotoViewComputedScale.contained,
-                        // Flutter의 Image.file은 JPEG EXIF orientation을 디코딩
-                        // 단계에서 자동 반영하므로 수동 회전(RotatedBox)을 더하면
-                        // 이중 회전이 된다. orientation 값은 메타데이터로만 보존한다.
-                        child: Image.file(
-                          File(photo.filePath),
-                          fit: BoxFit.contain,
-                          errorBuilder: (context, error, stack) => const Center(
-                            child: Icon(Icons.broken_image_outlined),
+                child: AspectRatio(
+                  aspectRatio: kPhotoFrameAspect,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: context.photoColors.backdrop,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Semantics(
+                          identifier: 'records.viewer.image',
+                          label: '${photo.direction.label} 원본 사진, 확대 및 이동 가능',
+                          child: PhotoView.customChild(
+                            key: const ValueKey('records.viewer.image'),
+                            backgroundDecoration: const BoxDecoration(
+                              color: Colors.transparent,
+                            ),
+                            minScale: PhotoViewComputedScale.contained,
+                            maxScale: PhotoViewComputedScale.covered * 3,
+                            initialScale: PhotoViewComputedScale.contained,
+                            // Flutter의 이미지 디코더는 JPEG EXIF orientation을
+                            // 자동 반영하므로 수동 회전(RotatedBox)을 더하면 이중
+                            // 회전이 된다. orientation 값은 메타데이터로만 보존한다.
+                            //
+                            // 격자는 사진과 같은 상자에 그려야 사진 사각형 안에만
+                            // 놓이고 확대·이동을 따라간다. 원본 픽셀에는 굽지 않는다.
+                            child: PhotoWithGrid(
+                              image: FileImage(File(photo.filePath)),
+                              aspectRatio: PhotoWithGrid.aspectFromSize(
+                                photo.width,
+                                photo.height,
+                              ),
+                              settings: _grid,
+                              gridSemanticsIdentifier:
+                                  'records.viewer.grid.overlay',
+                              errorIdPrefix: 'records.viewer.photo',
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                    // 격자는 항상 오버레이로만 그린다. 원본 픽셀에는 굽지 않는다.
-                    PhotoGridOverlay(
-                      settings: _grid,
-                      semanticsIdentifier: 'records.viewer.grid.overlay',
-                    ),
-                    // 격자를 잠깐 걷어내고 사진만 보고 싶을 때를 위한 버튼.
-                    // 사진 위에 두어야 보고 있는 대상과 조작이 붙어 있다.
-                    Positioned(
-                      top: AppSpacing.sp2,
-                      right: AppSpacing.sp2,
-                      child: Semantics(
-                        identifier: 'records.viewer.grid.visibility.button',
-                        button: true,
-                        label: _grid.visible ? '격자 숨기기' : '격자 보기',
-                        child: IconButton.filledTonal(
-                          key: const ValueKey(
-                            'records.viewer.grid.visibility.button',
+                        // 격자를 잠깐 걷어내고 사진만 보고 싶을 때를 위한 버튼.
+                        // 사진 위에 두어야 보고 있는 대상과 조작이 붙어 있다.
+                        Positioned(
+                          top: AppSpacing.sp2,
+                          right: AppSpacing.sp2,
+                          child: Semantics(
+                            identifier: 'records.viewer.grid.visibility.button',
+                            button: true,
+                            label: _grid.visible ? '격자 숨기기' : '격자 보기',
+                            child: IconButton(
+                              key: const ValueKey(
+                                'records.viewer.grid.visibility.button',
+                              ),
+                              style: IconButton.styleFrom(
+                                backgroundColor: context.photoColors.hudSurface,
+                                foregroundColor: context.photoColors.onChrome,
+                                side: BorderSide(
+                                  color: context.photoColors.hudOutline,
+                                ),
+                              ),
+                              tooltip: _grid.visible ? '격자 숨기기' : '격자 보기',
+                              icon: Icon(
+                                _grid.visible
+                                    ? Icons.grid_on
+                                    : Icons.grid_off_outlined,
+                              ),
+                              onPressed: () => setState(() {
+                                _grid = _grid.copyWith(visible: !_grid.visible);
+                                _gridState = _OpState.idle;
+                              }),
+                            ),
                           ),
-                          tooltip: _grid.visible ? '격자 숨기기' : '격자 보기',
-                          icon: Icon(
-                            _grid.visible
-                                ? Icons.grid_on
-                                : Icons.grid_off_outlined,
-                          ),
-                          onPressed: () => setState(() {
-                            _grid = _grid.copyWith(visible: !_grid.visible);
-                            _gridState = _OpState.idle;
-                          }),
                         ),
-                      ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
             const SizedBox(height: 16),
             Row(
               children: [
-                const Text('방향: '),
+                Expanded(
+                  child: Text(
+                    '촬영 방향',
+                    style: context.texts.labelMedium?.copyWith(
+                      color: context.colors.onSurfaceVariant,
+                    ),
+                  ),
+                ),
                 Semantics(
                   identifier: 'records.viewer.direction.field',
                   label: '촬영 방향 선택',
                   child: DropdownButton<BodyDirection>(
                     key: const ValueKey('records.viewer.direction.field'),
                     value: _direction,
+                    underline: const SizedBox.shrink(),
+                    style: context.texts.titleMedium,
                     items: [
                       for (final d in BodyDirection.values)
                         DropdownMenuItem(value: d, child: Text(d.label)),
@@ -732,35 +756,48 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
                         : _changeDirection,
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: AppSpacing.sp2),
                 _InlineStatus(
                   id: 'records.viewer.direction.status',
                   state: _directionState,
                 ),
               ],
             ),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '촬영일: ${DateFormat('yyyy-MM-dd').format(record.shotAt)}',
+            const Divider(height: 1),
+            // 실제 레슨 일시와 사진 촬영 시각은 다른 값이라 따로 보여준다.
+            InfoRow(
+              identifier: 'records.viewer.lessonAt',
+              label: '레슨 일시',
+              value: lessonDate(record.shotAt),
+              numeric: true,
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Semantics(
+                    identifier: 'records.viewer.date.edit.button',
+                    button: true,
+                    label: '레슨 일시 수정',
+                    child: IconButton(
+                      key: const ValueKey('records.viewer.date.edit.button'),
+                      onPressed: _editShotDate,
+                      icon: const Icon(Icons.edit_calendar_outlined),
+                    ),
                   ),
-                ),
-                Semantics(
-                  identifier: 'records.viewer.date.edit.button',
-                  button: true,
-                  label: '촬영일 수정',
-                  child: IconButton(
-                    key: const ValueKey('records.viewer.date.edit.button'),
-                    onPressed: _editShotDate,
-                    icon: const Icon(Icons.edit_calendar_outlined),
+                  _InlineStatus(
+                    id: 'records.viewer.date.status',
+                    state: _dateState,
                   ),
-                ),
-                _InlineStatus(
-                  id: 'records.viewer.date.status',
-                  state: _dateState,
-                ),
-              ],
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            InfoRow(
+              identifier: 'records.viewer.capturedAt',
+              label: '실제 촬영',
+              value: photo.capturedAt == null
+                  ? '촬영 시각을 확인할 수 없어요'
+                  : lessonDate(photo.capturedAt!),
+              numeric: photo.capturedAt != null,
             ),
             const SizedBox(height: 16),
             Text('사진 메모', style: Theme.of(context).textTheme.titleMedium),
@@ -786,7 +823,7 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
                   identifier: 'records.viewer.memo.save.button',
                   button: true,
                   label: '사진 메모 저장',
-                  child: ElevatedButton(
+                  child: OutlinedButton(
                     key: const ValueKey('records.viewer.memo.save.button'),
                     onPressed: _memoState == _OpState.running
                         ? null
@@ -827,8 +864,8 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
                 title: const Text('내보내기에 격자 합성'),
                 subtitle: Text(
                   _grid.visible
-                      ? '원본은 변경하지 않고 격자가 포함된 새 PNG를 만듭니다.'
-                      : '격자를 숨긴 상태입니다. 격자를 켜면 합성할 수 있습니다.',
+                      ? '원본은 변경하지 않고 격자가 포함된 새 PNG를 만들어요.'
+                      : '격자를 숨긴 상태예요. 격자를 켜면 합성할 수 있어요.',
                 ),
                 value: _willComposeGrid,
                 // 격자를 숨긴 채 합성하면 화면에 없는 격자가 결과물에만 찍힌다.
@@ -859,20 +896,27 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
                             identifier: 'records.viewer.replace.pending.image',
                             image: true,
                             label: '교체할 사진 미리보기',
-                            child: Image.file(
-                              File(_pendingReplacement!.path),
-                              key: const ValueKey(
-                                'records.viewer.replace.pending.image',
+                            child: ColoredBox(
+                              color: context.photoColors.backdrop,
+                              child: Image.file(
+                                File(_pendingReplacement!.path),
+                                key: const ValueKey(
+                                  'records.viewer.replace.pending.image',
+                                ),
+                                width: 88,
+                                height: 88,
+                                fit: BoxFit.contain,
+                                errorBuilder: (context, error, stackTrace) =>
+                                    const SizedBox(
+                                      width: 88,
+                                      height: 88,
+                                      child: PhotoLoadError(
+                                        idPrefix:
+                                            'records.viewer.replace.pending.photo',
+                                        compact: true,
+                                      ),
+                                    ),
                               ),
-                              width: 88,
-                              height: 88,
-                              fit: BoxFit.contain,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  const SizedBox(
-                                    width: 88,
-                                    height: 88,
-                                    child: Icon(Icons.broken_image_outlined),
-                                  ),
                             ),
                           ),
                         ),
@@ -886,7 +930,7 @@ class _PhotoViewBodyState extends ConsumerState<_PhotoViewBody> {
                                 style: TextStyle(fontWeight: FontWeight.w600),
                               ),
                               const SizedBox(height: 4),
-                              const Text('적용하기 전까지 기존 원본은 변경되지 않습니다.'),
+                              const Text('적용하기 전까지 기존 원본은 변경되지 않아요.'),
                               const SizedBox(height: 8),
                               Wrap(
                                 spacing: 8,
@@ -1022,7 +1066,7 @@ class _PaneStatus extends StatelessWidget {
           children: [
             const Icon(Icons.error_outline),
             const SizedBox(height: 8),
-            Text(message ?? '오류가 발생했습니다.', textAlign: TextAlign.center),
+            Text(message ?? '오류가 생겼어요.', textAlign: TextAlign.center),
             if (onRetry != null) ...[
               const SizedBox(height: 8),
               TextButton(onPressed: onRetry, child: const Text('다시 시도')),
@@ -1176,7 +1220,7 @@ class _GridEditSection extends StatelessWidget {
                     ),
                     const SizedBox(height: AppSpacing.sp2),
                     Text(
-                      '격자는 원본 사진에 저장되지 않습니다. 내보내거나 공유할 때만 이미지에 합쳐집니다.',
+                      '격자는 원본 사진에 저장되지 않아요. 내보내거나 공유할 때만 이미지에 합쳐져요.',
                       style: context.texts.bodySmall?.copyWith(
                         color: context.colors.onSurfaceVariant,
                       ),
@@ -1293,8 +1337,9 @@ class _InlineStatus extends StatelessWidget {
     String label;
     switch (state) {
       case _OpState.idle:
+        // 아무 일도 없는 상태는 읽지 않는다("대기"는 의미 없는 소음이다).
         child = const SizedBox(width: 16, height: 16);
-        label = '대기';
+        label = '';
         break;
       case _OpState.running:
         child = const SizedBox(
@@ -1323,7 +1368,7 @@ class _InlineStatus extends StatelessWidget {
     }
     return Semantics(
       identifier: id,
-      label: label,
+      label: label.isEmpty ? null : label,
       child: SizedBox(key: ValueKey(id), width: 16, height: 16, child: child),
     );
   }

@@ -16,6 +16,7 @@ import 'package:bodymark/core/widgets/photo_grid_overlay.dart';
 import '../records/providers/records_providers.dart';
 import 'utils/image_meta.dart';
 import 'package:bodymark/core/widgets/async_status_indicator.dart';
+import 'package:bodymark/core/widgets/bottom_action_bar.dart';
 import 'widgets/direction_selector.dart';
 
 /// 갤러리 사진 등록 화면.
@@ -138,7 +139,7 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
       if (!mounted) return;
       setState(() {
         _pickStatus = AsyncStatus.failure;
-        _errorMessage = '이전 사진 선택 결과를 복구하지 못했습니다.';
+        _errorMessage = '이전 사진 선택 결과를 복구하지 못했어요.';
       });
       logger.phase('gallery.pick.recovery', LogPhase.failure);
     } finally {
@@ -165,7 +166,7 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
       if (!mounted) return;
       setState(() {
         _pickStatus = AsyncStatus.failure;
-        _errorMessage = '사진을 불러오지 못했습니다.';
+        _errorMessage = '사진을 불러오지 못했어요.';
       });
       logger.phase('gallery.pick', LogPhase.failure);
     } finally {
@@ -349,7 +350,7 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
       if (!mounted) return;
       setState(() {
         _saveStatus = AsyncStatus.failure;
-        _errorMessage = '사진 등록에 실패했습니다. 다시 시도해주세요.';
+        _errorMessage = '사진 등록에 실패했어요. 다시 시도해주세요.';
       });
     } finally {
       _saveInFlight = false;
@@ -371,6 +372,7 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
           key: const ValueKey(GalleryImportScreen.screenId),
           appBar: AppBar(title: const Text('갤러리 사진 등록')),
           body: _buildBody(),
+          bottomNavigationBar: _buildActions(),
         ),
       ),
     );
@@ -381,10 +383,18 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.all(16),
+          padding: AppSpacing.content,
           child: Row(
             children: [
-              const Expanded(child: Text('여러 사진을 선택해 방향과 촬영일을 지정하세요.')),
+              Expanded(
+                child: Text(
+                  '여러 사진을 선택해 방향과 촬영일을 지정해요. 원본 그대로, 자르거나 보정하지 않고 추가해요.',
+                  key: const ValueKey('capture.import.intro'),
+                  style: context.texts.bodyMedium?.copyWith(
+                    color: context.colors.onSurfaceVariant,
+                  ),
+                ),
+              ),
               const SizedBox(width: 8),
               Semantics(
                 identifier: 'capture.import.pick.button',
@@ -404,7 +414,7 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
           AsyncStatusIndicator(
             statusId: 'capture.import.pick.status',
             status: _pickStatus,
-            busyLabel: '사진을 불러오는 중입니다.',
+            busyLabel: '사진을 불러오고 있어요.',
             failureMessage: _errorMessage,
             onRetry: _pickImages,
           ),
@@ -416,50 +426,47 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
                 )
               : ListView.builder(
                   key: const ValueKey('capture.import.list'),
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: AppSpacing.screenHorizontal,
                   itemCount: _items.length,
                   itemBuilder: (context, index) => _buildItemCard(index),
                 ),
         ),
-        if (_items.isNotEmpty && !_allDirectionsAssigned)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              '모든 사진에 촬영 방향을 지정해주세요.',
-              style: TextStyle(color: context.colors.error),
-            ),
-          ),
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              AsyncStatusIndicator(
-                statusId: 'screen.capture.import.status',
-                status: _saveStatus,
-                busyLabel: '사진을 등록하는 중입니다.',
-                failureMessage: _errorMessage,
-                successLabel: '등록되었습니다.',
-                onRetry: _canSave ? _saveAll : null,
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: Semantics(
-                  identifier: 'capture.import.save.button',
-                  button: true,
-                  label: '일괄 저장',
-                  enabled: _canSave,
-                  child: FilledButton(
-                    key: const ValueKey('capture.import.save.button'),
-                    onPressed: _canSave ? _saveAll : null,
-                    child: const Text('일괄 저장'),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
       ],
+    );
+  }
+
+  /// 하단 고정 저장 바. 방향 누락 안내와 저장 상태를 버튼 위에 붙인다.
+  Widget _buildActions() {
+    final missing = _items.isNotEmpty && !_allDirectionsAssigned;
+    return BottomActionBar(
+      identifier: 'capture.import.actions',
+      leading: _saveStatus != AsyncStatus.idle
+          ? AsyncStatusIndicator(
+              statusId: 'screen.capture.import.status',
+              status: _saveStatus,
+              busyLabel: '사진을 등록하고 있어요.',
+              failureMessage: _errorMessage,
+              successLabel: '등록했어요.',
+              onRetry: _canSave ? _saveAll : null,
+            )
+          : missing
+          ? Text(
+              '모든 사진에 촬영 방향을 지정해주세요.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: context.colors.error),
+            )
+          : null,
+      primary: Semantics(
+        identifier: 'capture.import.save.button',
+        button: true,
+        label: '일괄 저장',
+        enabled: _canSave,
+        child: FilledButton(
+          key: const ValueKey('capture.import.save.button'),
+          onPressed: _canSave ? _saveAll : null,
+          child: Text(_items.isEmpty ? '일괄 저장' : '사진 ${_items.length}장 일괄 저장'),
+        ),
+      ),
     );
   }
 
@@ -484,20 +491,20 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
                   child: ClipRRect(
                     key: ValueKey('capture.import.item.$index.thumbnail.image'),
                     borderRadius: BorderRadius.circular(6),
-                    child: SizedBox(
+                    // 촬영 프레임과 같은 3:4 상자. 사진은 그 안에 contain된다.
+                    child: Container(
                       width: 72,
-                      height: 72,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          Image.file(File(item.file.path), fit: BoxFit.contain),
-                          // 등록 전 사진도 격자와 함께 보여 정렬 상태를 가늠하게 한다.
-                          PhotoGridOverlay(
-                            settings: GridSettings.defaults,
-                            semanticsIdentifier:
-                                'capture.import.item.$index.grid.overlay',
-                          ),
-                        ],
+                      height: 96,
+                      color: context.photoColors.backdrop,
+                      // 등록 전 사진도 격자와 함께 보여 정렬 상태를 가늠하게 한다.
+                      // 격자는 사진 사각형 위에만 얹는다.
+                      child: PhotoWithGrid(
+                        image: FileImage(File(item.file.path)),
+                        settings: GridSettings.defaults,
+                        gridSemanticsIdentifier:
+                            'capture.import.item.$index.grid.overlay',
+                        errorIdPrefix: 'capture.import.item.$index.photo',
+                        compactError: true,
                       ),
                     ),
                   ),
@@ -527,7 +534,13 @@ class _GalleryImportScreenState extends ConsumerState<GalleryImportScreen> {
             const SizedBox(height: 8),
             Row(
               children: [
-                const Text('촬영일: '),
+                Text(
+                  '촬영일',
+                  style: context.texts.bodyMedium?.copyWith(
+                    color: context.colors.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sp2),
                 Semantics(
                   identifier: 'capture.import.item.$index.date.field',
                   label: '촬영일 $dateLabel, 탭하여 변경',

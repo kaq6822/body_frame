@@ -1,5 +1,5 @@
+import 'package:flutter/widgets.dart';
 import 'package:bodymark/core/router/app_routes.dart';
-import 'package:bodymark/features/compare/compare_dates_screen.dart';
 import 'package:bodymark/features/compare/compare_direction_screen.dart';
 import 'package:bodymark/features/compare/compare_export_screen.dart';
 import 'package:bodymark/features/compare/compare_view_screen.dart';
@@ -18,7 +18,7 @@ GoRouter createCompareTestRouter({required String initialLocation}) {
       GoRoute(
         path: '/compare',
         name: AppRoutes.compareDates,
-        builder: (context, state) => const CompareDatesScreen(),
+        builder: (context, state) => const SizedBox.shrink(),
         routes: [
           GoRoute(
             path: 'direction',

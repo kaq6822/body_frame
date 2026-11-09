@@ -8,11 +8,15 @@ import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:bodymark/core/dates.dart';
+import 'package:bodymark/core/photo_frame.dart';
 import 'package:bodymark/core/models/models.dart';
 import 'package:bodymark/core/providers.dart';
 import 'package:bodymark/core/services/app_logger.dart';
 import 'package:bodymark/core/theme/app_tokens.dart';
+import 'package:bodymark/core/widgets/bottom_action_bar.dart';
 import 'package:bodymark/core/widgets/photo_grid_overlay.dart';
+import 'package:bodymark/core/widgets/status_pill.dart';
+import 'providers/capture_providers.dart';
 import '../records/providers/records_providers.dart';
 import '../members/member_providers.dart';
 import 'providers/capture_session_provider.dart';
@@ -208,7 +212,7 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
       if (!mounted) return;
       setState(() {
         _saveStatus = AsyncStatus.failure;
-        _saveError = '사진을 저장하지 못했습니다. 다시 시도해주세요.';
+        _saveError = '사진을 저장하지 못했어요. 다시 시도해주세요.';
       });
     } finally {
       _saveInFlight = false;
@@ -227,10 +231,92 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
         label: '촬영 결과 확인',
         child: Scaffold(
           key: const ValueKey(CaptureReviewScreen.screenId),
-          appBar: AppBar(title: const Text('촬영 결과 확인')),
+          appBar: AppBar(
+            title: _buildTitle(),
+            actions: [
+              if (session.hasAnyCapture)
+                Padding(
+                  padding: const EdgeInsets.only(right: AppSpacing.sp4),
+                  child: Center(
+                    child: StatusPill(
+                      identifier: 'capture.review.count',
+                      label: '사진 ${session.capturedCount}장',
+                      tone: StatusPillTone.primary,
+                    ),
+                  ),
+                ),
+            ],
+          ),
           body: session.hasAnyCapture
               ? _buildBody(session)
-              : const Center(child: Text('확인할 촬영 결과가 없습니다.')),
+              : const Center(child: Text('확인할 촬영 결과가 없어요.')),
+          bottomNavigationBar: session.hasAnyCapture
+              ? _buildActions(session)
+              : null,
+        ),
+      ),
+    );
+  }
+
+  /// 레슨 촬영이면 회원 이름을 제목 아래 함께 보여준다.
+  Widget _buildTitle() {
+    final member = ref.watch(cameraHeaderInfoProvider).valueOrNull?.title;
+    if (member == null) return const Text('촬영 결과 확인');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text('촬영 결과 확인'),
+        Text(
+          member,
+          key: const ValueKey('capture.review.member'),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: context.texts.bodySmall?.copyWith(
+            color: context.colors.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 하단 고정 저장(연결) 버튼과 저장 상태.
+  Widget _buildActions(CaptureSessionState session) {
+    final saving = _isSaving;
+    final lesson = ref.watch(lessonCaptureContextProvider) != null;
+    final label = lesson
+        ? '사진 ${session.capturedCount}장 추가하고 돌아가기'
+        : '${session.capturedCount}장 모두 저장';
+    return BottomActionBar(
+      identifier: 'capture.review.actions',
+      leading: _saveStatus == AsyncStatus.idle
+          ? (lesson
+                ? Text(
+                    '작성 중인 레슨에 추가해요.',
+                    textAlign: TextAlign.center,
+                    style: context.texts.bodySmall?.copyWith(
+                      color: context.colors.onSurfaceVariant,
+                    ),
+                  )
+                : null)
+          : AsyncStatusIndicator(
+              statusId: 'screen.capture.review.status',
+              status: _saveStatus,
+              busyLabel: '사진을 저장하고 있어요.',
+              failureMessage: _saveError,
+              successLabel: '저장했어요.',
+              onRetry: () => _save(session),
+            ),
+      primary: Semantics(
+        identifier: 'capture.save.button',
+        button: true,
+        label: label,
+        enabled: !saving,
+        excludeSemantics: true,
+        child: FilledButton(
+          key: const ValueKey('capture.save.button'),
+          onPressed: saving ? null : () => _save(session),
+          child: Text(label),
         ),
       ),
     );
@@ -239,9 +325,10 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
   Widget _buildBody(CaptureSessionState session) {
     final dateLabel = DateFormat('yyyy.MM.dd').format(session.shotDate);
     final saving = _isSaving;
+    final skipped = session.shots.length - session.capturedCount;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: AppSpacing.content,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -249,19 +336,39 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
             '${session.capturedCount}장 촬영됨',
             style: Theme.of(context).textTheme.titleMedium,
           ),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 260,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: session.shots.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 12),
-              itemBuilder: (context, index) => _ShotPreview(
-                shot: session.shots[index],
-                onRetake: () => _retake(index),
-                enabled: !saving,
+          if (skipped > 0) ...[
+            const SizedBox(height: AppSpacing.sp1),
+            Text(
+              '일부 방향만 남겨도 괜찮아요. 건너뛴 방향은 나중에 추가할 수 있어요.',
+              key: const ValueKey('capture.review.partial.note'),
+              style: context.texts.bodySmall?.copyWith(
+                color: context.colors.onSurfaceVariant,
               ),
             ),
+          ],
+          const SizedBox(height: 12),
+          // 네 방향을 2열로 모두 보여 준다. 가로 스크롤 한 줄에 두면 뒤쪽 컷이
+          // 화면 밖으로 밀려 찍었는지조차 알기 어렵다.
+          LayoutBuilder(
+            builder: (context, constraints) {
+              const gap = AppSpacing.sp3;
+              final cellWidth = (constraints.maxWidth - gap) / 2;
+              return Wrap(
+                spacing: gap,
+                runSpacing: gap,
+                children: [
+                  for (var index = 0; index < session.shots.length; index++)
+                    SizedBox(
+                      width: cellWidth,
+                      child: _ShotPreview(
+                        shot: session.shots[index],
+                        onRetake: () => _retake(index),
+                        enabled: !saving,
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 20),
           if (ref.watch(lessonCaptureContextProvider) == null) ...[
@@ -297,7 +404,7 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
                     ref.read(captureSessionProvider.notifier).setLabel(value),
                 decoration: const InputDecoration(
                   border: OutlineInputBorder(),
-                  hintText: '비워두면 내 기록으로 저장됩니다',
+                  hintText: '비워두면 라벨 없이 저장돼요',
                 ),
               ),
             ),
@@ -321,36 +428,6 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
               ),
             ),
           ],
-          const SizedBox(height: 24),
-          AsyncStatusIndicator(
-            statusId: 'screen.capture.review.status',
-            status: _saveStatus,
-            busyLabel: '사진을 저장하는 중입니다.',
-            failureMessage: _saveError,
-            successLabel: '저장되었습니다.',
-            onRetry: () => _save(session),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: Semantics(
-              identifier: 'capture.save.button',
-              button: true,
-              label: ref.watch(lessonCaptureContextProvider) == null
-                  ? '${session.capturedCount}장 모두 저장'
-                  : '${session.capturedCount}장 레슨에 연결',
-              enabled: !saving,
-              child: FilledButton(
-                key: const ValueKey('capture.save.button'),
-                onPressed: saving ? null : () => _save(session),
-                child: Text(
-                  ref.watch(lessonCaptureContextProvider) == null
-                      ? '${session.capturedCount}장 모두 저장'
-                      : '${session.capturedCount}장 레슨에 연결',
-                ),
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -426,70 +503,92 @@ class _ShotPreview extends StatelessWidget {
   Widget build(BuildContext context) {
     final id = 'capture.review.shot.${shot.direction.key}';
 
+    final photoColors = context.photoColors;
     return Semantics(
       identifier: id,
       container: true,
       label: '${shot.direction.label} ${shot.isCaptured ? '촬영 결과' : '미촬영'}',
-      child: SizedBox(
+      child: Column(
         key: ValueKey(id),
-        width: 160,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              shot.direction.label,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 6),
-            Expanded(
-              child: Container(
-                color: context.photoColors.backdrop,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  shot.direction.label,
+                  style: context.texts.titleSmall,
+                ),
+              ),
+              // 실제 촬영 시각. 레슨 일시·작성 일시와 구분해 보여준다.
+              if (shot.capturedAt != null)
+                Text(
+                  '촬영 ${DateFormat('HH:mm').format(shot.capturedAt!)}',
+                  key: ValueKey('$id.capturedAt'),
+                  style: context.numericTexts.labelLarge.copyWith(
+                    fontWeight: FontWeight.w500,
+                    color: context.colors.onSurfaceVariant,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          AspectRatio(
+            aspectRatio: kPhotoFrameAspect,
+            child: ClipRRect(
+              borderRadius: AppRadius.smAll,
+              child: ColoredBox(
+                color: photoColors.backdrop,
                 child: shot.isCaptured
-                    // 촬영 당시와 같은 격자를 겹쳐 보여준다. 격자 없이 보이면
-                    // 정렬이 맞는지 확인할 수 없어 다시 찍을 판단이 어렵다.
-                    ? Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          Image.file(
-                            File(shot.imagePath!),
-                            fit: BoxFit.contain,
-                          ),
-                          PhotoGridOverlay(
-                            settings:
-                                shot.gridSettingsAtCapture ??
-                                GridSettings.defaults,
-                            semanticsIdentifier:
-                                'capture.review.shot.${shot.direction.key}.grid.overlay',
-                          ),
-                        ],
+                    // 촬영 당시와 같은 격자를 사진 사각형 위에 겹쳐 보여준다.
+                    // 격자 없이 보이면 정렬이 맞는지 확인할 수 없어 다시 찍을
+                    // 판단이 어렵다.
+                    ? PhotoWithGrid(
+                        image: FileImage(File(shot.imagePath!)),
+                        settings:
+                            shot.gridSettingsAtCapture ?? GridSettings.defaults,
+                        gridSemanticsIdentifier: '$id.grid.overlay',
+                        errorIdPrefix: '$id.photo',
                       )
-                    : const Center(
+                    : Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.remove_circle_outline),
-                            SizedBox(height: 4),
-                            Text('건너뜀', style: TextStyle(fontSize: 12)),
+                            Icon(
+                              Icons.remove_circle_outline,
+                              color: photoColors.onChrome.withValues(
+                                alpha: 0.72,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '건너뜀',
+                              style: context.texts.labelLarge?.copyWith(
+                                color: photoColors.onChrome,
+                              ),
+                            ),
                           ],
                         ),
                       ),
               ),
             ),
-            const SizedBox(height: 6),
-            Semantics(
-              identifier: 'capture.review.retake.${shot.direction.key}',
-              button: true,
-              enabled: enabled,
-              label:
-                  '${shot.direction.label} ${shot.isCaptured ? '다시' : ''} 촬영',
-              child: OutlinedButton(
-                key: ValueKey('capture.review.retake.${shot.direction.key}'),
-                onPressed: enabled ? onRetake : null,
-                child: Text(shot.isCaptured ? '다시 촬영' : '촬영하기'),
-              ),
+          ),
+          const SizedBox(height: 6),
+          Semantics(
+            identifier: 'capture.review.retake.${shot.direction.key}',
+            button: true,
+            enabled: enabled,
+            label: shot.isCaptured
+                ? '${shot.direction.label} 다시 촬영'
+                : '${shot.direction.label} 촬영하기',
+            excludeSemantics: true,
+            child: OutlinedButton(
+              key: ValueKey('capture.review.retake.${shot.direction.key}'),
+              onPressed: enabled ? onRetake : null,
+              child: Text(shot.isCaptured ? '다시 촬영' : '촬영하기'),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

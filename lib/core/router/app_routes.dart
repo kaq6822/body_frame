@@ -37,7 +37,7 @@ class AppRoutes {
   /// 9. 전후 사진 비교 화면.
   static const compareView = 'compare.view';
 
-  /// 10. 비교 이미지 저장 설정 화면.
+  /// 10. 공유 이미지 구성 → 미리보기(2단계) 화면.
   static const compareExport = 'compare.export';
 
   // --- 설정 ---

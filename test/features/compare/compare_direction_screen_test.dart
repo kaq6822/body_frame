@@ -118,7 +118,7 @@ void main() {
     await tester.pumpWidget(buildApp(location));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('공통으로 존재하는 촬영 방향이 없습니다'), findsOneWidget);
+    expect(find.textContaining('공통으로 존재하는 촬영 방향이 없어요'), findsOneWidget);
   });
 
   testWidgets('필요한 쿼리 파라미터 없이 진입하면 안내와 복귀 버튼을 보여준다', (tester) async {
@@ -140,7 +140,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('이전과 이후에는 서로 다른 촬영 기록을 선택해 주세요.'), findsOneWidget);
+    expect(find.text('이전과 이후에는 서로 다른 촬영 기록을 선택해주세요.'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('compare.direction.backToDates.button')),
       findsOneWidget,

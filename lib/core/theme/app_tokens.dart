@@ -40,24 +40,27 @@ abstract final class AppSpacing {
 }
 
 /// 라운딩 스케일.
+///
+/// BodyMark는 각진 계측 도구의 인상을 유지한다. 완전 둥근 모양은 작은 상태 칩에만
+/// 쓴다. 그림자 대신 1px 테두리로 면을 구분한다.
 abstract final class AppRadius {
   /// 4 — 배지, 색 스와치.
   static const double xs = 4;
 
-  /// 8 — 입력, 썸네일, 칩.
-  static const double sm = 8;
+  /// 6 — 버튼, 썸네일, 작은 조작부.
+  static const double sm = 6;
 
-  /// 12 — 카드, 사진 프레임. 사진 프레임은 이 값을 넘기지 않는다. 라운딩이 커지면
-  /// letterbox 여백 모서리에서 사진이 잘려 보인다.
-  static const double md = 12;
+  /// 8 — 카드, 입력, 사진 프레임. 사진 프레임은 이 값을 넘기지 않는다. 라운딩이
+  /// 커지면 letterbox 여백 모서리에서 사진이 잘려 보인다.
+  static const double md = 8;
 
-  /// 16 — 다이얼로그.
-  static const double lg = 16;
+  /// 12 — 다이얼로그, 바텀시트 상단.
+  static const double lg = 12;
 
-  /// 24 — 바텀시트 상단.
-  static const double xl = 24;
+  /// 16 — 화면 상단 안내 패널처럼 넓은 면. 기본 선택지가 아니다.
+  static const double xl = 16;
 
-  /// 완전 둥근 모서리 — 버튼, 방향 칩, FAB.
+  /// 완전 둥근 모서리 — 상태 pill, HUD 칩.
   static const double full = 999;
 
   static const BorderRadius xsAll = BorderRadius.all(Radius.circular(xs));
@@ -71,6 +74,13 @@ abstract final class AppRadius {
 /// M3 [ColorScheme]에 없는 상태 색.
 ///
 /// `context.semanticColors`로 읽는다.
+///
+/// - `warning`은 **텍스트·아이콘용** 진한 앰버다. 밝은 면에서 4.5:1을 넘긴다.
+/// - `warningFill`은 기울기 경고처럼 면·선으로 칠하는 앰버(`#F59E0B`)다. 흰
+///   글자를 올리지 않는다.
+/// - `measure`는 측정·가이드 전용 시안(`#06B6D4`)이다. 수평 잠금, 촬영 가이드,
+///   카메라 안 활성 방향처럼 "기준에 맞았다"는 신호에만 쓴다. 밝은 면에서 텍스트
+///   색으로 쓰지 않는다(대비 부족). 그 위의 글자는 `onMeasure`.
 @immutable
 class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
   const AppSemanticColors({
@@ -82,6 +92,9 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
     required this.onWarning,
     required this.warningContainer,
     required this.onWarningContainer,
+    required this.warningFill,
+    required this.measure,
+    required this.onMeasure,
   });
 
   final Color success;
@@ -92,27 +105,36 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
   final Color onWarning;
   final Color warningContainer;
   final Color onWarningContainer;
+  final Color warningFill;
+  final Color measure;
+  final Color onMeasure;
 
   static const light = AppSemanticColors(
-    success: Color(0xFF1E7A4B),
+    success: Color(0xFF15803D),
     onSuccess: Color(0xFFFFFFFF),
-    successContainer: Color(0xFFC6F0D6),
-    onSuccessContainer: Color(0xFF0A3D24),
-    warning: Color(0xFF8A5300),
+    successContainer: Color(0xFFDCFCE7),
+    onSuccessContainer: Color(0xFF14532D),
+    warning: Color(0xFFB45309),
     onWarning: Color(0xFFFFFFFF),
-    warningContainer: Color(0xFFFFDFA8),
-    onWarningContainer: Color(0xFF4A2C00),
+    warningContainer: Color(0xFFFEF3C7),
+    onWarningContainer: Color(0xFF92400E),
+    warningFill: Color(0xFFF59E0B),
+    measure: Color(0xFF06B6D4),
+    onMeasure: Color(0xFF082F49),
   );
 
   static const dark = AppSemanticColors(
-    success: Color(0xFF8FDCB0),
-    onSuccess: Color(0xFF0A3D24),
-    successContainer: Color(0xFF155C37),
-    onSuccessContainer: Color(0xFFC6F0D6),
-    warning: Color(0xFFF5C169),
-    onWarning: Color(0xFF4A2C00),
-    warningContainer: Color(0xFF6B3F00),
-    onWarningContainer: Color(0xFFFFDFA8),
+    success: Color(0xFF4ADE80),
+    onSuccess: Color(0xFF052E16),
+    successContainer: Color(0xFF14532D),
+    onSuccessContainer: Color(0xFFDCFCE7),
+    warning: Color(0xFFFBBF24),
+    onWarning: Color(0xFF451A03),
+    warningContainer: Color(0xFF78350F),
+    onWarningContainer: Color(0xFFFEF3C7),
+    warningFill: Color(0xFFF59E0B),
+    measure: Color(0xFF06B6D4),
+    onMeasure: Color(0xFF082F49),
   );
 
   @override
@@ -125,6 +147,9 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
     Color? onWarning,
     Color? warningContainer,
     Color? onWarningContainer,
+    Color? warningFill,
+    Color? measure,
+    Color? onMeasure,
   }) {
     return AppSemanticColors(
       success: success ?? this.success,
@@ -135,37 +160,28 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
       onWarning: onWarning ?? this.onWarning,
       warningContainer: warningContainer ?? this.warningContainer,
       onWarningContainer: onWarningContainer ?? this.onWarningContainer,
+      warningFill: warningFill ?? this.warningFill,
+      measure: measure ?? this.measure,
+      onMeasure: onMeasure ?? this.onMeasure,
     );
   }
 
   @override
   AppSemanticColors lerp(ThemeExtension<AppSemanticColors>? other, double t) {
     if (other is! AppSemanticColors) return this;
+    Color mix(Color a, Color b) => Color.lerp(a, b, t)!;
     return AppSemanticColors(
-      success: Color.lerp(success, other.success, t)!,
-      onSuccess: Color.lerp(onSuccess, other.onSuccess, t)!,
-      successContainer: Color.lerp(
-        successContainer,
-        other.successContainer,
-        t,
-      )!,
-      onSuccessContainer: Color.lerp(
-        onSuccessContainer,
-        other.onSuccessContainer,
-        t,
-      )!,
-      warning: Color.lerp(warning, other.warning, t)!,
-      onWarning: Color.lerp(onWarning, other.onWarning, t)!,
-      warningContainer: Color.lerp(
-        warningContainer,
-        other.warningContainer,
-        t,
-      )!,
-      onWarningContainer: Color.lerp(
-        onWarningContainer,
-        other.onWarningContainer,
-        t,
-      )!,
+      success: mix(success, other.success),
+      onSuccess: mix(onSuccess, other.onSuccess),
+      successContainer: mix(successContainer, other.successContainer),
+      onSuccessContainer: mix(onSuccessContainer, other.onSuccessContainer),
+      warning: mix(warning, other.warning),
+      onWarning: mix(onWarning, other.onWarning),
+      warningContainer: mix(warningContainer, other.warningContainer),
+      onWarningContainer: mix(onWarningContainer, other.onWarningContainer),
+      warningFill: mix(warningFill, other.warningFill),
+      measure: mix(measure, other.measure),
+      onMeasure: mix(onMeasure, other.onMeasure),
     );
   }
 }
@@ -212,6 +228,25 @@ class AppPhotoColors extends ThemeExtension<AppPhotoColors> {
   /// 사진 위 컨트롤 트랙(슬라이더 비활성 구간).
   Color get controlTrack => const Color(0x40FFFFFF);
 
+  /// 카메라 뷰파인더 바탕(사진 영역 밖 촬영 화면 전체).
+  Color get viewfinder => const Color(0xFF090D14);
+
+  /// 카메라 위 떠 있는 HUD 컨트롤 면. slate 900 78%.
+  Color get hudSurface => const Color(0xC70F172A);
+
+  /// HUD 컨트롤의 1px 외곽선. 흰색 16%.
+  Color get hudOutline => const Color(0x29FFFFFF);
+
+  /// 측정·가이드 시안. 수평 잠금, 기준선, 카메라 안 활성 방향.
+  /// [AppSemanticColors.measure]와 같은 값이다.
+  Color get measure => const Color(0xFF06B6D4);
+
+  /// [measure] 면 위 글자·아이콘. 흰색은 시안 위에서 대비가 부족하다.
+  Color get onMeasure => const Color(0xFF082F49);
+
+  /// 거의 수평·기울기 경고 앰버. 사진 위 선·면 전용.
+  Color get warning => const Color(0xFFF59E0B);
+
   @override
   AppPhotoColors copyWith() => const AppPhotoColors();
 
@@ -220,7 +255,7 @@ class AppPhotoColors extends ThemeExtension<AppPhotoColors> {
   AppPhotoColors lerp(ThemeExtension<AppPhotoColors>? other, double t) => this;
 }
 
-/// 날짜·건수·용량용 파생 텍스트 스타일.
+/// 날짜·시각·건수·용량·각도용 파생 텍스트 스타일(tabular figures).
 ///
 /// 목록에서 수치가 세로로 나열되므로 글자 폭이 흔들리면 열이 어긋나 보인다.
 @immutable
@@ -229,6 +264,7 @@ class AppNumericTextStyles extends ThemeExtension<AppNumericTextStyles> {
     required this.bodySmall,
     required this.bodyMedium,
     required this.labelSmall,
+    required this.labelLarge,
     required this.titleMedium,
     required this.headlineSmall,
   });
@@ -236,6 +272,9 @@ class AppNumericTextStyles extends ThemeExtension<AppNumericTextStyles> {
   final TextStyle bodySmall;
   final TextStyle bodyMedium;
   final TextStyle labelSmall;
+
+  /// 각도·수치 판독(DESIGN.md data-mono 14/600).
+  final TextStyle labelLarge;
   final TextStyle titleMedium;
   final TextStyle headlineSmall;
 
@@ -249,6 +288,7 @@ class AppNumericTextStyles extends ThemeExtension<AppNumericTextStyles> {
       bodySmall: tabular(textTheme.bodySmall),
       bodyMedium: tabular(textTheme.bodyMedium),
       labelSmall: tabular(textTheme.labelSmall),
+      labelLarge: tabular(textTheme.labelLarge),
       titleMedium: tabular(textTheme.titleMedium),
       headlineSmall: tabular(textTheme.headlineSmall),
     );
@@ -259,6 +299,7 @@ class AppNumericTextStyles extends ThemeExtension<AppNumericTextStyles> {
     TextStyle? bodySmall,
     TextStyle? bodyMedium,
     TextStyle? labelSmall,
+    TextStyle? labelLarge,
     TextStyle? titleMedium,
     TextStyle? headlineSmall,
   }) {
@@ -266,6 +307,7 @@ class AppNumericTextStyles extends ThemeExtension<AppNumericTextStyles> {
       bodySmall: bodySmall ?? this.bodySmall,
       bodyMedium: bodyMedium ?? this.bodyMedium,
       labelSmall: labelSmall ?? this.labelSmall,
+      labelLarge: labelLarge ?? this.labelLarge,
       titleMedium: titleMedium ?? this.titleMedium,
       headlineSmall: headlineSmall ?? this.headlineSmall,
     );
@@ -281,6 +323,7 @@ class AppNumericTextStyles extends ThemeExtension<AppNumericTextStyles> {
       bodySmall: TextStyle.lerp(bodySmall, other.bodySmall, t)!,
       bodyMedium: TextStyle.lerp(bodyMedium, other.bodyMedium, t)!,
       labelSmall: TextStyle.lerp(labelSmall, other.labelSmall, t)!,
+      labelLarge: TextStyle.lerp(labelLarge, other.labelLarge, t)!,
       titleMedium: TextStyle.lerp(titleMedium, other.titleMedium, t)!,
       headlineSmall: TextStyle.lerp(headlineSmall, other.headlineSmall, t)!,
     );
@@ -289,78 +332,89 @@ class AppNumericTextStyles extends ThemeExtension<AppNumericTextStyles> {
 
 /// 명시적 [ColorScheme].
 ///
-/// 포레스트 그린과 따뜻한 뉴트럴로 기록 도구의 차분한 인상을 만든다.
-/// 사진 영역에는 이 팔레트를 적용하지 않고 고정 중립색을 유지한다.
+/// 딥 슬레이트 시안 `#0E7490`을 주요 조작에, slate 뉴트럴을 면·글자·테두리에 쓴다.
+/// 측정용 시안 `#06B6D4`는 [AppSemanticColors.measure]로만 노출한다. tertiary는
+/// 용도가 없어 secondary와 같은 slate 계열로 둔다. 다크 모드는 같은 관계를 slate
+/// 900 바탕 위에서 유지한다. 사진 영역에는 이 팔레트를 적용하지 않는다.
+///
+/// `outline`은 테두리 전용(`#CBD5E1`)이라 글자 색으로 쓰지 않는다. 보조 글자는
+/// `onSurfaceVariant`(`#475569`)를 쓴다.
 abstract final class AppColorSchemes {
   static const light = ColorScheme(
     brightness: Brightness.light,
     primary: Color(0xFF0E7490),
     onPrimary: Color(0xFFFFFFFF),
-    primaryContainer: Color(0xFFE0F2F7),
-    onPrimaryContainer: Color(0xFF083344),
-    secondary: Color(0xFF5A5D72),
+    primaryContainer: Color(0xFFE0F2FE),
+    onPrimaryContainer: Color(0xFF164E63),
+    secondary: Color(0xFF475569),
     onSecondary: Color(0xFFFFFFFF),
-    secondaryContainer: Color(0xFFDFF1F3),
-    onSecondaryContainer: Color(0xFF2C2F43),
-    tertiary: Color(0xFF74566E),
+    secondaryContainer: Color(0xFFF1F5F9),
+    onSecondaryContainer: Color(0xFF334155),
+    tertiary: Color(0xFF475569),
     onTertiary: Color(0xFFFFFFFF),
-    tertiaryContainer: Color(0xFFF5E5D2),
-    onTertiaryContainer: Color(0xFF493622),
-    error: Color(0xFFB3261E),
+    tertiaryContainer: Color(0xFFF1F5F9),
+    onTertiaryContainer: Color(0xFF334155),
+    error: Color(0xFFDC2626),
     onError: Color(0xFFFFFFFF),
-    errorContainer: Color(0xFFF9DEDC),
-    onErrorContainer: Color(0xFF601410),
-    surface: Color(0xFFFAFCFB),
-    onSurface: Color(0xFF1B1B21),
+    errorContainer: Color(0xFFFEE2E2),
+    onErrorContainer: Color(0xFF7F1D1D),
+    surface: Color(0xFFF8FAFC),
+    onSurface: Color(0xFF0F172A),
     surfaceContainerLowest: Color(0xFFFFFFFF),
-    surfaceContainerLow: Color(0xFFF3F7F6),
-    surfaceContainer: Color(0xFFF4F7F7),
-    surfaceContainerHigh: Color(0xFFEDF2F1),
-    surfaceContainerHighest: Color(0xFFE4E2E9),
-    onSurfaceVariant: Color(0xFF5F5D67),
-    outline: Color(0xFF78767F),
-    outlineVariant: Color(0xFFC7C5D0),
-    inverseSurface: Color(0xFF303038),
-    onInverseSurface: Color(0xFFF4F7F7),
-    inversePrimary: Color(0xFFB6BEFF),
+    surfaceContainerLow: Color(0xFFF1F5F9),
+    surfaceContainer: Color(0xFFF1F5F9),
+    surfaceContainerHigh: Color(0xFFE9EEF4),
+    surfaceContainerHighest: Color(0xFFE2E8F0),
+    onSurfaceVariant: Color(0xFF475569),
+    outline: Color(0xFFCBD5E1),
+    outlineVariant: Color(0xFFE2E8F0),
+    inverseSurface: Color(0xFF1E293B),
+    onInverseSurface: Color(0xFFF1F5F9),
+    inversePrimary: Color(0xFF7DD3E8),
     scrim: Color(0xFF000000),
-    shadow: Color(0xFF000000),
+    shadow: Color(0xFF0F172A),
   );
 
   static const dark = ColorScheme(
     brightness: Brightness.dark,
-    primary: Color(0xFFB6BEFF),
-    onPrimary: Color(0xFF14206B),
-    primaryContainer: Color(0xFF2A3690),
-    onPrimaryContainer: Color(0xFFE0F2F7),
-    secondary: Color(0xFFC3C5DD),
-    onSecondary: Color(0xFF2C2F43),
-    secondaryContainer: Color(0xFF43465A),
-    onSecondaryContainer: Color(0xFFDFF1F3),
-    tertiary: Color(0xFFE2BAD6),
-    onTertiary: Color(0xFF43263E),
-    tertiaryContainer: Color(0xFF5C3C55),
-    onTertiaryContainer: Color(0xFFFFD8EE),
-    error: Color(0xFFF2B8B5),
-    onError: Color(0xFF601410),
-    errorContainer: Color(0xFF8C1D18),
-    onErrorContainer: Color(0xFFF9DEDC),
-    surface: Color(0xFF121318),
-    onSurface: Color(0xFFE4E2E9),
-    surfaceContainerLowest: Color(0xFF0D0E12),
-    surfaceContainerLow: Color(0xFF1B1B21),
-    surfaceContainer: Color(0xFF1F1F26),
-    surfaceContainerHigh: Color(0xFF2A2A31),
-    surfaceContainerHighest: Color(0xFF303038),
-    onSurfaceVariant: Color(0xFFC7C5D0),
-    outline: Color(0xFF918F9A),
-    outlineVariant: Color(0xFF47464F),
-    inverseSurface: Color(0xFFE4E2E9),
-    onInverseSurface: Color(0xFF303038),
+    primary: Color(0xFF7DD3E8),
+    onPrimary: Color(0xFF083344),
+    primaryContainer: Color(0xFF155E75),
+    onPrimaryContainer: Color(0xFFCFFAFE),
+    secondary: Color(0xFFCBD5E1),
+    onSecondary: Color(0xFF1E293B),
+    secondaryContainer: Color(0xFF334155),
+    onSecondaryContainer: Color(0xFFE2E8F0),
+    tertiary: Color(0xFFCBD5E1),
+    onTertiary: Color(0xFF1E293B),
+    tertiaryContainer: Color(0xFF334155),
+    onTertiaryContainer: Color(0xFFE2E8F0),
+    error: Color(0xFFF87171),
+    onError: Color(0xFF450A0A),
+    errorContainer: Color(0xFF7F1D1D),
+    onErrorContainer: Color(0xFFFEE2E2),
+    surface: Color(0xFF0F172A),
+    onSurface: Color(0xFFF1F5F9),
+    surfaceContainerLowest: Color(0xFF1E293B),
+    surfaceContainerLow: Color(0xFF162033),
+    surfaceContainer: Color(0xFF1E293B),
+    surfaceContainerHigh: Color(0xFF273449),
+    surfaceContainerHighest: Color(0xFF334155),
+    onSurfaceVariant: Color(0xFF94A3B8),
+    outline: Color(0xFF475569),
+    outlineVariant: Color(0xFF334155),
+    inverseSurface: Color(0xFFE2E8F0),
+    onInverseSurface: Color(0xFF1E293B),
     inversePrimary: Color(0xFF0E7490),
     scrim: Color(0xFF000000),
     shadow: Color(0xFF000000),
   );
+
+  /// 주요 버튼 눌림 색. M3 기본 오버레이 대신 지정한 한 단계 진한 톤을 쓴다.
+  static Color pressedPrimary(Brightness brightness) =>
+      brightness == Brightness.light
+      ? const Color(0xFF155E75)
+      : const Color(0xFFA5E4F3);
 }
 
 /// 호출부에서 `Theme.of(context).extension<...>()!`를 반복하지 않게 한다.
@@ -369,7 +423,7 @@ extension AppThemeAccess on BuildContext {
 
   TextTheme get texts => Theme.of(this).textTheme;
 
-  /// success / warning.
+  /// success / warning / measure.
   AppSemanticColors get semanticColors =>
       Theme.of(this).extension<AppSemanticColors>() ?? AppSemanticColors.light;
 

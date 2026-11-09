@@ -1,7 +1,11 @@
+import 'dart:io';
+
 import 'package:bodymark/core/models/models.dart';
 import 'package:bodymark/core/providers.dart';
 import 'package:bodymark/features/compare/compare_export_screen.dart';
 import 'package:bodymark/features/compare/services/compare_export_sink.dart';
+import 'package:bodymark/features/compare/services/compare_photo_loader.dart';
+import 'package:bodymark/features/compare/widgets/compare_photo_pane.dart';
 import 'package:bodymark/features/settings/providers/settings_providers.dart';
 import 'package:bodymark/features/settings/services/app_settings_service.dart';
 import 'package:flutter/material.dart';
@@ -17,6 +21,8 @@ void main() {
   late FakeBodyPhotoRepository photos;
   late FakeGridSettingsService grid;
   late FakeCompareExportSink sink;
+  // 실제 파일 디코딩 없이 사진 준비를 통과시킨다. 실패 경로 테스트에서만 바꾼다.
+  late ComparePhotoLoader photoLoader;
   AppSettingsService? settingsServiceOverride;
 
   setUp(() {
@@ -57,6 +63,7 @@ void main() {
 
     grid = FakeGridSettingsService();
     sink = FakeCompareExportSink();
+    photoLoader = (_, _) async {};
     settingsServiceOverride = null;
   });
 
@@ -72,6 +79,7 @@ void main() {
         bodyPhotoRepositoryProvider.overrideWithValue(photos),
         gridSettingsServiceProvider.overrideWithValue(grid),
         compareExportSinkProvider.overrideWithValue(sink),
+        comparePhotoLoaderProvider.overrideWithValue(photoLoader),
         if (settingsServiceOverride != null)
           appSettingsServiceProvider.overrideWithValue(
             settingsServiceOverride!,
@@ -83,6 +91,11 @@ void main() {
 
   Future<void> openExport(WidgetTester tester) async {
     await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    // 컨트롤 영역은 스크롤된다. 생성 버튼을 화면 안으로 가져온 뒤 누른다.
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('compare.export.button')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('compare.export.button')));
     await tester.pumpAndSettle();
@@ -107,6 +120,11 @@ void main() {
     await tester.pumpAndSettle();
 
     // 전후 비교 화면 -> 이미지 생성 화면.
+    // 컨트롤 영역은 스크롤된다. 생성 버튼을 화면 안으로 가져온 뒤 누른다.
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('compare.export.button')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('compare.export.button')));
     await tester.pumpAndSettle();
 
@@ -129,8 +147,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('동생'), findsOneWidget);
 
-    // 생성 전 상태 확인.
-    expect(find.text('이미지를 생성해 주세요.'), findsOneWidget);
+    // 생성 전에는 진행·실패 배너가 없고 1단계(구성) CTA만 있다.
+    expect(
+      find.byKey(const ValueKey('screen.compare.export.status')),
+      findsNothing,
+    );
+    expect(find.text('미리보기 만들기'), findsOneWidget);
 
     final generateButton = find.byKey(
       const ValueKey('compare.export.generate.button'),
@@ -148,10 +170,16 @@ void main() {
     });
     await tester.pumpAndSettle();
 
-    expect(find.text('이미지 생성이 완료되었습니다.'), findsOneWidget);
-    expect(
+    // 2단계(미리보기)는 실제로 만든 이미지 바이트를 보여준다.
+    expect(find.text('공유 미리보기'), findsOneWidget);
+    final preview = tester.widget<Image>(
       find.byKey(const ValueKey('compare.export.result.thumbnail')),
-      findsOneWidget,
+    );
+    expect(preview.image, isA<MemoryImage>());
+    expect(preview.fit, BoxFit.contain);
+    expect(
+      find.byKey(const ValueKey('compare.export.generate.button')),
+      findsNothing,
     );
 
     final saveButton = find.byKey(const ValueKey('compare.export.save.button'));
@@ -181,6 +209,11 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
+    // 컨트롤 영역은 스크롤된다. 생성 버튼을 화면 안으로 가져온 뒤 누른다.
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('compare.export.button')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('compare.export.button')));
     await tester.pumpAndSettle();
 
@@ -202,7 +235,7 @@ void main() {
     await tester.tap(saveButton);
     await tester.pumpAndSettle();
 
-    expect(find.text('저장에 실패했습니다. 다시 시도해 주세요.'), findsOneWidget);
+    expect(find.text('저장에 실패했어요. 다시 시도해주세요.'), findsOneWidget);
     expect(sink.savedNames, isEmpty);
   });
 
@@ -326,6 +359,11 @@ void main() {
     await tester.tap(viewGridToggle);
     await tester.pumpAndSettle();
 
+    // 컨트롤 영역은 스크롤된다. 생성 버튼을 화면 안으로 가져온 뒤 누른다.
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('compare.export.button')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('compare.export.button')));
     await tester.pumpAndSettle();
 
@@ -339,14 +377,8 @@ void main() {
     );
   });
 
-  testWidgets('포함 옵션이 바뀌면 기존 생성 결과를 저장하거나 공유할 수 없다', (tester) async {
+  testWidgets('미리보기에서 돌아가면 옵션은 유지하고 만든 결과는 버린다', (tester) async {
     await openExport(tester);
-    await generateImage(tester);
-
-    expect(
-      find.byKey(const ValueKey('compare.export.result.thumbnail')),
-      findsOneWidget,
-    );
 
     final labelToggle = find.byKey(
       const ValueKey('compare.export.label.toggle'),
@@ -354,57 +386,142 @@ void main() {
     await tester.ensureVisible(labelToggle);
     await tester.tap(labelToggle);
     await tester.pumpAndSettle();
-
-    expect(
-      find.byKey(const ValueKey('compare.export.result.thumbnail')),
-      findsNothing,
-    );
-    expect(find.text('이미지를 생성해 주세요.'), findsOneWidget);
-    expect(
-      tester
-          .widget<OutlinedButton>(
-            find.byKey(const ValueKey('compare.export.save.button')),
-          )
-          .onPressed,
-      isNull,
-    );
-    expect(
-      tester
-          .widget<OutlinedButton>(
-            find.byKey(const ValueKey('compare.export.share.button')),
-          )
-          .onPressed,
-      isNull,
-    );
-
     await generateImage(tester);
-    final gridToggle = find.byKey(const ValueKey('compare.export.grid.toggle'));
-    await tester.ensureVisible(gridToggle);
-    await tester.tap(gridToggle);
-    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('compare.export.result.thumbnail')),
+      findsOneWidget,
+    );
 
+    // 앱 바 "구성 수정" → 1단계.
+    await tester.tap(find.byKey(const ValueKey('compare.export.edit.button')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey(CompareExportScreen.screenId)),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<SwitchListTile>(labelToggle).value,
+      isTrue,
+      reason: '돌아와도 고른 옵션은 그대로다',
+    );
     expect(
       find.byKey(const ValueKey('compare.export.result.thumbnail')),
       findsNothing,
     );
     expect(
-      tester
-          .widget<OutlinedButton>(
-            find.byKey(const ValueKey('compare.export.save.button')),
-          )
-          .onPressed,
-      isNull,
+      find.byKey(const ValueKey('compare.export.save.button')),
+      findsNothing,
     );
     expect(
-      tester
-          .widget<OutlinedButton>(
-            find.byKey(const ValueKey('compare.export.share.button')),
-          )
-          .onPressed,
-      isNull,
+      find.byKey(const ValueKey('compare.export.share.button')),
+      findsNothing,
     );
+
+    // 시스템 뒤로 가기도 화면을 닫지 않고 1단계로 돌아간다.
+    await generateImage(tester);
+    expect(
+      find.byKey(const ValueKey('compare.export.result.thumbnail')),
+      findsOneWidget,
+    );
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey(CompareExportScreen.screenId)),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('compare.export.generate.button')),
+      findsOneWidget,
+    );
+    expect(tester.widget<SwitchListTile>(labelToggle).value, isTrue);
     expect(sink.savedNames, isEmpty);
     expect(sink.sharedNames, isEmpty);
+  });
+
+  testWidgets('사진을 읽지 못하면 빈 이미지를 만들지 않고 실패와 재시도를 보여준다', (tester) async {
+    // 캡처할 구성은 화면 뒤에 가려져 있어 사진이 덜 읽힌 채 찍힐 수 있었다.
+    // 읽기에 실패하면 성공 대신 실패로 보내고, 다시 시도하면 만들 수 있다.
+    var failLoad = true;
+    photoLoader = (_, _) async {
+      if (failLoad) throw const FileSystemException('decode failed');
+    };
+    await openExport(tester);
+    await generateImage(tester);
+
+    expect(find.text('이미지를 만들지 못했어요'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('compare.export.result.thumbnail')),
+      findsNothing,
+    );
+    expect(find.text('다시 시도'), findsOneWidget);
+
+    failLoad = false;
+    await generateImage(tester);
+    expect(
+      find.byKey(const ValueKey('compare.export.result.thumbnail')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('이미지를 만드는 동안 진행 배너를 보여주고 버튼을 막는다', (tester) async {
+    await openExport(tester);
+
+    // toImage는 FakeAsync에서 끝나지 않으므로 진행 상태가 유지된다.
+    await tester.tap(
+      find.byKey(const ValueKey('compare.export.generate.button')),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('screen.compare.export.status')),
+      findsOneWidget,
+    );
+    expect(find.text('비교 이미지를 만들고 있어요'), findsOneWidget);
+    expect(find.text('이미지 만드는 중'), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.byKey(const ValueKey('compare.export.generate.button')),
+          )
+          .onPressed,
+      isNull,
+    );
+  });
+
+  testWidgets('구성 단계에서 방향을 바꾸면 같은 기록의 그 방향 사진으로 만든다', (tester) async {
+    photos.photos['bl1'] = BodyPhoto(
+      id: 'bl1',
+      recordId: 'r1',
+      filePath: '/nonexistent/before-left.jpg',
+      direction: BodyDirection.leftSide,
+      createdAt: DateTime(2026, 1, 1),
+    );
+    photos.photos['al1'] = BodyPhoto(
+      id: 'al1',
+      recordId: 'r2',
+      filePath: '/nonexistent/after-left.jpg',
+      direction: BodyDirection.leftSide,
+      createdAt: DateTime(2026, 3, 1),
+    );
+    await openExport(tester);
+
+    final left = find.byKey(
+      const ValueKey('compare.export.direction.leftSide'),
+    );
+    await tester.ensureVisible(left);
+    await tester.tap(left);
+    await tester.pumpAndSettle();
+
+    final panes = tester
+        .widgetList<ComparePhotoPane>(find.byType(ComparePhotoPane))
+        .map((p) => p.photo.id)
+        .toList();
+    expect(panes, ['bl1', 'al1']);
+    // 방향이 없는 쪽(후면)은 고를 수 없다.
+    expect(
+      find.byKey(const ValueKey('compare.export.direction.back')),
+      findsNothing,
+    );
   });
 
   testWidgets('현재 포함 옵션을 기본 내보내기 설정으로 저장한다', (tester) async {
@@ -431,7 +548,7 @@ void main() {
     await tester.tap(saveDefaultsButton);
     await tester.pumpAndSettle();
 
-    expect(find.text('기본 내보내기 옵션으로 저장했습니다.'), findsOneWidget);
+    expect(find.text('기본 내보내기 옵션으로 저장했어요.'), findsOneWidget);
     expect(settingsService.saveAttempts, 1);
     expect(settingsService.current.defaultExportOptions.includeLabel, isTrue);
     expect(settingsService.current.defaultExportOptions.includeMemo, isTrue);
@@ -458,8 +575,8 @@ void main() {
     await tester.tap(saveDefaultsButton);
     await tester.pumpAndSettle();
 
-    expect(find.text('기본값 저장에 실패했습니다. 다시 시도해 주세요.'), findsOneWidget);
-    expect(find.text('기본 내보내기 옵션으로 저장했습니다.'), findsNothing);
+    expect(find.text('기본값 저장에 실패했어요. 다시 시도해주세요.'), findsOneWidget);
+    expect(find.text('기본 내보내기 옵션으로 저장했어요.'), findsNothing);
     expect(settingsService.saveAttempts, 1);
     expect(settingsService.current.defaultExportOptions.includeMemo, isFalse);
     expect(
@@ -478,6 +595,7 @@ void main() {
           bodyPhotoRepositoryProvider.overrideWithValue(photos),
           gridSettingsServiceProvider.overrideWithValue(grid),
           compareExportSinkProvider.overrideWithValue(sink),
+          comparePhotoLoaderProvider.overrideWithValue(photoLoader),
         ],
         child: MaterialApp.router(routerConfig: router),
       ),
@@ -506,6 +624,7 @@ void main() {
           bodyPhotoRepositoryProvider.overrideWithValue(photos),
           gridSettingsServiceProvider.overrideWithValue(grid),
           compareExportSinkProvider.overrideWithValue(sink),
+          comparePhotoLoaderProvider.overrideWithValue(photoLoader),
         ],
         child: MaterialApp.router(routerConfig: router),
       ),

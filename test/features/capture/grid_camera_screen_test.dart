@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -8,10 +9,14 @@ import 'package:bodymark/core/providers.dart';
 import 'package:bodymark/core/repositories/body_photo_repository.dart';
 import 'package:bodymark/core/repositories/photo_record_repository.dart';
 import 'package:bodymark/core/router/app_routes.dart';
+import 'package:bodymark/core/widgets/grid_painter.dart';
 import 'package:bodymark/features/capture/camera_permission_guide.dart';
 import 'package:bodymark/features/capture/grid_camera_screen.dart';
+import 'package:bodymark/features/capture/level/level_meter.dart';
+import 'package:bodymark/features/capture/widgets/level_indicator.dart';
 import 'package:bodymark/features/capture/providers/capture_providers.dart';
 import 'package:bodymark/features/capture/providers/capture_session_provider.dart';
+import 'package:bodymark/features/members/member_providers.dart';
 import 'package:bodymark/features/records/providers/records_providers.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -56,6 +61,8 @@ void main() {
     FakeCaptureCameraController Function() factory, {
     Future<String?> Function(BodyDirection direction)? loadPreviousGuide,
     List<RecordWithPhotos> timeline = const [],
+    LevelSensor? levelSensor,
+    List<Override> overrides = const [],
   }) {
     final guideLoader = loadPreviousGuide ?? (_) async => null;
     final router = GoRouter(
@@ -104,6 +111,12 @@ void main() {
         // 하단 기록 썸네일이 읽는 타임라인. override하지 않으면 실제 sqflite
         // 리포지토리로 내려가 위젯 테스트에서 결과가 결정론적이지 않다.
         timelineProvider.overrideWith((ref) async => timeline),
+        // 실제 센서 채널 대신 가짜 스트림. 기본은 샘플이 없어 수평계가 숨는다.
+        levelSensorProvider.overrideWithValue(
+          levelSensor ?? FakeLevelSensor(const Stream.empty()),
+        ),
+        levelLockFeedbackProvider.overrideWithValue(() {}),
+        ...overrides,
       ],
       child: MaterialApp.router(routerConfig: router),
     );
@@ -155,7 +168,7 @@ void main() {
     }
   });
 
-  testWidgets('실기기 폭에서 하단 바 4개 요소가 넘치지 않고 모두 보인다', (tester) async {
+  testWidgets('실기기 폭에서 기록·건너뛰기·셔터·완료가 넘치지 않고 모두 보인다', (tester) async {
     useNarrowPhoneViewport(tester);
 
     // 렌즈 버튼까지 상단 바에 들어간 상태에서 검증한다.
@@ -203,7 +216,7 @@ void main() {
       findsOneWidget,
     );
     expect(sessionOf(tester).current.direction, BodyDirection.front);
-    expect(find.textContaining('1 / 4 · 정면'), findsOneWidget);
+    expect(find.text('정면 1/4'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('capture.shutter.button')));
     await tester.pumpAndSettle();
@@ -218,7 +231,7 @@ void main() {
     expect(session.current.direction, BodyDirection.leftSide);
     expect(session.shots.first.imagePath, fake.capturedPath);
     expect(session.capturedCount, 1);
-    expect(find.textContaining('2 / 4 · 좌측면'), findsOneWidget);
+    expect(find.text('좌측면 2/4'), findsOneWidget);
   });
 
   testWidgets('마지막 방향까지 찍으면 리뷰 화면으로 이동한다', (tester) async {
@@ -313,7 +326,7 @@ void main() {
     ///
     /// 권한 창이 뜨고 닫힐 때마다 lifecycle이 흔들리는데, 복귀마다 초기화를 다시
     /// 걸어 거부된 권한을 향해 무한히 재시도했다. 그동안 실패를 화면에 반영하지
-    /// 못해 사용자는 "카메라를 준비하는 중입니다."만 계속 보았다.
+    /// 못해 사용자는 "카메라를 준비하고 있어요."만 계속 보았다.
     FakeCaptureCameraController deniedCamera() => FakeCaptureCameraController(
       initializeError: CameraException(
         'CameraAccessDenied',
@@ -326,8 +339,8 @@ void main() {
       await tester.pumpWidget(buildApp(() => fake));
       await tester.pumpAndSettle();
 
-      expect(find.text(keepPhrasesWhole('카메라 권한이 필요합니다.')), findsOneWidget);
-      expect(find.text(keepPhrasesWhole('카메라를 준비하는 중입니다.')), findsNothing);
+      expect(find.text(keepPhrasesWhole('카메라 권한이 필요해요.')), findsOneWidget);
+      expect(find.text(keepPhrasesWhole('카메라를 준비하고 있어요.')), findsNothing);
       expect(
         tester
             .getSemantics(
@@ -358,7 +371,45 @@ void main() {
 
       expect(fake.initializeCalls, 1);
       // 안내가 사라지면 사용자가 무엇을 해야 할지 알 수 없다.
-      expect(find.text(keepPhrasesWhole('카메라 권한이 필요합니다.')), findsOneWidget);
+      expect(find.text(keepPhrasesWhole('카메라 권한이 필요해요.')), findsOneWidget);
+    });
+
+    testWidgets('권한 창이 떠 있는 동안 복귀해도 권한을 다시 요청하지 않는다', (tester) async {
+      // 실기기(Android 14)에서 확인된 순서: 초기화가 권한 응답을 기다리는 동안
+      // 앱이 inactive가 되고, 거부 후 resumed가 초기화 실패보다 먼저 도착한다.
+      // 이때 재초기화를 걸면 방금 거부한 권한 창이 한 번 더 뜬다.
+      final gate = Completer<void>();
+      final fake = deniedCamera()..initializeGate = gate.future;
+      await tester.pumpWidget(buildApp(() => fake));
+      await tester.pump();
+      expect(fake.initializeCalls, 1);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await tester.pump();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      gate.complete();
+      await tester.pumpAndSettle();
+
+      expect(fake.initializeCalls, 1);
+      expect(find.text(keepPhrasesWhole('카메라 권한이 필요해요.')), findsOneWidget);
+    });
+
+    testWidgets('권한 창이 떠 있는 동안 허용하고 복귀하면 카메라가 준비된다', (tester) async {
+      final gate = Completer<void>();
+      final fake = FakeCaptureCameraController()..initializeGate = gate.future;
+      await tester.pumpWidget(buildApp(() => fake));
+      await tester.pump();
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await tester.pump();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      gate.complete();
+      await tester.pumpAndSettle();
+
+      expect(fake.isInitialized, isTrue);
+      expect(find.byKey(const ValueKey('fake.camera.preview')), findsOneWidget);
     });
 
     testWidgets('설정 열기를 누르면 시스템 설정 화면 열기를 요청한다', (tester) async {
@@ -410,7 +461,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
-      expect(find.text(keepPhrasesWhole('카메라 권한이 필요합니다.')), findsOneWidget);
+      expect(find.text(keepPhrasesWhole('카메라 권한이 필요해요.')), findsOneWidget);
       // 버튼이 막힌 기기에서 직접 찾아갈 수 있어야 한다. 화면과 같은 함수로
       // 경로를 만들어 실행 중인 플랫폼 분기까지 함께 확인한다.
       expect(
@@ -432,7 +483,7 @@ void main() {
 
       expect(fake.initializeCalls, 2);
       expect(find.byKey(const ValueKey('fake.camera.preview')), findsOneWidget);
-      expect(find.text(keepPhrasesWhole('카메라 권한이 필요합니다.')), findsNothing);
+      expect(find.text(keepPhrasesWhole('카메라 권한이 필요해요.')), findsNothing);
     });
   });
 
@@ -548,6 +599,48 @@ void main() {
     expect(find.byKey(const ValueKey('screen.settings.stub')), findsOneWidget);
   });
 
+  testWidgets('빠른 설정 패널은 스크롤 없이 이전 사진 컨트롤을 먼저 보여 주고 닫을 수 있다', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      buildApp(
+        FakeCaptureCameraController.new,
+        loadPreviousGuide: (_) async => frontGuideFile.path,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await openQuickPanel(tester);
+
+    final panelRect = tester.getRect(
+      find.byKey(const ValueKey('capture.quick.panel')),
+    );
+    final slider = find.byKey(
+      const ValueKey('capture.previousGuide.opacity.slider'),
+    );
+    final sliderRect = tester.getRect(slider);
+    expect(sliderRect.bottom, lessThanOrEqualTo(panelRect.bottom));
+    // 이전 사진 컨트롤이 격자 설정보다 위에 있다.
+    expect(
+      sliderRect.top,
+      lessThan(
+        tester.getRect(find.byKey(const ValueKey('capture.grid.toggle'))).top,
+      ),
+    );
+
+    // 값 읽기는 슬라이더 노드 하나가 맡고, 단위는 퍼센트다.
+    expect(
+      tester.widget<Slider>(slider).semanticFormatterCallback!(0.3),
+      '30%',
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('capture.quick.panel.close.button')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('capture.quick.panel')), findsNothing);
+  });
+
   testWidgets('최근 사진을 원본 비율의 반투명 가이드로 표시하고 설정을 바꾼다', (tester) async {
     final fake = FakeCaptureCameraController();
     await tester.pumpWidget(
@@ -657,7 +750,7 @@ void main() {
 
     await openQuickPanel(tester);
 
-    expect(find.text('표시할 이전 사진이 없습니다.'), findsOneWidget);
+    expect(find.text('표시할 이전 사진이 없어요.'), findsOneWidget);
     expect(
       tester
           .widget<Switch>(
@@ -681,7 +774,7 @@ void main() {
 
     await openQuickPanel(tester);
 
-    expect(find.text('이전 사진을 불러오지 못했습니다.'), findsOneWidget);
+    expect(find.text('이전 사진을 불러오지 못했어요.'), findsOneWidget);
     expect(
       find.bySemanticsIdentifier('capture.previousGuide.image'),
       findsNothing,
@@ -884,7 +977,7 @@ void main() {
 
     expect(countdown, findsOneWidget);
     expect(remainingText('3'), findsOneWidget);
-    expect(find.text('화면을 탭하면 취소됩니다'), findsOneWidget);
+    expect(find.text('화면을 탭하면 취소돼요'), findsOneWidget);
     // 카운트다운 중에는 건너뛰기·완료를 누를 수 없다.
     expect(
       tester
@@ -1140,6 +1233,345 @@ void main() {
 
     expect(path, frontGuideFile.path);
   });
+
+  group('수평계', () {
+    const g = 9.81;
+
+    testWidgets('수평으로 잠기면 "수평" 표시와 판독값을 보여주고 촬영은 그대로다', (tester) async {
+      // 기본 테스트 뷰포트(800x600)는 가로라 세로 휴대폰 화면으로 맞춘다.
+      useNarrowPhoneViewport(tester);
+      final samples = StreamController<AccelerationSample>();
+      addTearDown(samples.close);
+      await tester.pumpWidget(
+        buildApp(
+          FakeCaptureCameraController.new,
+          levelSensor: FakeLevelSensor(samples.stream),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsIdentifier('capture.level'), findsNothing);
+
+      // 시계 방향 약 5°: 기울어짐.
+      samples.add(const AccelerationSample(-0.855, 9.773, 0));
+      await tester.pump();
+      await tester.pump();
+      expect(find.bySemanticsIdentifier('capture.level'), findsOneWidget);
+      expect(find.byKey(const ValueKey('capture.level.locked')), findsNothing);
+
+      // 수평(필터가 수렴할 때까지 여러 번).
+      for (var i = 0; i < 30; i++) {
+        samples.add(const AccelerationSample(0, g, 0));
+        await tester.pump();
+      }
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey('capture.level.locked')),
+        findsOneWidget,
+      );
+      expect(find.text('수평'), findsOneWidget);
+      expect(
+        tester.getSemantics(find.bySemanticsIdentifier('capture.level')),
+        matchesSemantics(
+          label: '수평계',
+          value: '기울기 0도, 앞뒤 0도, 수평',
+          identifier: 'capture.level',
+        ),
+      );
+      final shutter = tester.widget<GestureDetector>(
+        find.byKey(const ValueKey('capture.shutter.button')),
+      );
+      expect(shutter.onTap, isNotNull);
+    });
+
+    testWidgets('눕힌 자세면 수평선·잠금 대신 세워 달라는 안내만 보인다', (tester) async {
+      final samples = StreamController<AccelerationSample>();
+      addTearDown(samples.close);
+      var locks = 0;
+      await tester.pumpWidget(
+        buildApp(
+          FakeCaptureCameraController.new,
+          levelSensor: FakeLevelSensor(samples.stream),
+          overrides: [
+            levelLockFeedbackProvider.overrideWithValue(() => locks++),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 책상 위에 화면이 위로 향하게 둔 상태(roll 계산값은 의미 없음).
+      for (var i = 0; i < 30; i++) {
+        samples.add(const AccelerationSample(0.4, 0.3, g));
+        await tester.pump();
+      }
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey('capture.level.upright.hint')),
+        findsOneWidget,
+      );
+      expect(find.text('휴대폰을 세워 주세요'), findsOneWidget);
+      expect(
+        find.byType(CustomPaint).evaluate().where((e) {
+          final w = e.widget as CustomPaint;
+          return w.painter is LevelPainter;
+        }),
+        isEmpty,
+      );
+      expect(find.byKey(const ValueKey('capture.level.locked')), findsNothing);
+      expect(locks, 0);
+    });
+
+    testWidgets('가로 화면에서 수평으로 들면 화면 기준으로 잠긴다', (tester) async {
+      tester.view.physicalSize = const Size(1600, 900);
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.reset);
+      final samples = StreamController<AccelerationSample>();
+      addTearDown(samples.close);
+      await tester.pumpWidget(
+        buildApp(
+          FakeCaptureCameraController.new,
+          levelSensor: FakeLevelSensor(samples.stream),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      // 기기 위쪽이 왼쪽인 가로 자세에서 수평: 세로 기준 roll은 +90°다.
+      for (var i = 0; i < 30; i++) {
+        samples.add(const AccelerationSample(-g, 0, 0));
+        await tester.pump();
+      }
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey('capture.level.locked')),
+        findsOneWidget,
+      );
+      expect(
+        tester.getSemantics(find.bySemanticsIdentifier('capture.level')),
+        matchesSemantics(
+          label: '수평계',
+          value: '기울기 0도, 앞뒤 0도, 수평',
+          identifier: 'capture.level',
+        ),
+      );
+    });
+
+    testWidgets('다른 화면이 위에 쌓이면 센서 구독을 끊고 햅틱도 없다', (tester) async {
+      var listening = false;
+      final samples = StreamController<AccelerationSample>(
+        onListen: () => listening = true,
+        onCancel: () => listening = false,
+      );
+      var locks = 0;
+      await tester.pumpWidget(
+        buildApp(
+          FakeCaptureCameraController.new,
+          levelSensor: FakeLevelSensor(samples.stream),
+          overrides: [
+            levelLockFeedbackProvider.overrideWithValue(() => locks++),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(listening, isTrue);
+
+      await openQuickPanel(tester);
+      final settingsLink = find.byKey(const ValueKey('capture.settings.link'));
+      await revealInQuickPanel(tester, settingsLink);
+      await tester.tap(settingsLink);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('screen.settings.stub')),
+        findsOneWidget,
+      );
+      expect(listening, isFalse);
+      expect(locks, 0);
+    });
+
+    testWidgets('센서가 없거나 오류면 지표를 숨기고 촬영은 계속된다', (tester) async {
+      final fake = FakeCaptureCameraController();
+      await tester.pumpWidget(
+        buildApp(
+          () => fake,
+          levelSensor: FakeLevelSensor(
+            Stream.error(StateError('accelerometer unavailable')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.bySemanticsIdentifier('capture.level'), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('capture.shutter.button')));
+      await tester.pumpAndSettle();
+      expect(sessionOf(tester).capturedCount, 1);
+    });
+
+    testWidgets('빠른 설정에서 끄면 지표가 숨고 촬영 설정에 저장된다', (tester) async {
+      final samples = StreamController<AccelerationSample>();
+      addTearDown(samples.close);
+      await tester.pumpWidget(
+        buildApp(
+          FakeCaptureCameraController.new,
+          levelSensor: FakeLevelSensor(samples.stream),
+        ),
+      );
+      await tester.pumpAndSettle();
+      samples.add(const AccelerationSample(0, g, 0));
+      await tester.pump();
+      await tester.pump();
+      expect(find.bySemanticsIdentifier('capture.level'), findsOneWidget);
+
+      await openQuickPanel(tester);
+      final toggle = find.byKey(const ValueKey('capture.level.toggle'));
+      await revealInQuickPanel(tester, toggle);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+
+      expect(find.bySemanticsIdentifier('capture.level'), findsNothing);
+      final prefs = await SharedPreferences.getInstance();
+      final stored = prefs.getKeys().map(prefs.get).whereType<String>().join();
+      expect(stored, contains('"showLevel":false'));
+    });
+  });
+
+  testWidgets('빠른 설정을 열어도 미리보기 프레임 크기가 줄지 않는다', (tester) async {
+    useNarrowPhoneViewport(tester);
+    await tester.pumpWidget(
+      buildApp(
+        FakeCaptureCameraController.new,
+        loadPreviousGuide: (_) async => frontGuideFile.path,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final before = tester.getRect(find.byKey(const ValueKey('capture.frame')));
+
+    await openQuickPanel(tester);
+    final after = tester.getRect(find.byKey(const ValueKey('capture.frame')));
+    expect(after, before);
+    expect(after.width / after.height, closeTo(kPhotoFrameAspect, 0.001));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('HUD 칩 글자는 어두운 표면 위에서 흰색(비활성은 38%)이다', (tester) async {
+    await tester.pumpWidget(buildApp(FakeCaptureCameraController.new));
+    await tester.pumpAndSettle();
+
+    const onChrome = Color(0xFFFFFFFF);
+    Color? colorOf(String text) {
+      final element = tester.element(find.text(text));
+      final widget = element.widget as Text;
+      return widget.style?.color ?? DefaultTextStyle.of(element).style.color;
+    }
+
+    // 활성 칩: 격자·설정.
+    expect(colorOf('격자 켜짐'), onChrome);
+    expect(colorOf('설정'), onChrome);
+    // 이전 사진이 없어도 시트를 여는 칩이라 활성이다.
+    expect(colorOf('이전 사진 없음'), onChrome);
+  });
+
+  testWidgets('격자 칩을 누르면 격자를 끄고 켠다', (tester) async {
+    await tester.pumpWidget(buildApp(FakeCaptureCameraController.new));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('capture.grid.overlay')), findsOneWidget);
+    expect(find.text('격자 켜짐'), findsOneWidget);
+
+    GridSettings painted() =>
+        (tester
+                    .widget<CustomPaint>(
+                      find.byKey(const ValueKey('capture.grid.overlay')),
+                    )
+                    .painter!
+                as GridPainter)
+            .settings;
+    expect(painted().visible, isTrue);
+
+    await tester.tap(find.byKey(const ValueKey('capture.grid.chip')));
+    await tester.pumpAndSettle();
+    expect(painted().visible, isFalse);
+    expect(find.text('격자 꺼짐'), findsOneWidget);
+    expect(find.bySemanticsIdentifier('capture.reference.lines'), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('capture.grid.chip')));
+    await tester.pumpAndSettle();
+    expect(painted().visible, isTrue);
+    expect(
+      find.bySemanticsIdentifier('capture.reference.lines'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('이전 사진 칩은 농도를 보여주고 누르면 설정 시트를 연다', (tester) async {
+    await tester.pumpWidget(
+      buildApp(
+        FakeCaptureCameraController.new,
+        loadPreviousGuide: (_) async => frontGuideFile.path,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('이전 사진 켜짐 (30%)'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('capture.previousGuide.chip')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('capture.quick.panel')), findsOneWidget);
+  });
+
+  testWidgets('레슨 촬영이면 헤더에 회원과 기준을 보여주고 닫기로 돌아간다', (tester) async {
+    await tester.pumpWidget(
+      buildApp(
+        FakeCaptureCameraController.new,
+        overrides: [
+          lessonCaptureContextProvider.overrideWith(
+            (ref) => const LessonCaptureContext('m1', useBaseline: false),
+          ),
+          cameraHeaderInfoProvider.overrideWith(
+            (ref) async => const CameraHeaderInfo(
+              title: '김서연',
+              subtitle: '첫 촬영 · 기준 사진 없음',
+              hasBaseline: false,
+            ),
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('김서연'), findsOneWidget);
+    expect(find.text('첫 촬영 · 기준 사진 없음'), findsOneWidget);
+    expect(find.byKey(const ValueKey('capture.close.button')), findsOneWidget);
+    expect(find.byKey(const ValueKey('capture.records.button')), findsNothing);
+  });
+
+  for (final width in [320.0, 360.0, 412.0]) {
+    testWidgets('${width.toInt()}dp·글꼴 2배에서도 HUD가 넘치지 않는다', (tester) async {
+      tester.view.physicalSize = Size(width, 760);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.view.reset);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+      await tester.pumpWidget(
+        buildApp(
+          () => FakeCaptureCameraController(canSwitchLens: true),
+          loadPreviousGuide: (_) async => frontGuideFile.path,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      for (final id in const [
+        'capture.shutter.button',
+        'capture.skip.button',
+        'capture.finish.button',
+        'capture.grid.chip',
+      ]) {
+        expect(find.byKey(ValueKey(id)), findsOneWidget, reason: id);
+      }
+
+      await openQuickPanel(tester);
+      expect(tester.takeException(), isNull);
+    });
+  }
 }
 
 /// autoDispose 가이드 provider를 구독을 유지한 채 읽는다.
@@ -1229,4 +1661,12 @@ class _FakeBodyPhotoRepository implements BodyPhotoRepository {
 
   @override
   Future<void> update(BodyPhoto photo) async {}
+}
+
+class FakeLevelSensor implements LevelSensor {
+  final Stream<AccelerationSample> stream;
+  FakeLevelSensor(this.stream);
+
+  @override
+  Stream<AccelerationSample> samples() => stream;
 }

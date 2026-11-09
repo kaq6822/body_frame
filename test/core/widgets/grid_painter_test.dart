@@ -67,5 +67,28 @@ void main() {
 
       recorder.endRecording().dispose();
     });
+
+    test('기본값은 자세 평가용 성긴 격자다(간격 60, 투명도 40%)', () {
+      expect(GridSettings.defaults.spacing, 60);
+      expect(GridSettings.defaults.opacity, 0.4);
+      // 저장값에 키가 빠져 있으면 새 기본값으로 채운다. 값이 있으면 그대로 둔다.
+      expect(GridSettings.fromMap(const {}).spacing, 60);
+      expect(GridSettings.fromMap(const {'spacing': 40.0}).spacing, 40);
+    });
+
+    test('중앙 세로선(다림줄)은 다른 세로선보다 진하게 그린다', () async {
+      const settings = GridSettings(opacity: 0.4, lineWidth: 2, spacing: 60);
+      final recorder = ui.PictureRecorder();
+      const GridPainter(settings).paint(Canvas(recorder), const Size(360, 640));
+      final image = await recorder.endRecording().toImage(360, 640);
+      final bytes = (await image.toByteData())!;
+      int alphaAt(int x, int y) => bytes.getUint8((y * 360 + x) * 4 + 3);
+
+      final center = alphaAt(180, 10);
+      final regular = alphaAt(240, 10);
+      expect(regular, greaterThan(0));
+      expect(center, greaterThan(regular));
+      image.dispose();
+    });
   });
 }

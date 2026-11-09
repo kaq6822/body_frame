@@ -28,6 +28,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>체형 변화 기록을 위한 격자 카메라 촬영에 카메라 접근이 필요합니다.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>촬영 화면의 수평계로 기기 기울기를 표시하려면 동작 센서 접근이 필요합니다.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>기존에 촬영한 체형 사진을 기록에 등록하려면 사진 보관함 접근이 필요합니다.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>

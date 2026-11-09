@@ -10,6 +10,8 @@ import '../../core/photo_frame.dart';
 import '../../core/providers.dart';
 import '../../core/router/app_routes.dart';
 import '../../core/services/app_logger.dart';
+import '../../core/theme/app_tokens.dart';
+import '../../core/widgets/app_confirm_dialog.dart';
 import '../../core/widgets/photo_grid_overlay.dart';
 import 'providers/records_providers.dart';
 
@@ -44,7 +46,7 @@ class RecordDetailScreen extends ConsumerWidget {
           error: (error, stack) => _StatusPane(
             key: const ValueKey('screen.records.detail.status'),
             state: _PaneState.failure,
-            message: '촬영 기록을 불러오지 못했습니다.',
+            message: '촬영 기록을 불러오지 못했어요.',
             onRetry: () => ref.invalidate(_recordDetailProvider(recordId)),
           ),
         ),
@@ -186,27 +188,18 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
   }
 
   Future<void> _confirmDelete() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        key: const ValueKey('records.delete.confirm.dialog'),
-        title: const Text('촬영 기록 삭제'),
-        content: const Text('이 촬영 기록과 포함된 모든 사진이 삭제됩니다. 삭제 후에는 복구할 수 없습니다.'),
-        actions: [
-          TextButton(
-            key: const ValueKey('records.delete.cancel.button'),
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            key: const ValueKey('records.delete.confirm.button'),
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('삭제'),
-          ),
-        ],
-      ),
+    final confirmed = await showAppConfirm(
+      context,
+      title: '촬영 기록을 삭제할까요?',
+      body: '이 촬영 기록과 포함된 모든 사진이 삭제돼요.',
+      warning: '삭제 후 되돌릴 수 없어요.',
+      confirmLabel: '삭제',
+      destructive: true,
+      dialogKey: 'records.delete.confirm.dialog',
+      cancelKey: 'records.delete.cancel.button',
+      confirmKey: 'records.delete.confirm.button',
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
     await _deleteRecord();
   }
 
@@ -280,7 +273,7 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
 
     return SingleChildScrollView(
       key: const ValueKey('screen.records.detail.status'),
-      padding: const EdgeInsets.all(16),
+      padding: AppSpacing.content,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -288,7 +281,7 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
             children: [
               Expanded(
                 child: Text(
-                  '촬영일: ${DateFormat('yyyy-MM-dd').format(record.shotAt)}',
+                  '레슨일 ${DateFormat('yyyy.MM.dd').format(record.shotAt)}',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
@@ -319,7 +312,7 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
           ),
           _InlineStatus(id: 'records.delete.status', state: _deleteState),
           Text(
-            '등록일: ${DateFormat('yyyy-MM-dd HH:mm').format(record.createdAt)}',
+            '등록일: ${DateFormat('yyyy.MM.dd HH:mm').format(record.createdAt)}',
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 16),
@@ -361,7 +354,7 @@ class _RecordDetailBodyState extends ConsumerState<_RecordDetailBody> {
                 identifier: 'records.memo.save.button',
                 button: true,
                 label: '메모 저장',
-                child: ElevatedButton(
+                child: OutlinedButton(
                   key: const ValueKey('records.memo.save.button'),
                   onPressed: _memoState == _PaneState.running
                       ? null
@@ -531,21 +524,17 @@ class _PhotoPage extends StatelessWidget {
         key: ValueKey(id),
         onTap: onTap,
         child: ColoredBox(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Image.file(
-                File(photo.filePath),
-                fit: BoxFit.contain,
-                errorBuilder: (context, error, stack) =>
-                    const Center(child: Icon(Icons.broken_image_outlined)),
-              ),
-              PhotoGridOverlay(
-                settings: photo.gridSettings,
-                semanticsIdentifier: '$id.grid.overlay',
-              ),
-            ],
+          color: context.photoColors.backdrop,
+          // 격자는 letterbox가 아니라 사진 사각형 위에만 얹는다.
+          child: PhotoWithGrid(
+            image: FileImage(File(photo.filePath)),
+            aspectRatio: PhotoWithGrid.aspectFromSize(
+              photo.width,
+              photo.height,
+            ),
+            settings: photo.gridSettings,
+            gridSemanticsIdentifier: '$id.grid.overlay',
+            errorIdPrefix: '$id.photo',
           ),
         ),
       ),
@@ -642,7 +631,7 @@ class _NoPhotosNotice extends StatelessWidget {
   Widget build(BuildContext context) {
     return Semantics(
       identifier: 'records.photo.none',
-      label: '이 기록에 사진이 없습니다',
+      label: '이 기록에 사진이 없어요',
       child: Container(
         key: const ValueKey('records.photo.none'),
         padding: const EdgeInsets.all(24),
@@ -654,7 +643,7 @@ class _NoPhotosNotice extends StatelessWidget {
         ),
         child: Center(
           child: Text(
-            '이 기록에는 사진이 없습니다.',
+            '이 기록에는 사진이 없어요.',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
         ),
@@ -689,7 +678,7 @@ class _StatusPane extends StatelessWidget {
           children: [
             const Icon(Icons.error_outline),
             const SizedBox(height: 8),
-            Text(message ?? '오류가 발생했습니다.', textAlign: TextAlign.center),
+            Text(message ?? '오류가 생겼어요.', textAlign: TextAlign.center),
             if (onRetry != null) ...[
               const SizedBox(height: 8),
               TextButton(onPressed: onRetry, child: const Text('다시 시도')),
@@ -715,7 +704,7 @@ class _InlineStatus extends StatelessWidget {
     switch (state) {
       case _PaneState.idle:
         child = const SizedBox(width: 16, height: 16);
-        label = '대기';
+        label = '';
         break;
       case _PaneState.running:
         child = const SizedBox(
@@ -744,7 +733,7 @@ class _InlineStatus extends StatelessWidget {
     }
     return Semantics(
       identifier: id,
-      label: label,
+      label: label.isEmpty ? null : label,
       child: SizedBox(key: ValueKey(id), width: 16, height: 16, child: child),
     );
   }

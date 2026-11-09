@@ -149,7 +149,9 @@ class CameraNoticeCard extends StatelessWidget {
             ],
             if (onRetry case final retry?) ...[
               SizedBox(
-                height: onOpenSettings == null ? AppSpacing.sp5 : AppSpacing.sp1,
+                height: onOpenSettings == null
+                    ? AppSpacing.sp5
+                    : AppSpacing.sp1,
               ),
               // 주 동작이 이미 있으면 재시도는 한 단계 낮춘다. 버튼 두 개가 같은
               // 무게로 놓이면 무엇을 눌러야 할지 고민하게 된다.
@@ -186,11 +188,10 @@ class CameraNoticeCard extends StatelessWidget {
 
   /// 카드 배경.
   ///
-  /// 다크 스킴의 `surface`(0xFF121318)는 미리보기 배경
-  /// ([AppPhotoColors.backdrop], 0xFF101114)과 거의 같아 카드가 배경에 녹는다.
+  /// 다크 스킴의 `surface`(slate 900, 0xFF0F172A)는 카메라 뷰파인더
+  /// ([AppPhotoColors.viewfinder], 0xFF090D14)와 거의 같아 카드가 배경에 녹는다.
   /// 그래서 라이트는 가장 흰 단계를, 다크는 한 단계 띄운 컨테이너 색을 쓴다.
-  Color _cardColor(ColorScheme colors) =>
-      colors.brightness == Brightness.dark
+  Color _cardColor(ColorScheme colors) => colors.brightness == Brightness.dark
       ? colors.surfaceContainerHigh
       : colors.surfaceContainerLowest;
 
@@ -206,19 +207,18 @@ class CameraNoticeCard extends StatelessWidget {
     }
 
     // 권한은 조치하면 풀리는 상태라 경고 톤을, 그 밖의 실패는 오류 톤을 쓴다.
-    final (Color background, Color foreground, IconData icon) =
-        switch (tone) {
-          CameraNoticeTone.actionNeeded => (
-            context.semanticColors.warningContainer,
-            context.semanticColors.onWarningContainer,
-            Icons.no_photography_outlined,
-          ),
-          _ => (
-            context.colors.errorContainer,
-            context.colors.onErrorContainer,
-            Icons.videocam_off_outlined,
-          ),
-        };
+    final (Color background, Color foreground, IconData icon) = switch (tone) {
+      CameraNoticeTone.actionNeeded => (
+        context.semanticColors.warningContainer,
+        context.semanticColors.onWarningContainer,
+        Icons.no_photography_outlined,
+      ),
+      _ => (
+        context.colors.errorContainer,
+        context.colors.onErrorContainer,
+        Icons.videocam_off_outlined,
+      ),
+    };
 
     return Center(
       child: Container(
@@ -265,7 +265,9 @@ class CameraNoticeCard extends StatelessWidget {
             Text(
               keepPhrasesWhole(hint),
               semanticsLabel: hint,
-              style: textTheme.bodySmall?.copyWith(color: colors.outline),
+              style: textTheme.bodySmall?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: AppSpacing.sp1),
           ],

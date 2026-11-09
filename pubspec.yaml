@@ -69,6 +69,9 @@ dependencies:
   exif: ^3.3.0
   app_settings: ^8.0.3
 
+  # 수평계(가속도계 기반 기울기 표시)
+  sensors_plus: ^7.1.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -93,6 +96,23 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # Pretendard 라이선스 원문. 앱 시작 시 LicenseRegistry에 등록한다.
+  assets:
+    - assets/fonts/Pretendard-OFL.txt
+
+  # Pretendard(SIL OFL 1.1). 한글·라틴을 함께 다루는 Inter 계열 글꼴이다.
+  fonts:
+    - family: Pretendard
+      fonts:
+        - asset: assets/fonts/Pretendard-Regular.otf
+          weight: 400
+        - asset: assets/fonts/Pretendard-Medium.otf
+          weight: 500
+        - asset: assets/fonts/Pretendard-SemiBold.otf
+          weight: 600
+        - asset: assets/fonts/Pretendard-Bold.otf
+          weight: 700
 
   # To add assets to your application, add an assets section, like this:
   # assets:

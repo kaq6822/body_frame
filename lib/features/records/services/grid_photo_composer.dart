@@ -7,15 +7,30 @@ import '../../../core/models/models.dart';
 import '../../../core/widgets/grid_painter.dart';
 
 abstract class GridPhotoComposer {
-  Future<Uint8List> compose(Uint8List sourceBytes, GridSettings settings);
+  /// [referenceWidth]는 격자 설정값(간격·굵기, 논리 px)을 해석하는 기준 폭이다.
+  /// 화면의 격자 오버레이와 같은 기준(화면 논리 폭)을 넘겨야 미리보기와
+  /// 생성 이미지의 격자 밀도가 같아진다.
+  Future<Uint8List> compose(
+    Uint8List sourceBytes,
+    GridSettings settings, {
+    double? referenceWidth,
+  });
 }
 
 class GridPhotoComposerImpl implements GridPhotoComposer {
   const GridPhotoComposerImpl();
 
   @override
-  Future<Uint8List> compose(Uint8List sourceBytes, GridSettings settings) {
-    return composePhotoWithGrid(sourceBytes, settings);
+  Future<Uint8List> compose(
+    Uint8List sourceBytes,
+    GridSettings settings, {
+    double? referenceWidth,
+  }) {
+    return composePhotoWithGrid(
+      sourceBytes,
+      settings,
+      referenceWidth: referenceWidth,
+    );
   }
 }
 
@@ -29,8 +44,9 @@ final gridPhotoComposerProvider = Provider<GridPhotoComposer>((ref) {
 /// 화면과 동일한 [GridPainter]를 별도 캔버스에 그린다.
 Future<Uint8List> composePhotoWithGrid(
   Uint8List sourceBytes,
-  GridSettings settings,
-) async {
+  GridSettings settings, {
+  double? referenceWidth,
+}) async {
   final codec = await ui.instantiateImageCodec(sourceBytes);
   ui.Image? sourceImage;
   ui.Picture? picture;
@@ -45,7 +61,13 @@ Future<Uint8List> composePhotoWithGrid(
     final recorder = ui.PictureRecorder();
     final canvas = ui.Canvas(recorder);
     canvas.drawImage(sourceImage, ui.Offset.zero, ui.Paint());
-    GridPainter(settings.copyWith(visible: true)).paint(canvas, size);
+    GridPainter(
+      gridSettingsForImage(
+        settings,
+        imageWidth: size.width,
+        referenceWidth: referenceWidth,
+      ).copyWith(visible: true),
+    ).paint(canvas, size);
     picture = recorder.endRecording();
     composedImage = await picture.toImage(
       sourceImage.width,
@@ -62,4 +84,28 @@ Future<Uint8List> composePhotoWithGrid(
     sourceImage?.dispose();
     codec.dispose();
   }
+}
+
+/// 논리 px 기준 격자 설정을 원본 이미지 픽셀 기준으로 바꾼다.
+///
+/// 화면 오버레이는 사진 폭 대비 `spacing / referenceWidth` 비율로 선을 긋는다.
+/// 원본 픽셀에 같은 값을 그대로 쓰면 고해상도 사진일수록 격자가 몇 배로
+/// 촘촘해져 미리보기와 구도가 달라진다. 기준 폭이 없으면 기존 동작을 유지한다.
+GridSettings gridSettingsForImage(
+  GridSettings settings, {
+  required double imageWidth,
+  double? referenceWidth,
+}) {
+  if (referenceWidth == null ||
+      !referenceWidth.isFinite ||
+      referenceWidth <= 0 ||
+      !imageWidth.isFinite ||
+      imageWidth <= 0) {
+    return settings;
+  }
+  final scale = imageWidth / referenceWidth;
+  return settings.copyWith(
+    spacing: settings.spacing * scale,
+    lineWidth: settings.lineWidth * scale,
+  );
 }

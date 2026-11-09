@@ -9,6 +9,7 @@ import 'package:bodymark/features/settings/providers/settings_providers.dart';
 import 'package:bodymark/features/settings/services/app_settings_service.dart';
 import 'package:bodymark/features/settings/settings_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -125,13 +126,149 @@ void main() {
         find.byKey(const ValueKey('$statusId.retry.button')),
         findsOneWidget,
       );
-      expect(find.text('설정을 저장하지 못했습니다. 다시 시도해주세요.'), findsOneWidget);
+      expect(find.text('설정을 저장하지 못했어요. 다시 시도해주세요.'), findsOneWidget);
       // 저장은 shared_preferences 대신 Fake를 쓴다. 재시도가 실제로 값을 남긴다.
       service.failSave = false;
       await tester.tap(find.byKey(const ValueKey('$statusId.retry.button')));
       await tester.pumpAndSettle();
 
       expect(service.saved, isNotEmpty);
+    });
+
+    testWidgets('저장 상태가 떠도 컨트롤 위치가 그대로이고 평소엔 빈 칸이 없다', (tester) async {
+      final service = _FakeAppSettingsService(failSave: true);
+      _prepareWidgetTests();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [appSettingsServiceProvider.overrideWithValue(service)],
+          child: const MaterialApp(home: SettingsScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final timer = find.byKey(const ValueKey('settings.capture.timer.field'));
+      final before = tester.getTopLeft(timer);
+      // 섹션 제목 바로 아래에 첫 항목이 온다(빈 상태 칸 없음).
+      final header = tester.getBottomLeft(find.text('촬영'));
+      expect(before.dy - header.dy, lessThan(24));
+
+      await tester.tap(
+        find.byKey(const ValueKey('settings.capture.countdownFeedback.switch')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('screen.settings.save.status.retry.button')),
+        findsOneWidget,
+      );
+      expect(tester.getTopLeft(timer), before);
+    });
+
+    testWidgets('수평계 표시 스위치를 끄면 설정에 저장된다', (tester) async {
+      final service = _FakeAppSettingsService();
+      _prepareWidgetTests();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [appSettingsServiceProvider.overrideWithValue(service)],
+          child: const MaterialApp(home: SettingsScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final level = find.byKey(const ValueKey('settings.capture.level.switch'));
+      await tester.ensureVisible(level);
+      await tester.pumpAndSettle();
+      await tester.tap(level);
+      await tester.pumpAndSettle();
+
+      expect(service.saved.last.capture.showLevel, isFalse);
+    });
+  });
+
+  group('SettingsScreen 레이아웃', () {
+    testWidgets('1인용 소개가 없고 오픈소스 라이선스 항목이 있다', (tester) async {
+      _prepareWidgetTests();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appSettingsServiceProvider.overrideWithValue(
+              _FakeAppSettingsService(),
+            ),
+          ],
+          child: const MaterialApp(home: SettingsScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('나의 기록, 나의 기기에'), findsNothing);
+      final licenses = find.byKey(const ValueKey('settings.licenses.item'));
+      await tester.scrollUntilVisible(licenses, 200);
+      await tester.tap(licenses);
+      await tester.pumpAndSettle();
+      expect(find.byType(LicensePage), findsOneWidget);
+    });
+
+    testWidgets('저장 상태가 바뀌어도 아래 컨트롤 위치가 움직이지 않는다', (tester) async {
+      final service = _FakeAppSettingsService(failSave: true);
+      _prepareWidgetTests();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [appSettingsServiceProvider.overrideWithValue(service)],
+          child: const MaterialApp(home: SettingsScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      const timerKey = ValueKey('settings.capture.timer.field');
+      final before = tester.getTopLeft(find.byKey(timerKey));
+
+      await tester.tap(
+        find.byKey(const ValueKey('settings.capture.countdownFeedback.switch')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('screen.settings.save.status.retry.button')),
+        findsOneWidget,
+      );
+      expect(tester.getTopLeft(find.byKey(timerKey)), before);
+    });
+
+    testWidgets('투명도 슬라이더는 퍼센트 값 하나만 읽힌다', (tester) async {
+      final handle = tester.ensureSemantics();
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      _prepareWidgetTests();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appSettingsServiceProvider.overrideWithValue(
+              _FakeAppSettingsService(),
+            ),
+          ],
+          child: const MaterialApp(home: SettingsScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final slider = find.byKey(
+        const ValueKey('settings.capture.opacity.slider'),
+      );
+      final values = <String>[];
+      void collect(SemanticsNode node) {
+        if (node.value.isNotEmpty) values.add(node.value);
+        node.visitChildren((child) {
+          collect(child);
+          return true;
+        });
+      }
+
+      final node = tester.getSemantics(slider);
+      collect(node);
+      expect(node.label, '이전 사진 기본 투명도');
+      // 라벨·값 글자는 화면용이라 읽기에서 빠지고 슬라이더 값 하나만 남는다.
+      expect(values, ['30%']);
+      handle.dispose();
     });
   });
 

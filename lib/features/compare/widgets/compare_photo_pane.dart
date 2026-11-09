@@ -60,9 +60,22 @@ class ComparePhotoPane extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(label, style: Theme.of(context).textTheme.labelLarge),
+          // 큰 글꼴·좁은 칸에서 머리글이 사진 칸을 밀어내지 않게 줄 수를 묶는다.
+          // 전체 문구는 Semantics label로 읽힌다.
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.labelLarge,
+          ),
           if (dateLabel.isNotEmpty)
-            Text(dateLabel, style: Theme.of(context).textTheme.bodySmall),
+            Text(
+              dateLabel,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
           const SizedBox(height: 4),
           // 원본 비율은 항상 BoxFit.contain으로 유지한다.
           // 두 사진이 동일한 비교가 가능하도록 고정 비율(3:4) 프레임을 쓰되,

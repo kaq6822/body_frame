@@ -242,7 +242,10 @@ class _SliderBoundary extends StatelessWidget {
     const lineWidth = 3.0;
     final percent = (position * 100).round();
     final callback = onChanged;
-    final line = Container(width: lineWidth, color: context.photoColors.onChrome);
+    final line = Container(
+      width: lineWidth,
+      color: context.photoColors.onChrome,
+    );
 
     if (!showHandle) {
       // 경계 위치는 canvas의 semantics value로 이미 읽히므로 표시용 선에는

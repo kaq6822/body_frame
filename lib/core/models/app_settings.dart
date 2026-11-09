@@ -68,11 +68,15 @@ class CaptureOptions {
   final bool previousGuide;
   final double guideOpacity;
 
+  /// 촬영 화면 수평계 표시. 보조 지표라 꺼도 촬영에는 영향이 없다.
+  final bool showLevel;
+
   const CaptureOptions({
     this.timerSeconds = 0,
     this.countdownFeedback = true,
     this.previousGuide = true,
     this.guideOpacity = 0.3,
+    this.showLevel = true,
   });
 
   static const CaptureOptions defaults = CaptureOptions();
@@ -89,12 +93,14 @@ class CaptureOptions {
     bool? countdownFeedback,
     bool? previousGuide,
     double? guideOpacity,
+    bool? showLevel,
   }) {
     return CaptureOptions(
       timerSeconds: timerSeconds ?? this.timerSeconds,
       previousGuide: previousGuide ?? this.previousGuide,
       guideOpacity: guideOpacity ?? this.guideOpacity,
       countdownFeedback: countdownFeedback ?? this.countdownFeedback,
+      showLevel: showLevel ?? this.showLevel,
     );
   }
 
@@ -103,6 +109,7 @@ class CaptureOptions {
     'countdownFeedback': countdownFeedback,
     'previousGuide': previousGuide,
     'guideOpacity': guideOpacity,
+    'showLevel': showLevel,
   };
 
   factory CaptureOptions.fromMap(Map<String, dynamic> map) {
@@ -114,6 +121,7 @@ class CaptureOptions {
         0.0,
         1.0,
       ),
+      showLevel: (map['showLevel'] as bool?) ?? true,
     );
   }
 
@@ -123,11 +131,17 @@ class CaptureOptions {
       other.timerSeconds == timerSeconds &&
       other.countdownFeedback == countdownFeedback &&
       other.previousGuide == previousGuide &&
-      other.guideOpacity == guideOpacity;
+      other.guideOpacity == guideOpacity &&
+      other.showLevel == showLevel;
 
   @override
-  int get hashCode =>
-      Object.hash(timerSeconds, countdownFeedback, previousGuide, guideOpacity);
+  int get hashCode => Object.hash(
+    timerSeconds,
+    countdownFeedback,
+    previousGuide,
+    guideOpacity,
+    showLevel,
+  );
 }
 
 /// 앱 전역 설정. shared_preferences에 JSON으로 영속화한다.

@@ -34,7 +34,7 @@ class StorageScreen extends ConsumerWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('저장 공간 정보를 불러오지 못했습니다'),
+                const Text('저장 공간 정보를 불러오지 못했어요'),
                 const SizedBox(height: 8),
                 ElevatedButton(
                   key: const ValueKey('storage.retry.button'),
@@ -84,7 +84,10 @@ class _StorageBody extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('전체 사용량', style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text(
+                  '전체 사용량',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(height: 8),
                 Text(
                   formatBytes(report.totalBytes),
@@ -101,7 +104,7 @@ class _StorageBody extends StatelessWidget {
         if (report.byMonth.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
-            child: Text('저장된 사진이 없습니다'),
+            child: Text('저장된 사진이 없어요'),
           )
         else
           ...report.byMonth.map(

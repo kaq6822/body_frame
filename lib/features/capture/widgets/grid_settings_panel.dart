@@ -37,7 +37,7 @@ class GridSettingsPanel extends ConsumerWidget {
         child: AsyncStatusIndicator(
           statusId: 'capture.grid.settings.status',
           status: AsyncStatus.busy,
-          busyLabel: '격자 설정을 불러오는 중입니다.',
+          busyLabel: '격자 설정을 불러오고 있어요.',
         ),
       ),
       error: (error, _) => Padding(
@@ -45,7 +45,7 @@ class GridSettingsPanel extends ConsumerWidget {
         child: AsyncStatusIndicator(
           statusId: 'capture.grid.settings.status',
           status: AsyncStatus.failure,
-          failureMessage: '격자 설정을 불러오지 못했습니다.',
+          failureMessage: '격자 설정을 불러오지 못했어요.',
           onRetry: notifier.retry,
         ),
       ),
@@ -72,9 +72,9 @@ class GridSettingsPanel extends ConsumerWidget {
               SettingsSaveStatus.success => AsyncStatus.success,
               SettingsSaveStatus.failure => AsyncStatus.failure,
             },
-            busyLabel: '격자 설정을 저장하는 중입니다.',
-            successLabel: '격자 설정을 저장했습니다.',
-            failureMessage: '격자 설정을 저장하지 못했습니다. 다시 시도해주세요.',
+            busyLabel: '격자 설정을 저장하고 있어요.',
+            successLabel: '격자 설정을 저장했어요.',
+            failureMessage: '격자 설정을 저장하지 못했어요. 다시 시도해주세요.',
             // 실패해도 현재 값은 유지되므로 재시도만 제공하면 된다.
             onRetry: saveState.canRetry ? notifier.retrySave : null,
           ),
@@ -101,6 +101,7 @@ class GridSettingsPanel extends ConsumerWidget {
             value: settings.opacity,
             min: 0.1,
             max: 1.0,
+            format: (v) => '${(v * 100).round()}%',
             onChanged: (value) =>
                 notifier.update((s) => s.copyWith(opacity: value)),
           ),
@@ -110,6 +111,7 @@ class GridSettingsPanel extends ConsumerWidget {
             value: settings.lineWidth,
             min: 0.5,
             max: 5.0,
+            format: (v) => v.toStringAsFixed(1),
             onChanged: (value) =>
                 notifier.update((s) => s.copyWith(lineWidth: value)),
           ),
@@ -119,6 +121,7 @@ class GridSettingsPanel extends ConsumerWidget {
             value: settings.spacing,
             min: 10.0,
             max: 120.0,
+            format: (v) => '${v.round()}dp',
             onChanged: (value) =>
                 notifier.update((s) => s.copyWith(spacing: value)),
           ),
@@ -186,20 +189,24 @@ class GridSettingsPanel extends ConsumerWidget {
     required double value,
     required double min,
     required double max,
+    required String Function(double) format,
     required ValueChanged<double> onChanged,
   }) {
     final clamped = value.clamp(min, max).toDouble();
-    final display = clamped.toStringAsFixed(1);
+    final display = format(clamped);
+    // 값은 Slider 노드 하나로만 읽히게 하고 보이는 텍스트는 의미에서 뺀다.
     return Semantics(
       identifier: id,
       label: label,
-      value: display,
       child: Row(
         children: [
-          SizedBox(width: 64, child: Text(label)),
+          SizedBox(width: 64, child: ExcludeSemantics(child: Text(label))),
           Expanded(
             child: Slider(
               key: ValueKey(id),
+              // 증감 안내도 해당 값으로 읽히도록 인자로 받은 값을 포맷한다.
+              semanticFormatterCallback: (v) =>
+                  format(v.clamp(min, max).toDouble()),
               value: clamped,
               min: min,
               max: max,
@@ -208,13 +215,15 @@ class GridSettingsPanel extends ConsumerWidget {
           ),
           // 슬라이더만으로는 조작 결과를 확인할 수 없어 현재 값을 늘 함께 둔다.
           SizedBox(
-            width: 36,
-            child: Text(
-              display,
-              textAlign: TextAlign.end,
-              style: const TextStyle(
-                fontFeatures: [FontFeature.tabularFigures()],
-                fontSize: 12,
+            width: 44,
+            child: ExcludeSemantics(
+              child: Text(
+                display,
+                textAlign: TextAlign.end,
+                style: const TextStyle(
+                  fontFeatures: [FontFeature.tabularFigures()],
+                  fontSize: 13,
+                ),
               ),
             ),
           ),

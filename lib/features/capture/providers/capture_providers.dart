@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:bodymark/core/services/settings_save_queue.dart';
 import 'package:bodymark/features/records/records_timeline_logic.dart';
 import '../../members/member_providers.dart';
+import '../../members/ui.dart' show phases, shortLessonDate;
 import 'dart:io';
 
 // 이 앱에도 같은 이름의 설정 모델(core/models/app_settings.dart)이 있어 구분한다.
@@ -173,3 +174,62 @@ final gridSettingsControllerProvider =
         ref.read(gridSettingsSaveQueueProvider.notifier),
       ),
     );
+
+/// 카메라 HUD 헤더 문구. 레슨 촬영이 아니면 null.
+class CameraHeaderInfo {
+  /// 예: "김서연".
+  final String title;
+
+  /// 예: "기준: 11.04 오후 3:00 레슨" / "첫 촬영 · 기준 사진 없음".
+  final String subtitle;
+
+  /// 기준(이전) 사진이 있는지. 없으면 보조줄을 흐리게 표시한다.
+  final bool hasBaseline;
+
+  const CameraHeaderInfo({
+    required this.title,
+    required this.subtitle,
+    required this.hasBaseline,
+  });
+}
+
+/// 레슨 촬영 컨텍스트에서 회원 이름·구분·레슨 일시·기준 기록을 읽어 헤더 문구를
+/// 만든다. 예: "김서연 · 수업 후" / "11.04 오후 3:00 레슨 · 기준: 11.03 오후 3:00 레슨".
+///
+/// 조회가 실패해도 촬영은 계속되어야 하므로 화면은 오류 시 헤더 문구만 생략한다.
+final cameraHeaderInfoProvider = FutureProvider.autoDispose<CameraHeaderInfo?>((
+  ref,
+) async {
+  final captureContext = ref.watch(lessonCaptureContextProvider);
+  if (captureContext == null) return null;
+  final members = await ref.watch(membersProvider.future);
+  final name =
+      members.where((m) => m.id == captureContext.memberId).firstOrNull?.name ??
+      '회원';
+  final phase = phases[captureContext.phase];
+  final title = phase == null ? name : '$name · $phase';
+  final lessonAt = captureContext.lessonAt;
+  final lesson = lessonAt == null ? null : '${shortLessonDate(lessonAt)} 레슨';
+
+  CameraHeaderInfo build(String baseline, {required bool hasBaseline}) =>
+      CameraHeaderInfo(
+        title: title,
+        subtitle: lesson == null ? baseline : '$lesson · $baseline',
+        hasBaseline: hasBaseline,
+      );
+
+  if (!captureContext.useBaseline) {
+    return build('첫 촬영 · 기준 사진 없음', hasBaseline: false);
+  }
+  if (captureContext.baselinePhotos != null) {
+    return build('기준: 이번 레슨 사진', hasBaseline: true);
+  }
+  final recordId = captureContext.baselineRecordId;
+  final record = recordId == null
+      ? null
+      : await ref.watch(photoRecordRepositoryProvider).getById(recordId);
+  return build(
+    record == null ? '기준: 최근 기록' : '기준: ${shortLessonDate(record.shotAt)} 레슨',
+    hasBaseline: true,
+  );
+});
