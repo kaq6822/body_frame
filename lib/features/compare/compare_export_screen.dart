@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -8,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/korean_text.dart';
 import '../../core/models/models.dart';
 import '../../core/providers.dart';
 import '../../core/router/app_routes.dart';
@@ -25,6 +27,7 @@ import 'widgets/compare_layered_pane.dart';
 import 'services/compare_export_sink.dart';
 import 'services/compare_photo_loader.dart';
 import 'widgets/compare_missing_context.dart';
+import 'widgets/compare_mode_selector.dart';
 import 'widgets/compare_photo_pane.dart';
 import 'widgets/labeled_switch.dart';
 
@@ -62,6 +65,10 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
   ExportImageOptions _options = ExportImageOptions.defaults;
   bool _settingsInitialized = false;
 
+  /// 공유 이미지의 레이아웃. 비교 화면에서 보던 방식으로 시작하고 구성
+  /// 단계에서 바꿀 수 있다. 미리보기는 이 값으로 그린 결과물 그대로다.
+  CompareMode _mode = CompareMode.sideBySide;
+
   _ExportStep _step = _ExportStep.options;
   CompareExportStatus _status = CompareExportStatus.idle;
   Uint8List? _resultBytes;
@@ -75,6 +82,7 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
       final extra = GoRouterState.of(context).extra;
       if (extra is CompareExportRequest) {
         _request = extra;
+        _mode = extra.mode;
         _previewBeforeCtrl = TransformationController(
           extra.beforeMatrix.clone(),
         );
@@ -236,11 +244,12 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
     final sink = ref.read(compareExportSinkProvider);
     final logger = ref.read(appLoggerProvider);
     final messenger = ScaffoldMessenger.of(context);
+    final savedMessage = savedToGalleryMessage(Theme.of(context).platform);
     try {
       await sink.saveToGallery(bytes, name: _fileName(req));
       logger.phase('compare.export.save', LogPhase.success);
       if (!mounted) return;
-      messenger.showSnackBar(const SnackBar(content: Text('사진 보관함에 저장했어요.')));
+      messenger.showSnackBar(SnackBar(content: Text(savedMessage)));
     } catch (e) {
       logger.phase('compare.export.save', LogPhase.failure);
       if (!mounted) return;
@@ -311,9 +320,12 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
         ? lessonDate(req.afterRecord.shotAt)
         : '';
 
-    if (req.mode != CompareMode.sideBySide) {
+    final paneSize = req.panePhotoSize;
+    final scale = _frameScale(req);
+    final photoSize = paneSize == null ? null : paneSize * scale;
+    if (_mode != CompareMode.sideBySide) {
       return CompareLayeredPane(
-        mode: req.mode,
+        mode: _mode,
         beforePhoto: req.beforePhoto,
         afterPhoto: req.afterPhoto,
         beforeDateLabel: beforeDate,
@@ -325,8 +337,8 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
         showGrid: _options.includeGrid,
         overlayOpacity: req.overlayOpacity,
         sliderPosition: req.sliderPosition,
-        identifierPrefix: 'compare.export.${req.mode.key}',
-        fixedPhotoSize: req.panePhotoSize ?? const Size(300, 400),
+        identifierPrefix: 'compare.export.${_mode.key}',
+        fixedPhotoSize: photoSize ?? const Size(300, 400),
       );
     }
 
@@ -343,7 +355,7 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
             gridSettings: req.grid,
             showGrid: _options.includeGrid,
             paneIdentifier: 'compare.export.before',
-            fixedPhotoSize: req.panePhotoSize,
+            fixedPhotoSize: photoSize,
           ),
         ),
         const SizedBox(width: 8),
@@ -357,7 +369,7 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
             gridSettings: req.grid,
             showGrid: _options.includeGrid,
             paneIdentifier: 'compare.export.after',
-            fixedPhotoSize: req.panePhotoSize,
+            fixedPhotoSize: photoSize,
           ),
         ),
       ],
@@ -404,7 +416,7 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  '${req.direction.label} · ${req.mode.label}',
+                  '${req.direction.label} · ${_mode.label}',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
@@ -487,6 +499,35 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
       _resultBytes = null;
       _status = CompareExportStatus.idle;
     });
+  }
+
+  /// 공유 이미지 레이아웃을 바꾼다. 결과물을 다시 만들어야 하므로 이전 결과는
+  /// 버리고, 확대·이동은 새 프레임 크기에 맞춰 같은 구도로 옮긴다.
+  void _changeMode(CompareExportRequest req, CompareMode mode) {
+    if (mode == _mode) return;
+    _updateComposition(() {
+      _mode = mode;
+      final scale = _frameScale(req);
+      _previewBeforeCtrl!.value = _scaleMatrix(req.beforeMatrix, scale);
+      _previewAfterCtrl!.value = _scaleMatrix(req.afterMatrix, scale);
+    });
+  }
+
+  /// 비교 화면에서 나란히 보던 사진을 겹쳐 보기·슬라이더로 내보내면 한 장
+  /// 크기 프레임이 너무 작다. 두 칸을 합친 넓이가 되도록 √2배 키운다.
+  double _frameScale(CompareExportRequest req) =>
+      req.mode == CompareMode.sideBySide && _mode != CompareMode.sideBySide
+      ? math.sqrt2
+      : 1.0;
+
+  /// 프레임 크기를 [scale]배 했을 때 같은 구도를 만드는 행렬.
+  ///
+  /// 확대·이동 행렬은 프레임 로컬 픽셀 기준이라 이동량만 [scale]배 된다.
+  static Matrix4 _scaleMatrix(Matrix4 matrix, double scale) {
+    if (scale == 1.0) return matrix.clone();
+    return Matrix4.diagonal3Values(scale, scale, 1)
+      ..multiply(matrix)
+      ..multiply(Matrix4.diagonal3Values(1 / scale, 1 / scale, 1));
   }
 
   /// 같은 두 기록·같은 수업 단계에서 다른 방향으로 바꾼다. 사진이 바뀌므로
@@ -958,9 +999,17 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: AppSpacing.sp1),
-                Text(req.mode.label, style: mutedStyle),
               ],
+            ),
+          ),
+          _card(
+            id: 'compare.export.layout.card',
+            title: '레이아웃 방식',
+            child: CompareModeSelector(
+              idPrefix: 'compare.export.layout',
+              semanticsLabel: '공유 이미지 레이아웃 선택',
+              mode: _mode,
+              onChanged: (m) => _changeMode(req, m),
             ),
           ),
           _card(
@@ -995,6 +1044,7 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
               children: [
                 LabeledSwitch(
                   id: 'compare.export.date.toggle',
+                  contentPadding: EdgeInsets.zero,
                   title: '레슨 날짜·시간 표시',
                   subtitle: '사진 위에 레슨 날짜와 시작 시간을 넣어요',
                   value: _options.includeShotDate,
@@ -1005,6 +1055,7 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
                 ),
                 LabeledSwitch(
                   id: 'compare.export.label.toggle',
+                  contentPadding: EdgeInsets.zero,
                   title: '회원 이름 표시',
                   subtitle: label.isEmpty
                       ? '기록에 연결된 이름이 없어요'
@@ -1017,6 +1068,7 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
                 ),
                 LabeledSwitch(
                   id: 'compare.export.memo.toggle',
+                  contentPadding: EdgeInsets.zero,
                   title: '일지 메모 표시',
                   subtitle: hasMemo ? '기록과 사진 메모를 사진 아래에 넣어요' : '작성된 메모가 없어요',
                   value: _options.includeMemo,
@@ -1027,6 +1079,7 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
                 ),
                 LabeledSwitch(
                   id: 'compare.export.grid.toggle',
+                  contentPadding: EdgeInsets.zero,
                   title: '격자 표시',
                   subtitle: '비교 화면과 같은 격자를 사진 위에 그려요',
                   value: _options.includeGrid,
@@ -1036,65 +1089,54 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
                   ),
                 ),
                 const Divider(height: AppSpacing.sp4),
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sp4,
-                  ),
-                  child: Text(
-                    '이름과 메모는 기본으로 넣지 않아요.',
-                    key: const ValueKey('compare.export.privacy.note'),
-                    style: mutedStyle,
-                  ),
+                Text(
+                  '이름과 메모는 기본으로 넣지 않아요.',
+                  key: const ValueKey('compare.export.privacy.note'),
+                  style: mutedStyle,
                 ),
                 const SizedBox(height: AppSpacing.sp3),
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sp4,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Semantics(
-                        identifier: 'compare.export.defaults.save.button',
-                        label: '현재 표시 항목을 기본값으로 저장',
-                        enabled:
-                            _defaultsSaveStatus != _DefaultsSaveStatus.saving,
-                        child: OutlinedButton.icon(
-                          key: const ValueKey(
-                            'compare.export.defaults.save.button',
-                          ),
-                          onPressed:
-                              _defaultsSaveStatus == _DefaultsSaveStatus.saving
-                              ? null
-                              : _saveOptionsAsDefaults,
-                          icon:
-                              _defaultsSaveStatus == _DefaultsSaveStatus.saving
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.save_outlined),
-                          label: const Text('현재 옵션을 기본값으로 저장'),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Semantics(
+                      identifier: 'compare.export.defaults.save.button',
+                      label: '현재 표시 항목을 기본값으로 저장',
+                      enabled:
+                          _defaultsSaveStatus != _DefaultsSaveStatus.saving,
+                      child: OutlinedButton.icon(
+                        key: const ValueKey(
+                          'compare.export.defaults.save.button',
                         ),
+                        onPressed:
+                            _defaultsSaveStatus == _DefaultsSaveStatus.saving
+                            ? null
+                            : _saveOptionsAsDefaults,
+                        icon: _defaultsSaveStatus == _DefaultsSaveStatus.saving
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.save_outlined),
+                        label: const Text('현재 옵션을 기본값으로 저장'),
                       ),
-                      const SizedBox(height: AppSpacing.sp1),
-                      Semantics(
-                        identifier: 'compare.export.defaults.save.status',
-                        label: '기본 내보내기 옵션 저장 상태',
-                        value: _defaultsSaveStatusLabel(),
-                        child: Text(
-                          _defaultsSaveStatusLabel(),
-                          key: const ValueKey(
-                            'compare.export.defaults.save.status',
-                          ),
-                          style: mutedStyle,
+                    ),
+                    const SizedBox(height: AppSpacing.sp1),
+                    Semantics(
+                      identifier: 'compare.export.defaults.save.status',
+                      label: '기본 내보내기 옵션 저장 상태',
+                      value: _defaultsSaveStatusLabel(),
+                      child: Text(
+                        keepPhrasesWhole(_defaultsSaveStatusLabel()),
+                        key: const ValueKey(
+                          'compare.export.defaults.save.status',
                         ),
+                        style: mutedStyle,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -1106,3 +1148,9 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
 }
 
 final _summaryDate = DateFormat('yyyy.MM.dd');
+
+/// 기기 저장 완료 문구. 저장 위치를 부르는 이름이 플랫폼마다 다르다.
+String savedToGalleryMessage(TargetPlatform platform) => switch (platform) {
+  TargetPlatform.iOS || TargetPlatform.macOS => '사진 보관함에 저장했어요.',
+  _ => '갤러리에 저장했어요.',
+};

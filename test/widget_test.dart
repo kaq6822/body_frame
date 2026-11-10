@@ -1,6 +1,7 @@
 import 'package:bodymark/features/members/member.dart';
 import 'package:bodymark/features/members/member_repository.dart';
 import 'package:bodymark/features/members/member_providers.dart';
+import 'package:bodymark/core/korean_text.dart';
 import 'package:bodymark/core/models/models.dart';
 import 'package:bodymark/core/providers.dart';
 import 'package:bodymark/core/repositories/body_photo_repository.dart';
@@ -120,7 +121,10 @@ void main() {
     await tester.tap(addLesson);
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('screen.lessons.edit')), findsOneWidget);
-    expect(find.textContaining('2026.11.04 (수) 오후 3:00'), findsOneWidget);
+    expect(
+      find.textContaining('2026.11.04 (수) ${keepPhrasesWhole('오후')}\u00A03:00'),
+      findsOneWidget,
+    );
     await tester.tap(find.byKey(const ValueKey('lessons.save.button')));
     await tester.pumpAndSettle();
     expect(find.text('일지 또는 사진을 추가해주세요.'), findsOneWidget);

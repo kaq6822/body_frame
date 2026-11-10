@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/models/models.dart';
+import '../../core/korean_text.dart';
 import '../../core/router/app_routes.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/bottom_action_bar.dart';
@@ -96,9 +97,10 @@ class _MemberCompareState extends ConsumerState<MemberCompareScreen> {
         () => ref.invalidate(timelineProvider),
       );
     } else if (notEnough) {
-      body = _NotEnoughRecords(count: entries.length);
+      body = _NotEnoughRecords(entries: entries);
       bottom = BottomActionBar(
         identifier: 'members.compare.notEnough.actions',
+        vertical: true,
         primary: mark(
           'members.compare.add.button',
           FilledButton.icon(
@@ -114,7 +116,7 @@ class _MemberCompareState extends ConsumerState<MemberCompareScreen> {
             onPressed: () => context.canPop()
                 ? context.pop()
                 : context.go('/members/${widget.memberId}'),
-            child: const Text('회원으로'),
+            child: const Text('회원 기록으로 돌아가기'),
           ),
         ),
       );
@@ -345,7 +347,9 @@ class _EntryCard extends StatelessWidget {
   /// 'A 이전' / 'B 이후'. null이면 고르지 않은 기록.
   final String? badge;
   final BodyDirection? direction;
-  final VoidCallback onTap;
+
+  /// null이면 보기만 하는 카드다(비교할 기록이 부족할 때).
+  final VoidCallback? onTap;
 
   const _EntryCard({
     required this.entry,
@@ -369,12 +373,15 @@ class _EntryCard extends StatelessWidget {
         .join(' · ');
     final date = lessonDate(entry.record.shotAt);
     final phase = phases[entry.phase] ?? '';
-    final id = 'members.compare.${_entryKey(entry)}';
+    // 보기 전용 카드는 고를 수 있는 카드와 다른 식별자를 쓴다.
+    final id = onTap == null
+        ? 'members.compare.notEnough.${_entryKey(entry)}'
+        : 'members.compare.${_entryKey(entry)}';
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.sp3),
       child: Semantics(
         identifier: id,
-        button: true,
+        button: onTap != null,
         selected: selected,
         label: '$date $phase, $directions${selected ? ', $badge' : ''}',
         excludeSemantics: true,
@@ -427,13 +434,17 @@ class _EntryCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(width: AppSpacing.sp2),
-                  Icon(
-                    selected
-                        ? Icons.check_circle
-                        : Icons.radio_button_unchecked,
-                    color: selected ? colors.primary : colors.onSurfaceVariant,
-                  ),
+                  if (onTap != null) ...[
+                    const SizedBox(width: AppSpacing.sp2),
+                    Icon(
+                      selected
+                          ? Icons.check_circle
+                          : Icons.radio_button_unchecked,
+                      color: selected
+                          ? colors.primary
+                          : colors.onSurfaceVariant,
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -476,46 +487,133 @@ class _Thumbnail extends StatelessWidget {
 }
 
 /// 비교할 사진 기록이 두 개보다 적을 때(Stitch 29).
+///
+/// 안내 카드 + 지금 있는 사진 기록(0~1개) + 사진 기록을 늘리는 방법 팁.
 class _NotEnoughRecords extends StatelessWidget {
-  final int count;
-  const _NotEnoughRecords({required this.count});
+  final List<_Entry> entries;
+  const _NotEnoughRecords({required this.entries});
+
+  static const _tips = [
+    '레슨에서 새 체형 사진을 촬영하거나 기존 사진을 추가하면 바로 비교할 수 있어요.',
+    '두 기록에 같은 방향 사진이 1장 이상 있으면 그 방향을 나란히 비교할 수 있어요.',
+  ];
+
   @override
-  Widget build(BuildContext context) => mark(
-    'members.compare.notEnough',
-    Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpacing.sp6),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircleAvatar(
-              radius: 32,
-              backgroundColor: context.colors.secondaryContainer,
-              child: Icon(
-                Icons.photo_library_outlined,
-                size: 32,
-                color: context.colors.onSecondaryContainer,
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final count = entries.length;
+    return mark(
+      'members.compare.notEnough',
+      ListView(
+        padding: AppSpacing.content,
+        children: [
+          panel(
+            child: Column(
+              children: [
+                CircleAvatar(
+                  radius: 28,
+                  backgroundColor: colors.primaryContainer,
+                  child: Icon(
+                    Icons.compare_outlined,
+                    size: 28,
+                    color: colors.primary,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sp3),
+                Text(
+                  keepPhrasesWhole('비교할 사진 기록이 더 필요해요'),
+                  semanticsLabel: '비교할 사진 기록이 더 필요해요',
+                  textAlign: TextAlign.center,
+                  style: context.texts.titleMedium,
+                ),
+                const SizedBox(height: AppSpacing.sp2),
+                mark(
+                  'members.compare.notEnough.body',
+                  Text(
+                    keepPhrasesWhole(
+                      '사진이 있는 기록이 두 개 이상 있어야 비교할 수 있어요. 지금은 $count개예요. 일지는 사진 없이도 계속 쓸 수 있어요.',
+                    ),
+                    textAlign: TextAlign.center,
+                    style: context.texts.bodyMedium?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          mark(
+            'members.compare.notEnough.current',
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sp2),
+              child: Semantics(
+                header: true,
+                child: Text(
+                  '현재 등록된 사진 기록 ($count개)',
+                  style: context.texts.titleSmall,
+                ),
               ),
             ),
-            const SizedBox(height: AppSpacing.sp4),
-            Text(
-              '비교할 사진 기록이 더 필요해요',
-              textAlign: TextAlign.center,
-              style: context.texts.titleLarge,
-            ),
-            const SizedBox(height: AppSpacing.sp2),
-            Text(
-              '사진이 있는 기록이 두 개 이상 있어야 비교할 수 있어요. 지금은 $count개예요. 일지는 사진 없이도 계속 쓸 수 있어요.',
-              textAlign: TextAlign.center,
-              style: context.texts.bodyMedium?.copyWith(
-                color: context.colors.onSurfaceVariant,
+          ),
+          if (entries.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sp3),
+              child: Text(
+                keepPhrasesWhole('아직 사진이 있는 기록이 없어요.'),
+                style: context.texts.bodyMedium?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+            )
+          else
+            for (final e in entries)
+              _EntryCard(entry: e, badge: null, direction: null, onTap: null),
+          mark(
+            'members.compare.notEnough.tips',
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: colors.surfaceContainerLow,
+                borderRadius: AppRadius.mdAll,
+                border: Border.all(color: colors.outlineVariant),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.sp3),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (var i = 0; i < _tips.length; i++) ...[
+                      if (i > 0) const SizedBox(height: AppSpacing.sp2),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          ExcludeSemantics(
+                            child: Text(
+                              '•  ',
+                              style: context.texts.bodySmall?.copyWith(
+                                color: colors.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(
+                              keepPhrasesWhole(_tips[i]),
+                              style: context.texts.bodySmall?.copyWith(
+                                color: colors.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
-    ),
-  );
+    );
+  }
 }
 
 /// 고른 두 기록에 같은 방향 사진이 없을 때(Stitch 30). 어느 기록에 어떤
@@ -536,6 +634,21 @@ class _NoCommonDirection extends StatelessWidget {
         .map((d) => d.label)
         .join(', ');
     return '$tag ${lessonDate(e.record.shotAt)} ${phases[e.phase] ?? ''}: $dirs';
+  }
+
+  /// 날짜·구분·방향명이 어절 중간("후\n면", "오\n후")에서 끊기지 않게 한
+  /// 표시용 문구. 덩어리 안의 공백은 줄바꿈 없는 공백으로 바꾸고, 덩어리
+  /// 사이(쉼표 뒤·콜론 뒤)에서만 줄이 넘어간다.
+  String _display(String tag, _Entry e) {
+    String chunk(String t) => keepPhrasesWhole(t).replaceAll(' ', '\u00a0');
+    final dirs = DirectionStepper.standardDirections
+        .where((d) => e.photos.any((p) => p.direction == d))
+        .map((d) => chunk(d.label))
+        .join(', ');
+    final head = chunk(
+      '$tag ${lessonDate(e.record.shotAt)} ${phases[e.phase] ?? ''}',
+    );
+    return '$head: $dirs';
   }
 
   @override
@@ -567,8 +680,16 @@ class _NoCommonDirection extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: AppSpacing.sp2),
-              Text(_line('A', a), style: context.texts.bodyMedium),
-              Text(_line('B', b), style: context.texts.bodyMedium),
+              Text(
+                _display('A', a),
+                semanticsLabel: _line('A', a),
+                style: context.texts.bodyMedium,
+              ),
+              Text(
+                _display('B', b),
+                semanticsLabel: _line('B', b),
+                style: context.texts.bodyMedium,
+              ),
               const SizedBox(height: AppSpacing.sp2),
               mark(
                 'members.compare.reset.button',

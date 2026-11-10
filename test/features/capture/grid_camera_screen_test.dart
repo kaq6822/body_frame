@@ -231,7 +231,7 @@ void main() {
     expect(session.current.direction, BodyDirection.leftSide);
     expect(session.shots.first.imagePath, fake.capturedPath);
     expect(session.capturedCount, 1);
-    expect(find.text('좌측면 2/4'), findsOneWidget);
+    expect(find.text('좌측 2/4'), findsOneWidget);
   });
 
   testWidgets('마지막 방향까지 찍으면 리뷰 화면으로 이동한다', (tester) async {
@@ -1510,7 +1510,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('이전 사진 켜짐 (30%)'), findsOneWidget);
+    expect(find.text('이전 사진 30%'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('capture.previousGuide.chip')));
     await tester.pumpAndSettle();
@@ -1538,9 +1538,232 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('김서연'), findsOneWidget);
-    expect(find.text('첫 촬영 · 기준 사진 없음'), findsOneWidget);
+    expect(find.text(keepPhrasesWhole('첫 촬영 · 기준 사진 없음')), findsOneWidget);
     expect(find.byKey(const ValueKey('capture.close.button')), findsOneWidget);
     expect(find.byKey(const ValueKey('capture.records.button')), findsNothing);
+  });
+
+  group('레슨 촬영 나가기', () {
+    /// 일지 화면(스텁) 위에 카메라를 쌓는다. 닫기·뒤로가기가 일지로 돌아가는지
+    /// 보려면 카메라가 루트가 아니어야 한다.
+    Widget buildLessonApp(
+      FakeCaptureCameraController fake, {
+      List<Override> overrides = const [],
+    }) {
+      final router = GoRouter(
+        initialLocation: '/editor',
+        routes: [
+          GoRoute(
+            path: '/editor',
+            builder: (context, state) => Scaffold(
+              key: const ValueKey('screen.editor.stub'),
+              body: TextButton(
+                key: const ValueKey('editor.open.camera'),
+                onPressed: () => context.push('/camera'),
+                child: const Text('open camera'),
+              ),
+            ),
+          ),
+          GoRoute(
+            path: '/camera',
+            builder: (context, state) => const GridCameraScreen(),
+          ),
+          GoRoute(
+            path: '/import',
+            name: AppRoutes.galleryImport,
+            builder: (context, state) =>
+                const Scaffold(key: ValueKey('screen.import.stub')),
+          ),
+        ],
+      );
+      return ProviderScope(
+        overrides: [
+          captureCameraControllerFactoryProvider.overrideWithValue(() => fake),
+          previousPhotoGuidePathProvider.overrideWith((ref, d) async => null),
+          timelineProvider.overrideWith((ref) async => const []),
+          levelSensorProvider.overrideWithValue(
+            FakeLevelSensor(const Stream.empty()),
+          ),
+          levelLockFeedbackProvider.overrideWithValue(() {}),
+          lessonCaptureContextProvider.overrideWith(
+            (ref) => const LessonCaptureContext('m1', useBaseline: false),
+          ),
+          cameraHeaderInfoProvider.overrideWith((ref) async => null),
+          ...overrides,
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      );
+    }
+
+    Future<void> openCamera(WidgetTester tester) async {
+      await tester.tap(find.byKey(const ValueKey('editor.open.camera')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey(GridCameraScreen.screenId)),
+        findsOneWidget,
+      );
+    }
+
+    Future<void> shoot(WidgetTester tester) async {
+      await tester.tap(find.byKey(const ValueKey('capture.shutter.button')));
+      await tester.pumpAndSettle();
+    }
+
+    final cameraScreen = find.byKey(const ValueKey(GridCameraScreen.screenId));
+    final dialog = find.byKey(const ValueKey('capture.discard.dialog'));
+
+    testWidgets('찍은 사진이 없으면 닫기로 확인 없이 일지로 돌아간다', (tester) async {
+      await tester.pumpWidget(buildLessonApp(FakeCaptureCameraController()));
+      await tester.pumpAndSettle();
+      await openCamera(tester);
+
+      await tester.tap(find.byKey(const ValueKey('capture.close.button')));
+      await tester.pumpAndSettle();
+      expect(dialog, findsNothing);
+      expect(cameraScreen, findsNothing);
+    });
+
+    testWidgets('찍은 사진이 없으면 시스템 뒤로가기도 바로 닫힌다', (tester) async {
+      await tester.pumpWidget(buildLessonApp(FakeCaptureCameraController()));
+      await tester.pumpAndSettle();
+      await openCamera(tester);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(dialog, findsNothing);
+      expect(cameraScreen, findsNothing);
+    });
+
+    testWidgets('사진이 있으면 닫기에서 버릴지 묻고, 계속 촬영이면 머문다', (tester) async {
+      await tester.pumpWidget(buildLessonApp(FakeCaptureCameraController()));
+      await tester.pumpAndSettle();
+      await openCamera(tester);
+      await shoot(tester);
+
+      await tester.tap(find.byKey(const ValueKey('capture.close.button')));
+      await tester.pumpAndSettle();
+      expect(dialog, findsOneWidget);
+      expect(find.text('찍은 사진 1장을 버릴까요?'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey('capture.discard.keep.button')),
+      );
+      await tester.pumpAndSettle();
+      expect(dialog, findsNothing);
+      expect(cameraScreen, findsOneWidget);
+      expect(sessionOf(tester).capturedCount, 1);
+
+      await tester.tap(find.byKey(const ValueKey('capture.close.button')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('capture.discard.confirm.button')),
+      );
+      await tester.pumpAndSettle();
+      expect(cameraScreen, findsNothing);
+      expect(find.byKey(const ValueKey('screen.editor.stub')), findsOneWidget);
+    });
+
+    testWidgets('사진이 있으면 시스템 뒤로가기도 버릴지 묻는다', (tester) async {
+      await tester.pumpWidget(buildLessonApp(FakeCaptureCameraController()));
+      await tester.pumpAndSettle();
+      await openCamera(tester);
+      await shoot(tester);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(dialog, findsOneWidget);
+      expect(cameraScreen, findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey('capture.discard.confirm.button')),
+      );
+      await tester.pumpAndSettle();
+      expect(cameraScreen, findsNothing);
+    });
+
+    testWidgets('카메라가 떠 있는 동안 세로로 고정하고 닫으면 되돌린다', (tester) async {
+      final lock = _RecordingOrientationLock();
+      await tester.pumpWidget(
+        buildLessonApp(
+          FakeCaptureCameraController(),
+          overrides: [screenOrientationLockProvider.overrideWithValue(lock)],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(lock.calls, isEmpty);
+
+      await openCamera(tester);
+      expect(lock.calls, ['lock']);
+
+      await tester.tap(find.byKey(const ValueKey('capture.close.button')));
+      await tester.pumpAndSettle();
+      expect(lock.calls, ['lock', 'restore']);
+    });
+
+    testWidgets('권한이 없으면 사진 선택으로 일지에 갤러리 선택을 요청하고 닫는다', (tester) async {
+      final fake = FakeCaptureCameraController(
+        initializeError: CameraException(
+          'CameraAccessDenied',
+          'Camera access permission was denied.',
+        ),
+      );
+      await tester.pumpWidget(buildLessonApp(fake));
+      await tester.pumpAndSettle();
+      await openCamera(tester);
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(GridCameraScreen)),
+      );
+
+      final gallery = find.byKey(
+        const ValueKey('capture.camera.gallery.fallback.button'),
+      );
+      await tester.ensureVisible(gallery);
+      await tester.tap(gallery);
+      await tester.pumpAndSettle();
+
+      expect(cameraScreen, findsNothing);
+      expect(container.read(cameraGalleryFallbackRequestProvider), isTrue);
+    });
+  });
+
+  group('뷰파인더 크기 고정', () {
+    for (final scale in [1.0, 1.3]) {
+      testWidgets('글꼴 $scale배에서 단계를 옮겨도 프레임 크기가 같다', (tester) async {
+        tester.view.physicalSize = const Size(1080, 2408);
+        tester.view.devicePixelRatio = 3;
+        tester.platformDispatcher.textScaleFactorTestValue = scale;
+        addTearDown(tester.view.reset);
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+        await tester.pumpWidget(
+          buildApp(
+            FakeCaptureCameraController.new,
+            loadPreviousGuide: (_) async => frontGuideFile.path,
+          ),
+        );
+        await tester.pumpAndSettle();
+        final frame = find.byKey(const ValueKey('capture.frame'));
+        final first = tester.getRect(frame);
+
+        for (final direction in kSessionDirections.skip(1)) {
+          await tester.tap(
+            find.byKey(ValueKey('capture.progress.step.${direction.key}')),
+          );
+          await tester.pumpAndSettle();
+          expect(tester.getRect(frame), first, reason: direction.label);
+        }
+
+        // 방향 탭은 항상 한 줄이다.
+        final tops = {
+          for (final d in kSessionDirections)
+            tester
+                .getRect(find.byKey(ValueKey('capture.progress.step.${d.key}')))
+                .top,
+        };
+        expect(tops, hasLength(1));
+        expect(tester.takeException(), isNull);
+      });
+    }
   });
 
   for (final width in [320.0, 360.0, 412.0]) {
@@ -1669,4 +1892,14 @@ class FakeLevelSensor implements LevelSensor {
 
   @override
   Stream<AccelerationSample> samples() => stream;
+}
+
+class _RecordingOrientationLock implements ScreenOrientationLock {
+  final calls = <String>[];
+
+  @override
+  Future<void> lockPortrait() async => calls.add('lock');
+
+  @override
+  Future<void> restore() async => calls.add('restore');
 }

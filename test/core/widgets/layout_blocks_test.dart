@@ -109,6 +109,39 @@ void main() {
     expect(tester.getSize(find.byKey(const ValueKey('test.next'))).width, 328);
   });
 
+  testWidgets('BottomActionBar: vertical이면 보통 글꼴에서도 주 버튼 아래 보조 버튼을 쌓는다', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      _host(
+        const SizedBox.shrink(),
+        bottom: BottomActionBar(
+          vertical: true,
+          primary: FilledButton(
+            key: const ValueKey('test.primary'),
+            onPressed: () {},
+            child: const Text('사진 기록 추가하기'),
+          ),
+          secondary: OutlinedButton(
+            key: const ValueKey('test.secondary'),
+            onPressed: () {},
+            child: const Text('회원 기록으로 돌아가기'),
+          ),
+        ),
+      ),
+    );
+    final primary = tester.getRect(find.byKey(const ValueKey('test.primary')));
+    final secondary = tester.getRect(
+      find.byKey(const ValueKey('test.secondary')),
+    );
+    expect(primary.width, 328);
+    expect(secondary.width, 328);
+    expect(secondary.top, greaterThan(primary.bottom));
+  });
+
   testWidgets('SectionHeader는 제목·개수·동작을 보여주고 heading이다', (tester) async {
     final handle = tester.ensureSemantics();
     await tester.pumpWidget(

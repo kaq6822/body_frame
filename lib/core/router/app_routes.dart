@@ -59,4 +59,8 @@ class AppParams {
   static const direction = 'direction';
   static const beforePhotoId = 'beforePhotoId';
   static const afterPhotoId = 'afterPhotoId';
+
+  /// 기록 탭의 처음 회원 필터. 값 [unlinkedMembers]는 회원 미연결 기록만 보여 준다.
+  static const memberFilter = 'member';
+  static const unlinkedMembers = 'unlinked';
 }

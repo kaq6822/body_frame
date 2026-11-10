@@ -359,4 +359,98 @@ void main() {
       },
     );
   }
+
+  testWidgets('겹쳐 보기·슬라이더 캔버스는 나란히 보기 두 칸을 합친 넓이만큼 크다', (tester) async {
+    // 실기기에서 겹침 캔버스가 폭 170dp로 나란히 보기 칸보다 작던 문제(M2).
+    tester.view.physicalSize = const Size(360, 720);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    final before = tester.getSize(
+      find.byKey(const ValueKey('compare.before.viewer')),
+    );
+    final after = tester.getSize(
+      find.byKey(const ValueKey('compare.after.viewer')),
+    );
+    final sideBySideArea =
+        before.width * before.height + after.width * after.height;
+
+    for (final mode in const ['overlay', 'slider']) {
+      await selectMode(tester, 'compare.mode.$mode.button');
+      final canvas = tester.getSize(
+        find.byKey(ValueKey('compare.$mode.canvas')),
+      );
+      expect(
+        canvas.width * canvas.height,
+        greaterThan(sideBySideArea * 0.85),
+        reason: mode,
+      );
+      expect(canvas.width, greaterThan(before.width), reason: mode);
+      expect(tester.takeException(), isNull, reason: mode);
+    }
+  });
+
+  testWidgets('나란히 보기 사진 칸은 화면 가로 여백 16dp 안에 있다', (tester) async {
+    tester.view.physicalSize = const Size(360, 720);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    final before = tester.getRect(
+      find.byKey(const ValueKey('compare.before.viewer')),
+    );
+    final after = tester.getRect(
+      find.byKey(const ValueKey('compare.after.viewer')),
+    );
+    expect(before.left, greaterThanOrEqualTo(16));
+    expect(after.right, lessThanOrEqualTo(360 - 16));
+  });
+
+  for (final scale in const [1.0, 2.0]) {
+    testWidgets('모드 선택은 글꼴 $scale배 360dp에서도 한 줄 3칸이고 잘리지 않는다', (tester) async {
+      tester.view.physicalSize = const Size(360, 720);
+      tester.view.devicePixelRatio = 1.0;
+      tester.platformDispatcher.textScaleFactorTestValue = scale;
+      addTearDown(tester.view.reset);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await tester.pumpWidget(buildApp());
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      final rects = [
+        for (final m in const ['sideBySide', 'overlay', 'slider'])
+          tester.getRect(find.byKey(ValueKey('compare.mode.$m.button'))),
+      ];
+      for (final r in rects) {
+        expect(r.top, closeTo(rects.first.top, 0.01));
+        expect(r.width, closeTo(rects.first.width, 0.01));
+        expect(r.left, greaterThanOrEqualTo(16));
+        expect(r.right, lessThanOrEqualTo(360 - 16));
+      }
+      // 라벨이 칸 밖으로 나가지 않는다(필요하면 칸 안에 맞게 줄여 그린다).
+      for (final m in CompareMode.values) {
+        final label = tester.getRect(find.text(m.label));
+        final cell = tester.getRect(
+          find.byKey(ValueKey('compare.mode.${m.key}.button')),
+        );
+        expect(label.left, greaterThanOrEqualTo(cell.left - 0.01));
+        expect(label.right, lessThanOrEqualTo(cell.right + 0.01));
+      }
+    });
+  }
+
+  testWidgets('겹쳐 보기·슬라이더는 조절 막대 양끝 뜻을 보여 준다', (tester) async {
+    useTallViewport(tester);
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('compare.slider.legend')), findsNothing);
+    await selectMode(tester, 'compare.mode.overlay.button');
+    expect(find.text('이전 사진만 (0%)'), findsOneWidget);
+    expect(find.text('이후 사진만 (100%)'), findsOneWidget);
+    await selectMode(tester, 'compare.mode.slider.button');
+    expect(find.byKey(const ValueKey('compare.slider.legend')), findsOneWidget);
+  });
 }

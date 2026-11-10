@@ -8,12 +8,14 @@ import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:bodymark/core/dates.dart';
+import 'package:bodymark/core/korean_text.dart';
 import 'package:bodymark/core/photo_frame.dart';
 import 'package:bodymark/core/models/models.dart';
 import 'package:bodymark/core/providers.dart';
 import 'package:bodymark/core/services/app_logger.dart';
 import 'package:bodymark/core/theme/app_tokens.dart';
 import 'package:bodymark/core/widgets/bottom_action_bar.dart';
+import 'package:bodymark/core/widgets/direction_stepper.dart';
 import 'package:bodymark/core/widgets/photo_grid_overlay.dart';
 import 'package:bodymark/core/widgets/status_pill.dart';
 import 'providers/capture_providers.dart';
@@ -26,7 +28,9 @@ import 'package:bodymark/core/widgets/async_status_indicator.dart';
 
 /// 연속 촬영 결과 일괄 확인 화면.
 ///
-/// 세션에서 찍은 컷을 한눈에 보여주고, 촬영일·라벨·메모를 지정해 **하나의
+/// 위쪽 방향 탭으로 한 방향을 고르면 그 방향 사진을 크게 보여준다. 찍은 방향은
+/// 체크로, 건너뛴 방향은 "건너뜀"으로 표시하고, 고른 방향만 다시 찍거나 빠진
+/// 방향을 이어 찍을 수 있다. 세션에서 찍은 컷을 확인한 뒤 촬영일·라벨·메모를 지정해 **하나의
 /// [PhotoRecord]로** 저장한다. 촬영 한 건이 기록 하나이므로 촬영일이 같은 기존
 /// 기록에 합치지 않는다 — 같은 날 두 번 찍으면 기록도 두 개다.
 class CaptureReviewScreen extends ConsumerStatefulWidget {
@@ -52,6 +56,16 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
 
   /// 저장 중 조작을 막는지. 위젯 비활성화와 핸들러 가드를 함께 쓴다.
   bool get _isSaving => _saveStatus == AsyncStatus.busy;
+
+  /// 방향 탭에서 고른 단계. null이면 처음 찍힌 단계를 보여준다.
+  int? _selectedIndex;
+
+  int _selectedOf(CaptureSessionState session) {
+    final selected = _selectedIndex;
+    if (selected != null && selected < session.shots.length) return selected;
+    final first = session.shots.indexWhere((shot) => shot.isCaptured);
+    return first < 0 ? 0 : first;
+  }
 
   @override
   void initState() {
@@ -261,12 +275,12 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
   /// 레슨 촬영이면 회원 이름을 제목 아래 함께 보여준다.
   Widget _buildTitle() {
     final member = ref.watch(cameraHeaderInfoProvider).valueOrNull?.title;
-    if (member == null) return const Text('촬영 결과 확인');
+    if (member == null) return const Text('촬영 확인');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Text('촬영 결과 확인'),
+        const Text('촬영 확인'),
         Text(
           member,
           key: const ValueKey('capture.review.member'),
@@ -326,50 +340,107 @@ class _CaptureReviewScreenState extends ConsumerState<CaptureReviewScreen> {
     final dateLabel = DateFormat('yyyy.MM.dd').format(session.shotDate);
     final saving = _isSaving;
     final skipped = session.shots.length - session.capturedCount;
+    final selectedIndex = _selectedOf(session);
+    final selected = session.shots[selectedIndex];
+    final missingIndex = session.shots.indexWhere((shot) => !shot.isCaptured);
 
     return SingleChildScrollView(
       padding: AppSpacing.content,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            '${session.capturedCount}장 촬영됨',
-            style: Theme.of(context).textTheme.titleMedium,
+          // 네 방향의 상태를 한 줄에 보여 준다. 찍은 방향은 체크, 건너뛴 방향은
+          // "건너뜀"이라 어떤 방향이 빠졌는지 탭만 봐도 안다.
+          DirectionStepper(
+            identifier: 'capture.review.step',
+            singleRow: true,
+            directions: [for (final shot in session.shots) shot.direction],
+            selected: selected.direction,
+            recorded: {
+              for (final shot in session.shots)
+                if (shot.isCaptured) shot.direction,
+            },
+            captionBuilder: skipped == 0
+                ? null
+                : (direction) {
+                    final shot = session.shots.firstWhere(
+                      (s) => s.direction == direction,
+                    );
+                    if (direction == selected.direction) return '선택됨';
+                    return shot.isCaptured ? '완료' : '건너뜀';
+                  },
+            onSelected: saving
+                ? null
+                : (direction) => setState(
+                    () => _selectedIndex = session.shots.indexWhere(
+                      (s) => s.direction == direction,
+                    ),
+                  ),
+          ),
+          const SizedBox(height: AppSpacing.sp3),
+          _ShotPreview(
+            shot: selected,
+            maxHeight: MediaQuery.sizeOf(context).height * 0.55,
+          ),
+          const SizedBox(height: AppSpacing.sp3),
+          Row(
+            children: [
+              Expanded(
+                child: Semantics(
+                  identifier: 'capture.review.retake.${selected.direction.key}',
+                  button: true,
+                  enabled: !saving,
+                  label: selected.isCaptured
+                      ? '${selected.direction.label} 다시 촬영'
+                      : '${selected.direction.label} 촬영하기',
+                  excludeSemantics: true,
+                  child: OutlinedButton.icon(
+                    key: ValueKey(
+                      'capture.review.retake.${selected.direction.key}',
+                    ),
+                    onPressed: saving ? null : () => _retake(selectedIndex),
+                    icon: Icon(
+                      selected.isCaptured ? Icons.refresh : Icons.photo_camera,
+                    ),
+                    label: Text(
+                      selected.isCaptured ? '이 방향 다시 촬영' : '이 방향 촬영하기',
+                    ),
+                  ),
+                ),
+              ),
+              // 고른 방향은 찍혔는데 다른 방향이 빠졌으면 바로 이어 찍게 한다.
+              if (selected.isCaptured && missingIndex >= 0) ...[
+                const SizedBox(width: AppSpacing.sp2),
+                Expanded(
+                  child: Semantics(
+                    identifier: 'capture.review.missing.button',
+                    button: true,
+                    enabled: !saving,
+                    label:
+                        '빠진 방향 촬영, ${session.shots[missingIndex].direction.label}',
+                    excludeSemantics: true,
+                    child: OutlinedButton.icon(
+                      key: const ValueKey('capture.review.missing.button'),
+                      onPressed: saving ? null : () => _retake(missingIndex),
+                      icon: const Icon(Icons.add),
+                      label: const Text('빠진 방향 촬영'),
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
           if (skipped > 0) ...[
-            const SizedBox(height: AppSpacing.sp1),
+            const SizedBox(height: AppSpacing.sp3),
             Text(
-              '일부 방향만 남겨도 괜찮아요. 건너뛴 방향은 나중에 추가할 수 있어요.',
+              keepPhrasesWhole('일부 방향만 남겨도 괜찮아요. 건너뛴 방향은 나중에 추가할 수 있어요.'),
               key: const ValueKey('capture.review.partial.note'),
+              textAlign: TextAlign.center,
               style: context.texts.bodySmall?.copyWith(
                 color: context.colors.onSurfaceVariant,
               ),
             ),
           ],
-          const SizedBox(height: 12),
-          // 네 방향을 2열로 모두 보여 준다. 가로 스크롤 한 줄에 두면 뒤쪽 컷이
-          // 화면 밖으로 밀려 찍었는지조차 알기 어렵다.
-          LayoutBuilder(
-            builder: (context, constraints) {
-              const gap = AppSpacing.sp3;
-              final cellWidth = (constraints.maxWidth - gap) / 2;
-              return Wrap(
-                spacing: gap,
-                runSpacing: gap,
-                children: [
-                  for (var index = 0; index < session.shots.length; index++)
-                    SizedBox(
-                      width: cellWidth,
-                      child: _ShotPreview(
-                        shot: session.shots[index],
-                        onRetake: () => _retake(index),
-                        enabled: !saving,
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
           const SizedBox(height: 20),
           if (ref.watch(lessonCaptureContextProvider) == null) ...[
             const Text('촬영일', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -488,106 +559,118 @@ class _CaptureSavePhoto {
   });
 }
 
+/// 고른 방향의 큰 사진(3:4, contain)과 실제 촬영 시각.
 class _ShotPreview extends StatelessWidget {
   final CaptureShot shot;
-  final VoidCallback onRetake;
-  final bool enabled;
+  final double maxHeight;
 
-  const _ShotPreview({
-    required this.shot,
-    required this.onRetake,
-    required this.enabled,
-  });
+  const _ShotPreview({required this.shot, required this.maxHeight});
 
   @override
   Widget build(BuildContext context) {
     final id = 'capture.review.shot.${shot.direction.key}';
-
     final photoColors = context.photoColors;
+    final capturedAt = shot.capturedAt;
+
     return Semantics(
       identifier: id,
       container: true,
-      label: '${shot.direction.label} ${shot.isCaptured ? '촬영 결과' : '미촬영'}',
+      label: '${shot.direction.label} ${shot.isCaptured ? '촬영 결과' : '건너뜀'}',
       child: Column(
         key: ValueKey(id),
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  shot.direction.label,
-                  style: context.texts.titleSmall,
-                ),
-              ),
-              // 실제 촬영 시각. 레슨 일시·작성 일시와 구분해 보여준다.
-              if (shot.capturedAt != null)
-                Text(
-                  '촬영 ${DateFormat('HH:mm').format(shot.capturedAt!)}',
-                  key: ValueKey('$id.capturedAt'),
-                  style: context.numericTexts.labelLarge.copyWith(
-                    fontWeight: FontWeight.w500,
-                    color: context.colors.onSurfaceVariant,
+          Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxHeight),
+              child: AspectRatio(
+                aspectRatio: kPhotoFrameAspect,
+                child: ClipRRect(
+                  borderRadius: AppRadius.mdAll,
+                  child: ColoredBox(
+                    color: photoColors.backdrop,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        if (shot.isCaptured)
+                          // 촬영 당시와 같은 격자를 사진 사각형 위에 겹쳐 보여준다.
+                          // 격자 없이 보이면 정렬이 맞는지 확인할 수 없어 다시 찍을
+                          // 판단이 어렵다.
+                          PhotoWithGrid(
+                            image: FileImage(File(shot.imagePath!)),
+                            settings:
+                                shot.gridSettingsAtCapture ??
+                                GridSettings.defaults,
+                            gridSemanticsIdentifier: '$id.grid.overlay',
+                            errorIdPrefix: '$id.photo',
+                          )
+                        else
+                          Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.remove_circle_outline,
+                                  color: photoColors.onChrome.withValues(
+                                    alpha: 0.72,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '건너뜀',
+                                  style: context.texts.labelLarge?.copyWith(
+                                    color: photoColors.onChrome,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        if (shot.isCaptured)
+                          Positioned(
+                            top: AppSpacing.sp2,
+                            left: AppSpacing.sp2,
+                            child: ExcludeSemantics(
+                              child: Container(
+                                key: ValueKey('$id.badge'),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: AppSpacing.sp2,
+                                  vertical: AppSpacing.sp1,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: photoColors.hudSurface,
+                                  borderRadius: AppRadius.fullAll,
+                                  border: Border.all(
+                                    color: photoColors.hudOutline,
+                                  ),
+                                ),
+                                child: Text(
+                                  '${shot.direction.label} 원본',
+                                  style: context.texts.labelMedium?.copyWith(
+                                    color: photoColors.onChrome,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          AspectRatio(
-            aspectRatio: kPhotoFrameAspect,
-            child: ClipRRect(
-              borderRadius: AppRadius.smAll,
-              child: ColoredBox(
-                color: photoColors.backdrop,
-                child: shot.isCaptured
-                    // 촬영 당시와 같은 격자를 사진 사각형 위에 겹쳐 보여준다.
-                    // 격자 없이 보이면 정렬이 맞는지 확인할 수 없어 다시 찍을
-                    // 판단이 어렵다.
-                    ? PhotoWithGrid(
-                        image: FileImage(File(shot.imagePath!)),
-                        settings:
-                            shot.gridSettingsAtCapture ?? GridSettings.defaults,
-                        gridSemanticsIdentifier: '$id.grid.overlay',
-                        errorIdPrefix: '$id.photo',
-                      )
-                    : Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.remove_circle_outline,
-                              color: photoColors.onChrome.withValues(
-                                alpha: 0.72,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '건너뜀',
-                              style: context.texts.labelLarge?.copyWith(
-                                color: photoColors.onChrome,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
               ),
             ),
           ),
-          const SizedBox(height: 6),
-          Semantics(
-            identifier: 'capture.review.retake.${shot.direction.key}',
-            button: true,
-            enabled: enabled,
-            label: shot.isCaptured
-                ? '${shot.direction.label} 다시 촬영'
-                : '${shot.direction.label} 촬영하기',
-            excludeSemantics: true,
-            child: OutlinedButton(
-              key: ValueKey('capture.review.retake.${shot.direction.key}'),
-              onPressed: enabled ? onRetake : null,
-              child: Text(shot.isCaptured ? '다시 촬영' : '촬영하기'),
+          // 실제 촬영 시각. 레슨 일시·작성 일시와 구분해 보여준다.
+          if (capturedAt != null) ...[
+            const SizedBox(height: AppSpacing.sp2),
+            Text(
+              '실제 촬영 ${DateFormat('HH:mm').format(capturedAt)}',
+              key: ValueKey('$id.capturedAt'),
+              style: context.numericTexts.labelLarge.copyWith(
+                fontWeight: FontWeight.w500,
+                color: context.colors.onSurfaceVariant,
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );

@@ -79,3 +79,11 @@ final appSettingsControllerProvider =
 final storageUsageProvider = FutureProvider.autoDispose((ref) {
   return ref.watch(storageStatsServiceProvider).collect();
 });
+
+/// 회원이 연결되지 않은 기존 기록 수. 설정의 "기존 기록 연결" 부제에 쓴다.
+final unlinkedRecordCountProvider = FutureProvider.autoDispose<int>((
+  ref,
+) async {
+  final records = await ref.watch(photoRecordRepositoryProvider).listAll();
+  return records.where((r) => r.memberId == null).length;
+});

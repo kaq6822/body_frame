@@ -8,6 +8,7 @@ import '../../core/models/models.dart';
 import '../../core/providers.dart';
 import '../../core/services/photo_storage_service.dart';
 import '../../core/services/app_image_picker.dart';
+import '../capture/providers/capture_providers.dart';
 import '../capture/providers/capture_session_provider.dart';
 import '../capture/utils/image_meta.dart';
 import '../capture/utils/temporary_capture.dart';
@@ -61,6 +62,24 @@ class _LessonEditorState extends ConsumerState<LessonEditorScreen> {
       choosing = false;
   String phase = 'before';
   String? error;
+
+  /// 사진 카드 위치. 촬영·사진 추가 뒤 이 카드로 스크롤한다.
+  final photosSectionKey = GlobalKey();
+
+  /// 방금 추가한 사진이 화면 밖에 남지 않게 사진 카드를 보이는 곳으로 옮긴다.
+  void revealPhotos() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final target = photosSectionKey.currentContext;
+      if (!mounted || target == null) return;
+      Scrollable.ensureVisible(
+        target,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+        alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+      );
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -154,6 +173,7 @@ class _LessonEditorState extends ConsumerState<LessonEditorScreen> {
   Future<void> capture() async {
     if (choosing || saving) return;
     setState(() => choosing = true);
+    var openGallery = false;
     try {
       final selected = await Navigator.of(context).push<LessonCaptureContext>(
         MaterialPageRoute(
@@ -171,8 +191,19 @@ class _LessonEditorState extends ConsumerState<LessonEditorScreen> {
       if (shotPhase != phase) setState(() => phase = shotPhase);
       ref.read(lessonCaptureContextProvider.notifier).state = selected;
       ref.read(captureSessionProvider.notifier).reset();
+      // 이전 촬영에서 남았을 수 있는 신호를 지우고 카메라를 연다.
+      final fallback = ref.read(cameraGalleryFallbackRequestProvider.notifier);
+      fallback.state = false;
       final shots = await context.push<List<CaptureShot>>('/camera');
-      if (!mounted || shots == null) return;
+      // 카메라를 못 쓸 때 "사진 선택"을 누르면 결과 없이 닫히고 신호만 남는다.
+      // 화면이 사라졌어도 신호는 지워 다음 촬영에 새지 않게 한다.
+      final requestedGallery = fallback.state;
+      fallback.state = false;
+      if (!mounted) return;
+      if (shots == null) {
+        openGallery = requestedGallery;
+        return;
+      }
       setState(() {
         for (final s in shots) {
           if (s.imagePath != null) {
@@ -190,11 +221,15 @@ class _LessonEditorState extends ConsumerState<LessonEditorScreen> {
         }
         dirty = true;
       });
+      revealPhotos();
     } catch (_) {
       if (mounted) setState(() => error = '촬영 결과를 가져오지 못했어요. 다시 시도해주세요.');
     } finally {
       ref.read(lessonCaptureContextProvider.notifier).state = null;
       if (mounted) setState(() => choosing = false);
+      // try 안의 return 뒤에도 실행되도록 finally에서 연다. choosing이 풀린
+      // 뒤라야 importPhotos가 중복 실행으로 막히지 않는다.
+      if (openGallery && mounted) unawaited(importPhotos());
     }
   }
 
@@ -230,6 +265,7 @@ class _LessonEditorState extends ConsumerState<LessonEditorScreen> {
           pending.addAll(selected);
           dirty = true;
         });
+        revealPhotos();
       }
     } catch (_) {
       if (mounted) setState(() => error = '사진을 가져오지 못했어요. 다시 시도해주세요.');
@@ -374,6 +410,10 @@ class _LessonEditorState extends ConsumerState<LessonEditorScreen> {
     final secondary = context.texts.bodySmall?.copyWith(
       color: context.colors.onSurfaceVariant,
     );
+    // 키보드가 열리면 하단 저장 바를 숨겨 입력칸을 넓히고, 같은 저장 동작을
+    // 앱바 오른쪽에 둔다(QA M5). 저장 버튼 키는 어느 쪽이든 하나만 있다.
+    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
+    final saveLabel = saving ? '저장 중' : '레슨 기록 저장하기';
     return PopScope(
       canPop: leaving || !dirty && !saving,
       onPopInvokedWithResult: (didPop, _) async {
@@ -409,46 +449,60 @@ class _LessonEditorState extends ConsumerState<LessonEditorScreen> {
                   ),
               ],
             ),
+            actions: [
+              if (keyboardOpen)
+                Padding(
+                  padding: const EdgeInsets.only(right: AppSpacing.sp2),
+                  child: mark(
+                    'lessons.save.button',
+                    TextButton(
+                      // 키보드를 닫아 하단 바가 돌아오면 진행·오류 안내가 보인다.
+                      onPressed: busyInput
+                          ? null
+                          : () {
+                              FocusManager.instance.primaryFocus?.unfocus();
+                              save();
+                            },
+                      child: Text(saving ? '저장 중' : '저장'),
+                    ),
+                  ),
+                ),
+            ],
           ),
-          // bottomNavigationBar는 키보드에 가려진다. 키보드 높이만큼 올려
-          // 메모를 쓰는 중에도 저장 버튼이 보이게 한다.
-          bottomNavigationBar: Padding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.viewInsetsOf(context).bottom,
-            ),
-            child: BottomActionBar(
-              identifier: 'lessons.save.bar',
-              leading: saving
-                  ? mark(
-                      'lessons.save.busy',
-                      const LinearProgressIndicator(
-                        semanticsLabel: '레슨 기록을 저장하고 있어요',
-                      ),
-                    )
-                  : error == null
-                  ? null
-                  : mark(
-                      'lessons.save.error',
-                      Semantics(
-                        liveRegion: true,
-                        child: Text(
-                          error!,
-                          style: context.texts.bodyMedium?.copyWith(
-                            color: context.colors.error,
+          bottomNavigationBar: keyboardOpen
+              ? null
+              : BottomActionBar(
+                  identifier: 'lessons.save.bar',
+                  leading: saving
+                      ? mark(
+                          'lessons.save.busy',
+                          const LinearProgressIndicator(
+                            semanticsLabel: '레슨 기록을 저장하고 있어요',
+                          ),
+                        )
+                      : error == null
+                      ? null
+                      : mark(
+                          'lessons.save.error',
+                          Semantics(
+                            liveRegion: true,
+                            child: Text(
+                              error!,
+                              style: context.texts.bodyMedium?.copyWith(
+                                color: context.colors.error,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
+                  primary: mark(
+                    'lessons.save.button',
+                    FilledButton.icon(
+                      onPressed: busyInput ? null : save,
+                      icon: const Icon(Icons.check),
+                      label: Text(saveLabel),
                     ),
-              primary: mark(
-                'lessons.save.button',
-                FilledButton.icon(
-                  onPressed: busyInput ? null : save,
-                  icon: const Icon(Icons.check),
-                  label: Text(saving ? '저장 중' : '레슨 기록 저장하기'),
+                  ),
                 ),
-              ),
-            ),
-          ),
           body: ListView(
             padding: const EdgeInsets.all(AppSpacing.sp4),
             children: [
@@ -492,7 +546,7 @@ class _LessonEditorState extends ConsumerState<LessonEditorScreen> {
                           onTap: saving ? null : changeDate,
                           child: InfoRow(
                             label: '실제 레슨 일시',
-                            value: lessonDate(date),
+                            value: lessonDateDisplay(date),
                             numeric: true,
                             // 행 전체가 눌림 영역이다. 버튼은 모양만 빌린다.
                             trailing: IgnorePointer(
@@ -580,88 +634,93 @@ class _LessonEditorState extends ConsumerState<LessonEditorScreen> {
                   ],
                 ),
               ),
-              mark(
-                'lessons.photos.section',
-                panel(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      cardTitle(
-                        Icons.photo_library_outlined,
-                        '체형 사진',
-                        trailing: total == 0
-                            ? null
-                            : StatusPill(
-                                label: '총 $total장',
-                                tone: StatusPillTone.primary,
-                                identifier: 'lessons.photos.count',
-                              ),
-                      ),
-                      if (total == 0)
-                        Padding(
-                          padding: const EdgeInsets.only(
-                            bottom: AppSpacing.sp3,
-                          ),
-                          child: Text('사진 없이도 저장할 수 있어요', style: secondary),
-                        ),
-                      Text('촬영할 구분', style: context.texts.labelMedium),
-                      const SizedBox(height: AppSpacing.sp1),
-                      mark(
-                        'lessons.phase.field',
-                        SegmentedButton<String>(
-                          showSelectedIcon: false,
-                          segments: [
-                            for (final p in phases.entries)
-                              ButtonSegment(
-                                value: p.key,
-                                label: Text(p.value, maxLines: 1),
-                              ),
-                          ],
-                          selected: {phase},
-                          onSelectionChanged: busyInput
+              KeyedSubtree(
+                key: photosSectionKey,
+                child: mark(
+                  'lessons.photos.section',
+                  panel(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        cardTitle(
+                          Icons.photo_library_outlined,
+                          '체형 사진',
+                          trailing: total == 0
                               ? null
-                              : (v) => setState(() => phase = v.first),
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.sp3),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: mark(
-                              'lessons.capture.button',
-                              FilledButton.tonalIcon(
-                                onPressed: busyInput ? null : capture,
-                                icon: const Icon(Icons.photo_camera_outlined),
-                                label: Text(total == 0 ? '촬영' : '추가 촬영'),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.sp3),
-                          Expanded(
-                            child: mark(
-                              'lessons.import.button',
-                              OutlinedButton.icon(
-                                onPressed: busyInput ? null : importPhotos,
-                                icon: const Icon(
-                                  Icons.add_photo_alternate_outlined,
+                              : StatusPill(
+                                  label: '총 $total장',
+                                  tone: StatusPillTone.primary,
+                                  identifier: 'lessons.photos.count',
                                 ),
-                                label: const Text('사진 추가'),
-                              ),
+                        ),
+                        if (total == 0)
+                          Padding(
+                            padding: const EdgeInsets.only(
+                              bottom: AppSpacing.sp3,
                             ),
+                            child: Text('사진 없이도 저장할 수 있어요', style: secondary),
                           ),
-                        ],
-                      ),
-                      if (choosing) busy('lessons.photos.busy', '사진을 준비하고 있어요'),
-                      for (final ph in phases.keys) ..._photoGroup(ph, photos),
-                      if (photos.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: AppSpacing.sp3),
-                          child: Text(
-                            '저장된 사진은 사진을 눌러 상세에서 관리할 수 있어요.',
-                            style: secondary,
+                        Text('촬영할 구분', style: context.texts.labelMedium),
+                        const SizedBox(height: AppSpacing.sp1),
+                        mark(
+                          'lessons.phase.field',
+                          SegmentedButton<String>(
+                            showSelectedIcon: false,
+                            segments: [
+                              for (final p in phases.entries)
+                                ButtonSegment(
+                                  value: p.key,
+                                  label: Text(p.value, maxLines: 1),
+                                ),
+                            ],
+                            selected: {phase},
+                            onSelectionChanged: busyInput
+                                ? null
+                                : (v) => setState(() => phase = v.first),
                           ),
                         ),
-                    ],
+                        const SizedBox(height: AppSpacing.sp3),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: mark(
+                                'lessons.capture.button',
+                                FilledButton.tonalIcon(
+                                  onPressed: busyInput ? null : capture,
+                                  icon: const Icon(Icons.photo_camera_outlined),
+                                  label: Text(total == 0 ? '촬영' : '추가 촬영'),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.sp3),
+                            Expanded(
+                              child: mark(
+                                'lessons.import.button',
+                                OutlinedButton.icon(
+                                  onPressed: busyInput ? null : importPhotos,
+                                  icon: const Icon(
+                                    Icons.add_photo_alternate_outlined,
+                                  ),
+                                  label: const Text('사진 추가'),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (choosing)
+                          busy('lessons.photos.busy', '사진을 준비하고 있어요'),
+                        for (final ph in phases.keys)
+                          ..._photoGroup(ph, photos),
+                        if (photos.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: AppSpacing.sp3),
+                            child: Text(
+                              '저장된 사진은 사진을 눌러 상세에서 관리할 수 있어요.',
+                              style: secondary,
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               ),

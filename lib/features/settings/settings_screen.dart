@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/app_info.dart';
 import '../../core/korean_text.dart';
 import '../../core/models/models.dart';
 import '../../core/router/app_routes.dart';
@@ -12,6 +13,8 @@ import '../../core/services/settings_save_queue.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/section_header.dart';
 import '../../core/widgets/async_status_indicator.dart';
+import '../../core/widgets/status_pill.dart';
+import '../capture/providers/capture_providers.dart';
 import 'providers/settings_providers.dart';
 
 /// 전체 설정 화면.
@@ -59,6 +62,33 @@ class _SettingsBody extends ConsumerStatefulWidget {
 }
 
 class _SettingsBodyState extends ConsumerState<_SettingsBody> {
+  /// 저장 성공 알림은 잠깐만 보인다. 목록 아래쪽 항목을 가리지 않게 한다.
+  static const successVisibleFor = Duration(seconds: 2);
+
+  /// 이 화면에서 바꾼 저장이 막 성공해 알림을 보여 주는 중인지. 다른 화면
+  /// (촬영 빠른 설정)에서 끝난 성공은 들어올 때 보여 주지 않는다.
+  bool _showSuccess = false;
+  Timer? _successTimer;
+
+  @override
+  void dispose() {
+    _successTimer?.cancel();
+    super.dispose();
+  }
+
+  void _onSaveStatus(SettingsSaveState? previous, SettingsSaveState next) {
+    if (previous?.status == next.status) return;
+    _successTimer?.cancel();
+    if (next.status != SettingsSaveStatus.success) {
+      if (_showSuccess) setState(() => _showSuccess = false);
+      return;
+    }
+    setState(() => _showSuccess = true);
+    _successTimer = Timer(successVisibleFor, () {
+      if (mounted) setState(() => _showSuccess = false);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final settings =
@@ -66,18 +96,38 @@ class _SettingsBodyState extends ConsumerState<_SettingsBody> {
         AppSettings.defaults;
     final capture = settings.capture;
     // 저장 진행·실패는 값 상태와 분리해 알린다. 저장 중이어도 현재 값은 곧바로
-    // 반영되므로 토글과 드롭다운이 손에 따라 움직인다.
-    final saveState = ref.watch(appSettingsSaveQueueProvider);
+    // 반영되므로 토글과 드롭다운이 손에 따라 움직인다. 격자 표시 기본값은
+    // 촬영 화면과 같은 격자 저장소에 저장되므로 두 저장 상태를 함께 본다.
+    final appSave = ref.watch(appSettingsSaveQueueProvider);
+    final gridSave = ref.watch(gridSettingsSaveQueueProvider);
+    ref.listen(appSettingsSaveQueueProvider, _onSaveStatus);
+    ref.listen(gridSettingsSaveQueueProvider, _onSaveStatus);
 
-    final status = switch (saveState.status) {
-      SettingsSaveStatus.idle => AsyncStatus.idle,
-      SettingsSaveStatus.saving => AsyncStatus.busy,
-      SettingsSaveStatus.success => AsyncStatus.success,
-      SettingsSaveStatus.failure => AsyncStatus.failure,
-    };
+    final failed = appSave.isFailure
+        ? appSave
+        : (gridSave.isFailure ? gridSave : null);
+    final AsyncStatus status;
+    if (failed != null) {
+      status = AsyncStatus.failure;
+    } else if (appSave.isSaving || gridSave.isSaving) {
+      status = AsyncStatus.busy;
+    } else if (_showSuccess) {
+      status = AsyncStatus.success;
+    } else {
+      status = AsyncStatus.idle;
+    }
+    VoidCallback? retry;
+    if (identical(failed, appSave) && appSave.canRetry) {
+      retry = () =>
+          ref.read(appSettingsControllerProvider.notifier).retrySave();
+    } else if (identical(failed, gridSave) && gridSave.canRetry) {
+      retry = () =>
+          ref.read(gridSettingsControllerProvider.notifier).retrySave();
+    }
     // 저장 상태는 목록 위에 떠 있는 알림으로 보여 준다. 목록 안에 칸을 두면
     // 평소엔 빈 칸이 남고, 칸이 생겼다 사라지면 아래 컨트롤이 밀려 엉뚱한 것을
-    // 누를 수 있다. 떠 있는 알림은 둘 다 피한다.
+    // 누를 수 있다. 성공 알림은 [successVisibleFor] 뒤 사라지고, 진행·실패는
+    // 끝날 때까지 남는다(실패는 재시도 버튼).
     return Stack(
       children: [
         _settingsList(context, capture),
@@ -106,11 +156,7 @@ class _SettingsBodyState extends ConsumerState<_SettingsBody> {
                       successLabel: '설정을 저장했어요.',
                       failureMessage: '설정을 저장하지 못했어요. 다시 시도해주세요.',
                       // 실패해도 화면에 반영된 값은 그대로 두어 마지막 선택 의도를 보존한다.
-                      onRetry: saveState.canRetry
-                          ? () => ref
-                                .read(appSettingsControllerProvider.notifier)
-                                .retrySave()
-                          : null,
+                      onRetry: retry,
                     ),
                   ),
                 ),
@@ -124,7 +170,16 @@ class _SettingsBodyState extends ConsumerState<_SettingsBody> {
       // 떠 있는 저장 알림이 마지막 항목을 가리지 않게 여유를 둔다.
       padding: const EdgeInsets.only(bottom: AppSpacing.sp8 + AppSpacing.sp7),
       children: [
-        const _SectionHeader('촬영', first: true),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(
+            AppSpacing.sp4,
+            AppSpacing.sp4,
+            AppSpacing.sp4,
+            0,
+          ),
+          child: _BrandCard(),
+        ),
+        const _SectionHeader('촬영'),
         Semantics(
           identifier: 'settings.capture.timer.field',
           label: '셀프 타이머 기본값',
@@ -166,6 +221,7 @@ class _SettingsBodyState extends ConsumerState<_SettingsBody> {
                 _updateCapture(capture.copyWith(countdownFeedback: value)),
           ),
         ),
+        _gridVisibleSwitch(),
         Semantics(
           identifier: 'settings.capture.guide.switch',
           child: SwitchListTile(
@@ -191,7 +247,7 @@ class _SettingsBodyState extends ConsumerState<_SettingsBody> {
         ),
         Semantics(
           identifier: 'settings.capture.opacity.slider',
-          label: '이전 사진 기본 투명도',
+          label: '이전 사진 기본 진하기',
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sp4),
             child: Column(
@@ -206,7 +262,7 @@ class _SettingsBodyState extends ConsumerState<_SettingsBody> {
                         color: context.colors.onSurfaceVariant,
                       ),
                       const SizedBox(width: AppSpacing.sp4),
-                      const Expanded(child: Text('이전 사진 투명도')),
+                      const Expanded(child: Text('이전 사진 진하기')),
                       Text(
                         '${(capture.guideOpacity * 100).round()}%',
                         style: context.texts.labelMedium,
@@ -246,6 +302,7 @@ class _SettingsBodyState extends ConsumerState<_SettingsBody> {
           trailing: const Icon(Icons.chevron_right),
           onTap: () => context.push('/settings/privacy'),
         ),
+        _linkRecordsItem(),
 
         ListTile(
           key: const ValueKey('settings.storage.item'),
@@ -286,7 +343,7 @@ class _SettingsBodyState extends ConsumerState<_SettingsBody> {
               ),
               const SizedBox(height: AppSpacing.sp2),
               Text(
-                keepPhrasesWhole('격자 표시와 이전 사진 가이드는 촬영 화면에서 바로 조절해요.'),
+                keepPhrasesWhole('격자 간격·굵기와 이전 사진 가이드는 촬영 화면에서 바로 조절해요.'),
                 style: context.texts.bodySmall?.copyWith(
                   color: context.colors.onSurfaceVariant,
                 ),
@@ -295,6 +352,67 @@ class _SettingsBodyState extends ConsumerState<_SettingsBody> {
           ),
         ),
       ],
+    );
+  }
+
+  /// 촬영을 시작할 때 격자를 켜 둘지. 촬영 화면의 격자 버튼과 같은 값이다.
+  Widget _gridVisibleSwitch() {
+    final grid = ref.watch(gridSettingsControllerProvider).valueOrNull;
+    final visible = grid?.visible ?? GridSettings.defaults.visible;
+    return Semantics(
+      identifier: 'settings.capture.grid.switch',
+      child: SwitchListTile(
+        key: const ValueKey('settings.capture.grid.switch'),
+        secondary: const Icon(Icons.grid_on_outlined),
+        title: const Text('격자 표시'),
+        subtitle: Text(keepPhrasesWhole('촬영을 시작할 때 격자선을 켜 둬요')),
+        value: visible,
+        // 저장된 값을 읽기 전에는 바꾸지 않는다. 읽기 전 값으로 덮어쓰면 다른
+        // 격자 값(간격·굵기)이 기본값으로 돌아간다.
+        onChanged: grid == null
+            ? null
+            : (v) => unawaited(
+                ref
+                    .read(gridSettingsControllerProvider.notifier)
+                    .update((s) => s.copyWith(visible: v)),
+              ),
+      ),
+    );
+  }
+
+  /// 회원 없이 남은 기존 기록을 기록 탭의 '회원 미연결' 필터로 연다.
+  Widget _linkRecordsItem() {
+    final count = ref.watch(unlinkedRecordCountProvider);
+    final subtitle = switch (count) {
+      AsyncData(value: 0) => '연결할 기록 없음',
+      AsyncData(:final value) => '회원 미연결 기록 $value개',
+      _ => '회원이 연결되지 않은 기록 보기',
+    };
+    return Semantics(
+      identifier: 'settings.linkRecords.item',
+      child: ListTile(
+        key: const ValueKey('settings.linkRecords.item'),
+        leading: const Icon(Icons.link_outlined),
+        title: const Text('기존 기록 연결'),
+        subtitle: Text(
+          keepPhrasesWhole(subtitle),
+          key: const ValueKey('settings.linkRecords.subtitle'),
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        // go를 쓰면 카메라 위에서 연 설정일 때 촬영 흐름의 스택(촬영분, 작성 중
+        // 일지)을 확인 없이 버린다. push로 열고, 돌아오면 개수를 다시 읽는다.
+        onTap: () async {
+          await context.push(
+            Uri(
+              path: '/records',
+              queryParameters: {
+                AppParams.memberFilter: AppParams.unlinkedMembers,
+              },
+            ).toString(),
+          );
+          if (mounted) ref.invalidate(unlinkedRecordCountProvider);
+        },
+      ),
     );
   }
 
@@ -311,19 +429,67 @@ class _SettingsBodyState extends ConsumerState<_SettingsBody> {
   }
 }
 
+/// 앱 이름·버전과 기기 보관 원칙을 한눈에 보여 주는 카드.
+class _BrandCard extends StatelessWidget {
+  const _BrandCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final muted = context.texts.bodySmall?.copyWith(
+      color: context.colors.onSurfaceVariant,
+    );
+    return Semantics(
+      identifier: 'settings.brand.card',
+      container: true,
+      child: Card(
+        key: const ValueKey('settings.brand.card'),
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: AppSpacing.content,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(AppInfo.name, style: context.texts.titleLarge),
+                  ),
+                  const StatusPill(
+                    label: 'v${AppInfo.version}',
+                    identifier: 'settings.version.label',
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sp1),
+              Text(
+                keepPhrasesWhole('강사를 위한 회원·레슨 기록'),
+                style: context.texts.titleSmall,
+              ),
+              const SizedBox(height: AppSpacing.sp1),
+              Text(
+                keepPhrasesWhole('회원 정보와 사진 기록은 이 휴대폰에만 보관돼요.'),
+                style: muted,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _SectionHeader extends StatelessWidget {
   final String label;
-  final bool first;
 
-  const _SectionHeader(this.label, {this.first = false});
+  const _SectionHeader(this.label);
 
   @override
   Widget build(BuildContext context) {
     return SectionHeader(
       title: label,
-      padding: EdgeInsets.fromLTRB(
+      padding: const EdgeInsets.fromLTRB(
         AppSpacing.sp4,
-        first ? AppSpacing.sp4 : AppSpacing.sp6,
+        AppSpacing.sp6,
         AppSpacing.sp4,
         AppSpacing.sp1,
       ),

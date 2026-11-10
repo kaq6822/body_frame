@@ -1,10 +1,13 @@
 import 'dart:io';
 
+import 'package:bodymark/core/korean_text.dart';
 import 'package:bodymark/core/models/models.dart';
 import 'package:bodymark/core/providers.dart';
 import 'package:bodymark/features/compare/compare_export_screen.dart';
 import 'package:bodymark/features/compare/services/compare_export_sink.dart';
 import 'package:bodymark/features/compare/services/compare_photo_loader.dart';
+import 'package:bodymark/features/compare/compare_export_models.dart';
+import 'package:bodymark/features/compare/widgets/compare_layered_pane.dart';
 import 'package:bodymark/features/compare/widgets/compare_photo_pane.dart';
 import 'package:bodymark/features/settings/providers/settings_providers.dart';
 import 'package:bodymark/features/settings/services/app_settings_service.dart';
@@ -101,17 +104,35 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// 생성 버튼을 누르고 미리보기나 실패 상태가 나올 때까지 실제 이벤트
+  /// 루프에서 기다린다. toImage는 FakeAsync 안에서 끝나지 않는다. 고정 지연은
+  /// 병렬 실행 부하에서 모자라 결과가 흔들리므로, 결과가 보일 때까지(최대 10초)
+  /// 짧게 나눠 기다린다.
+  Future<void> tapGenerateAndWait(WidgetTester tester, Finder button) async {
+    final preview = find.byKey(
+      const ValueKey('compare.export.result.thumbnail'),
+    );
+    final failure = find.text('이미지를 만들지 못했어요');
+    await tester.runAsync(() async {
+      await tester.tap(button);
+      await tester.pump();
+      for (var i = 0; i < 500; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await tester.pump();
+        if (preview.evaluate().isNotEmpty || failure.evaluate().isNotEmpty) {
+          return;
+        }
+      }
+    });
+  }
+
   Future<void> generateImage(WidgetTester tester) async {
     final generateButton = find.byKey(
       const ValueKey('compare.export.generate.button'),
     );
     await tester.ensureVisible(generateButton);
     await tester.pumpAndSettle();
-    await tester.runAsync(() async {
-      await tester.tap(generateButton);
-      await tester.pump();
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-    });
+    await tapGenerateAndWait(tester, generateButton);
     await tester.pumpAndSettle();
   }
 
@@ -163,11 +184,7 @@ void main() {
     // 프레임 펌프 안에서는 완료 콜백을 받지 못한다. runAsync로 실제 이벤트
     // 루프에서 tap+대기를 수행한 뒤, 바깥에서 pump로 결과 setState를
     // 반영해야 성공 상태까지 진행된다.
-    await tester.runAsync(() async {
-      await tester.tap(generateButton);
-      await tester.pump();
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-    });
+    await tapGenerateAndWait(tester, generateButton);
     await tester.pumpAndSettle();
 
     // 2단계(미리보기)는 실제로 만든 이미지 바이트를 보여준다.
@@ -222,11 +239,7 @@ void main() {
     );
     await tester.ensureVisible(generateButton);
     await tester.pumpAndSettle();
-    await tester.runAsync(() async {
-      await tester.tap(generateButton);
-      await tester.pump();
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-    });
+    await tapGenerateAndWait(tester, generateButton);
     await tester.pumpAndSettle();
 
     final saveButton = find.byKey(const ValueKey('compare.export.save.button'));
@@ -438,6 +451,19 @@ void main() {
     expect(sink.sharedNames, isEmpty);
   });
 
+  testWidgets('표시 항목 토글은 카드 안쪽 여백에 맞춰 안내 문구와 같은 선에서 시작한다', (tester) async {
+    await openExport(tester);
+    final toggle = find.byKey(const ValueKey('compare.export.date.toggle'));
+    await tester.ensureVisible(toggle);
+    await tester.pumpAndSettle();
+    final title = find.descendant(
+      of: toggle,
+      matching: find.text('레슨 날짜·시간 표시'),
+    );
+    final note = find.byKey(const ValueKey('compare.export.privacy.note'));
+    expect(tester.getTopLeft(title).dx, tester.getTopLeft(note).dx);
+  });
+
   testWidgets('사진을 읽지 못하면 빈 이미지를 만들지 않고 실패와 재시도를 보여준다', (tester) async {
     // 캡처할 구성은 화면 뒤에 가려져 있어 사진이 덜 읽힌 채 찍힐 수 있었다.
     // 읽기에 실패하면 성공 대신 실패로 보내고, 다시 시도하면 만들 수 있다.
@@ -548,7 +574,7 @@ void main() {
     await tester.tap(saveDefaultsButton);
     await tester.pumpAndSettle();
 
-    expect(find.text('기본 내보내기 옵션으로 저장했어요.'), findsOneWidget);
+    expect(find.text(keepPhrasesWhole('기본 내보내기 옵션으로 저장했어요.')), findsOneWidget);
     expect(settingsService.saveAttempts, 1);
     expect(settingsService.current.defaultExportOptions.includeLabel, isTrue);
     expect(settingsService.current.defaultExportOptions.includeMemo, isTrue);
@@ -575,8 +601,11 @@ void main() {
     await tester.tap(saveDefaultsButton);
     await tester.pumpAndSettle();
 
-    expect(find.text('기본값 저장에 실패했어요. 다시 시도해주세요.'), findsOneWidget);
-    expect(find.text('기본 내보내기 옵션으로 저장했어요.'), findsNothing);
+    expect(
+      find.text(keepPhrasesWhole('기본값 저장에 실패했어요. 다시 시도해주세요.')),
+      findsOneWidget,
+    );
+    expect(find.text(keepPhrasesWhole('기본 내보내기 옵션으로 저장했어요.')), findsNothing);
     expect(settingsService.saveAttempts, 1);
     expect(settingsService.current.defaultExportOptions.includeMemo, isFalse);
     expect(
@@ -639,6 +668,67 @@ void main() {
       find.byKey(const ValueKey('compare.export.backToDates.button')),
       findsNothing,
     );
+  });
+  testWidgets('구성 단계에서 레이아웃을 바꾸면 만든 미리보기도 그 레이아웃이다', (tester) async {
+    await openExport(tester);
+    expect(find.byType(CompareLayeredPane), findsNothing);
+
+    final overlay = find.byKey(
+      const ValueKey('compare.export.layout.overlay.button'),
+    );
+    await tester.ensureVisible(overlay);
+    await tester.tap(overlay);
+    await tester.pumpAndSettle();
+
+    final pane = tester.widget<CompareLayeredPane>(
+      find.byType(CompareLayeredPane),
+    );
+    expect(pane.mode, CompareMode.overlay);
+    expect(find.text('정면 · 겹쳐 보기'), findsOneWidget);
+
+    await generateImage(tester);
+    final preview = tester.widget<Image>(
+      find.byKey(const ValueKey('compare.export.result.thumbnail')),
+    );
+    final overlayBytes = (preview.image as MemoryImage).bytes;
+
+    // 나란히 보기로 되돌려 다시 만들면 다른 이미지가 나온다.
+    await tester.tap(find.byKey(const ValueKey('compare.export.edit.button')));
+    await tester.pumpAndSettle();
+    final side = find.byKey(
+      const ValueKey('compare.export.layout.sideBySide.button'),
+    );
+    await tester.ensureVisible(side);
+    await tester.tap(side);
+    await tester.pumpAndSettle();
+    expect(find.byType(CompareLayeredPane), findsNothing);
+    await generateImage(tester);
+    final sideBytes =
+        (tester
+                    .widget<Image>(
+                      find.byKey(
+                        const ValueKey('compare.export.result.thumbnail'),
+                      ),
+                    )
+                    .image
+                as MemoryImage)
+            .bytes;
+    expect(sideBytes, isNot(equals(overlayBytes)));
+  });
+
+  test('기기 저장 완료 문구는 플랫폼에 맞는 저장 위치를 부른다', () {
+    expect(savedToGalleryMessage(TargetPlatform.android), '갤러리에 저장했어요.');
+    expect(savedToGalleryMessage(TargetPlatform.iOS), '사진 보관함에 저장했어요.');
+  });
+
+  testWidgets('Android에서 저장하면 갤러리에 저장했다고 알린다', (tester) async {
+    await openExport(tester);
+    await generateImage(tester);
+    final save = find.byKey(const ValueKey('compare.export.save.button'));
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    expect(find.text('갤러리에 저장했어요.'), findsOneWidget);
+    expect(sink.savedNames, hasLength(1));
   });
 }
 

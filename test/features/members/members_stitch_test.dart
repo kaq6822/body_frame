@@ -1,8 +1,13 @@
+import 'package:bodymark/core/korean_text.dart';
 import 'package:bodymark/core/models/models.dart';
 import 'package:bodymark/core/theme/app_theme.dart';
 import 'package:bodymark/features/members/lesson_screens.dart';
 import 'package:bodymark/features/members/member.dart';
+import 'package:bodymark/core/services/app_image_picker.dart';
+import 'package:bodymark/features/capture/providers/capture_providers.dart';
+import 'package:bodymark/features/capture/providers/capture_session_provider.dart';
 import 'package:bodymark/features/members/member_providers.dart';
+import 'package:bodymark/features/members/member_repository.dart';
 import 'package:bodymark/features/members/member_screens.dart';
 import 'package:bodymark/features/members/ui.dart';
 import 'package:bodymark/features/records/providers/records_providers.dart';
@@ -11,6 +16,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 
 final _at = DateTime(2026, 11, 4, 15);
 
@@ -142,6 +148,12 @@ void main() {
       expect(memberInitials('김서연'), '서연');
       expect(memberInitials('Lee Test'), 'LT');
       expect(memberInitials('민'), '민');
+      // 영문으로 시작하고 한글이 섞이면 첫 단어 앞 두 글자(QA 실기기: "Q테").
+      expect(memberInitials('QA 테스트'), 'QA');
+      expect(memberInitials('Lee'), 'LE');
+      expect(memberInitials('  김서연  '), '서연');
+      expect(memberInitials('김서연 B'), '서연');
+      expect(memberInitials(''), '?');
     });
     test('주의 키워드는 첫 구절만', () {
       expect(cautionKeyword('손목 부하 주의 · 산후 6개월'), '손목 부하 주의');
@@ -295,11 +307,14 @@ void main() {
       initial: '/members/m1/lessons/new',
       members: [_member('m1', '김서연')],
     );
-    expect(find.text('2026.11.04 (수) 오후 3:00'), findsOneWidget);
+    expect(
+      find.text('2026.11.04 (수) ${keepPhrasesWhole('오후')}\u00A03:00'),
+      findsOneWidget,
+    );
     await tester.tap(find.byKey(const ValueKey('lessons.date.field')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('lessons.dateSheet')), findsOneWidget);
-    expect(find.byType(CalendarDatePicker), findsOneWidget);
+    expect(find.byType(LessonMonthCalendar), findsOneWidget);
     // 두 번째 다이얼로그 없이 같은 시트에서 날짜·오전/오후를 고른다.
     await tester.tap(find.text('5'));
     await tester.tap(find.text('오전'));
@@ -309,7 +324,10 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('lessons.dateSheet')), findsNothing);
-    expect(find.text('2026.11.05 (목) 오전 3:00'), findsOneWidget);
+    expect(
+      find.text('2026.11.05 (목) ${keepPhrasesWhole('오전')}\u00A03:00'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('07 저장은 하단 고정 버튼이고 빈 일지는 버튼 위에 안내한다', (tester) async {
@@ -817,20 +835,439 @@ void main() {
     expect(find.byKey(const ValueKey('screen.members.detail')), findsOneWidget);
   });
 
-  testWidgets('10 키보드가 열려도 저장 바는 키보드 위에 보인다', (tester) async {
+  testWidgets('10 키보드가 열리면 하단 저장 바를 숨기고 앱바 저장으로 저장한다', (tester) async {
     await _pump(
       tester,
       initial: '/members/m1/lessons/new',
       members: [_member('m1', '김서연')],
     );
+    final bar = find.byKey(const ValueKey('lessons.save.bar'));
+    final save = find.byKey(const ValueKey('lessons.save.button'));
+    expect(bar, findsOneWidget);
+    expect(find.descendant(of: bar, matching: save), findsOneWidget);
+
     tester.view.viewInsets = const FakeViewPadding(bottom: 300);
     addTearDown(tester.view.resetViewInsets);
     await tester.pumpAndSettle();
-    final save = tester.getRect(
-      find.byKey(const ValueKey('lessons.save.button')),
+    expect(bar, findsNothing);
+    // 저장 버튼은 앱바에 하나만 있고 같은 키를 쓴다.
+    expect(save, findsOneWidget);
+    expect(
+      find.descendant(of: find.byType(AppBar), matching: save),
+      findsOneWidget,
     );
-    expect(save.bottom, lessThanOrEqualTo(800 - 300));
-    expect(save.top, greaterThan(0));
+    expect(tester.getRect(save).bottom, lessThanOrEqualTo(800 - 300));
+    // 같은 저장 동작: 빈 일지면 안내가 뜬다(키보드가 닫히면 바 안에 보인다).
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    tester.view.resetViewInsets();
+    await tester.pumpAndSettle();
+    expect(bar, findsOneWidget);
+    expect(
+      find.descendant(
+        of: bar,
+        matching: find.byKey(const ValueKey('lessons.save.error')),
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('10 키보드가 열린 채 앱바 저장으로 메모를 저장한다', (tester) async {
+    final repo = _RecordingMemberRepository();
+    await _pump(
+      tester,
+      initial: '/members/m1/lessons/new',
+      members: [_member('m1', '김서연')],
+      overrides: [memberRepositoryProvider.overrideWithValue(repo)],
+    );
+    await tester.enterText(
+      find.descendant(
+        of: find.byKey(const ValueKey('lessons.memo.field')),
+        matching: find.byType(TextField),
+      ),
+      '호흡 위주',
+    );
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    addTearDown(tester.view.resetViewInsets);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('lessons.save.button')));
+    await tester.pumpAndSettle();
+    expect(repo.saved.single.memo, '호흡 위주');
+  });
+
+  testWidgets('08 촬영에서 돌아오면 추가된 사진이 보이게 사진 카드로 스크롤한다', (tester) async {
+    await _pump(
+      tester,
+      initial: '/members/m1/lessons/new',
+      size: const Size(360, 640),
+      members: [_member('m1', '김서연', precautions: '손목 부하 주의')],
+      extraRoutes: [
+        GoRoute(
+          path: '/camera',
+          builder: (context, _) => Scaffold(
+            body: Center(
+              child: TextButton(
+                key: const ValueKey('test.camera.done'),
+                onPressed: () => context.pop(<CaptureShot>[
+                  for (final d in BodyDirection.values.take(4))
+                    CaptureShot(
+                      direction: d,
+                      imagePath: '/tmp/none-${d.key}.jpg',
+                      capturedAt: _at,
+                    ),
+                ]),
+                child: const Text('완료'),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+    final section = find.byKey(const ValueKey('lessons.photos.section'));
+    final captureButton = find.byKey(const ValueKey('lessons.capture.button'));
+    // 촬영 버튼이 겨우 보일 만큼만 스크롤한다. 새 사진 격자는 그 아래에 생긴다.
+    await tester.scrollUntilVisible(
+      captureButton,
+      100,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(captureButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('capture.start.button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('test.camera.done')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('lessons.pending.0.card')),
+      findsOneWidget,
+    );
+    final bar = tester.getRect(find.byKey(const ValueKey('lessons.save.bar')));
+    final grid = tester.getRect(
+      find.byKey(const ValueKey('lessons.pending.0.card')),
+    );
+    expect(grid.top, greaterThanOrEqualTo(0));
+    expect(grid.bottom, lessThanOrEqualTo(bar.top));
+    expect(tester.getRect(section).bottom, lessThanOrEqualTo(bar.top + 1));
+  });
+
+  testWidgets('22 카메라가 갤러리 대체를 요청하고 닫히면 사진 선택과 사진 연결을 연다', (tester) async {
+    final picker = _FakePicker(['/tmp/gallery-a.jpg']);
+    late ProviderContainer container;
+    container = await _pump(
+      tester,
+      initial: '/members/m1/lessons/new',
+      members: [_member('m1', '김서연')],
+      overrides: [
+        appImagePickerProvider.overrideWithValue(picker),
+        imagePickerRequestStoreProvider.overrideWithValue(
+          _MemoryRequestStore(),
+        ),
+      ],
+      extraRoutes: [
+        GoRoute(
+          path: '/camera',
+          builder: (context, _) => Scaffold(
+            body: TextButton(
+              key: const ValueKey('test.camera.fallback'),
+              // 카메라의 "사진 선택"과 같은 신호: 값을 true로 두고 결과 없이 닫힌다.
+              onPressed: () {
+                container
+                        .read(cameraGalleryFallbackRequestProvider.notifier)
+                        .state =
+                    true;
+                context.pop();
+              },
+              child: const Text('사진 선택'),
+            ),
+          ),
+        ),
+      ],
+    );
+    final captureButton = find.byKey(const ValueKey('lessons.capture.button'));
+    await tester.scrollUntilVisible(
+      captureButton,
+      100,
+      scrollable: find.byType(Scrollable).first,
+    );
+    // 하단 저장 바에 가리지 않게 버튼을 위로 올린다.
+    await tester.ensureVisible(captureButton);
+    await tester.pumpAndSettle();
+    await tester.tap(captureButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('capture.start.button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('test.camera.fallback')));
+    await tester.pumpAndSettle();
+    expect(picker.calls, 1);
+    expect(
+      find.byKey(const ValueKey('screen.lessons.assignPhotos')),
+      findsOneWidget,
+    );
+    expect(container.read(cameraGalleryFallbackRequestProvider), isFalse);
+  });
+
+  testWidgets('22 신호 없이 카메라를 닫으면 사진 선택을 열지 않는다', (tester) async {
+    final picker = _FakePicker(['/tmp/gallery-a.jpg']);
+    await _pump(
+      tester,
+      initial: '/members/m1/lessons/new',
+      members: [_member('m1', '김서연')],
+      overrides: [
+        appImagePickerProvider.overrideWithValue(picker),
+        imagePickerRequestStoreProvider.overrideWithValue(
+          _MemoryRequestStore(),
+        ),
+      ],
+      extraRoutes: [
+        GoRoute(
+          path: '/camera',
+          builder: (context, _) => Scaffold(
+            body: TextButton(
+              key: const ValueKey('test.camera.close'),
+              onPressed: () => context.pop(),
+              child: const Text('닫기'),
+            ),
+          ),
+        ),
+      ],
+    );
+    final captureButton = find.byKey(const ValueKey('lessons.capture.button'));
+    await tester.scrollUntilVisible(
+      captureButton,
+      100,
+      scrollable: find.byType(Scrollable).first,
+    );
+    // 하단 저장 바에 가리지 않게 버튼을 위로 올린다.
+    await tester.ensureVisible(captureButton);
+    await tester.pumpAndSettle();
+    await tester.tap(captureButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('capture.start.button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('test.camera.close')));
+    await tester.pumpAndSettle();
+    expect(picker.calls, 0);
+    expect(find.byKey(const ValueKey('screen.lessons.edit')), findsOneWidget);
+  });
+
+  testWidgets('22 지난 촬영에서 남은 대체 신호는 다음 카메라 닫기에서 사진 선택을 열지 않는다', (tester) async {
+    final picker = _FakePicker(['/tmp/gallery-a.jpg']);
+    final container = await _pump(
+      tester,
+      initial: '/members/m1/lessons/new',
+      members: [_member('m1', '김서연')],
+      overrides: [
+        appImagePickerProvider.overrideWithValue(picker),
+        imagePickerRequestStoreProvider.overrideWithValue(
+          _MemoryRequestStore(),
+        ),
+      ],
+      extraRoutes: [
+        GoRoute(
+          path: '/camera',
+          builder: (context, _) => Scaffold(
+            body: TextButton(
+              key: const ValueKey('test.camera.close'),
+              onPressed: () => context.pop(),
+              child: const Text('닫기'),
+            ),
+          ),
+        ),
+      ],
+    );
+    // 편집 화면이 사라진 뒤 돌아온 지난 촬영이 신호를 남겨 둔 상황.
+    container.read(cameraGalleryFallbackRequestProvider.notifier).state = true;
+    final captureButton = find.byKey(const ValueKey('lessons.capture.button'));
+    await tester.scrollUntilVisible(
+      captureButton,
+      100,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.ensureVisible(captureButton);
+    await tester.pumpAndSettle();
+    await tester.tap(captureButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('capture.start.button')));
+    await tester.pumpAndSettle();
+    expect(container.read(cameraGalleryFallbackRequestProvider), isFalse);
+    await tester.tap(find.byKey(const ValueKey('test.camera.close')));
+    await tester.pumpAndSettle();
+    expect(picker.calls, 0);
+    expect(find.byKey(const ValueKey('screen.lessons.edit')), findsOneWidget);
+  });
+
+  test('레슨 일시 표시는 오전·오후와 시각을 줄바꿈 없는 공백으로 붙인다', () {
+    final at = DateTime(2026, 11, 10, 10, 6);
+    expect(
+      lessonDateDisplay(at),
+      '2026.11.10 (화) ${keepPhrasesWhole('오전')}\u00A010:06',
+    );
+    expect(lessonDate(at), '2026.11.10 (화) 오전 10:06');
+  });
+
+  testWidgets('02 회원 목록 머리에 BodyMark 워드마크와 큰 제목이 있다', (tester) async {
+    await _pump(tester, initial: '/', members: [_member('m1', 'QA 테스트')]);
+    expect(
+      find.descendant(
+        of: find.byType(AppBar),
+        matching: find.byKey(const ValueKey('members.brand.wordmark')),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('BodyMark'), findsOneWidget);
+    expect(find.byKey(const ValueKey('members.title.label')), findsOneWidget);
+    expect(find.text('QA'), findsOneWidget);
+  });
+
+  testWidgets('04 주의사항 머리의 "선택"은 제목 옆 칩이다', (tester) async {
+    await _pump(
+      tester,
+      initial: '/test/member-new',
+      members: const [],
+      extraRoutes: [
+        GoRoute(
+          path: '/test/member-new',
+          builder: (_, _) => const MemberEditorScreen(),
+        ),
+      ],
+    );
+    final chip = find.byKey(const ValueKey('members.edit.care.optional'));
+    expect(chip, findsOneWidget);
+    final title = tester.getRect(find.text('주의사항 및 관찰 내용'));
+    expect(
+      (tester.getRect(chip).center.dy - title.center.dy).abs(),
+      lessThan(8),
+    );
+  });
+
+  testWidgets('05 레슨 머리에 최신순을 보이고 사진 기록이 2개 이상이면 비교 링크를 보인다', (tester) async {
+    await _pump(
+      tester,
+      initial: '/members/m1',
+      members: [_member('m1', '김서연')],
+      lessons: [
+        _lesson('r1', 'm1', _at, phases: {'before': 4}),
+        _lesson(
+          'r2',
+          'm1',
+          _at.subtract(const Duration(days: 2)),
+          phases: {'before': 4},
+        ),
+      ],
+    );
+    expect(
+      find.byKey(const ValueKey('members.lessons.order.label')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('members.compare.button')),
+      findsOneWidget,
+    );
+  });
+
+  for (final (name, lessons) in [
+    ('레슨이 없으면', <RecordWithPhotos>[]),
+    ('일지만 있으면', [_lesson('r1', 'm1', _at, memo: '일지')]),
+    (
+      '사진 기록이 하나면',
+      [
+        _lesson('r1', 'm1', _at, phases: {'before': 4}),
+      ],
+    ),
+  ]) {
+    testWidgets('06 $name 변화 비교 링크를 숨긴다', (tester) async {
+      await _pump(
+        tester,
+        initial: '/members/m1',
+        members: [_member('m1', '김서연')],
+        lessons: lessons,
+      );
+      expect(
+        find.byKey(const ValueKey('members.compare.button')),
+        findsNothing,
+      );
+    });
+  }
+
+  testWidgets('06 한 레슨의 수업 전·후 사진은 두 기록으로 보고 링크를 보인다', (tester) async {
+    await _pump(
+      tester,
+      initial: '/members/m1',
+      members: [_member('m1', '김서연')],
+      lessons: [
+        _lesson('r1', 'm1', _at, phases: {'before': 4, 'after': 4}),
+      ],
+    );
+    expect(
+      find.byKey(const ValueKey('members.compare.button')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('11 달력은 일요일 빨강·토요일 파랑으로 주말을 구분한다', (tester) async {
+    await _pump(
+      tester,
+      initial: '/members/m1/lessons/new',
+      members: [_member('m1', '김서연')],
+    );
+    await tester.tap(find.byKey(const ValueKey('lessons.date.field')));
+    await tester.pumpAndSettle();
+    final ctx = tester.element(find.byType(LessonMonthCalendar));
+    Color? colorOf(Finder f) => tester.widget<Text>(f).style?.color;
+    final sunday = LessonMonthCalendar.sundayColor(ctx);
+    final saturday = LessonMonthCalendar.saturdayColor(ctx);
+    expect(sunday, isNot(saturday));
+    expect(
+      colorOf(find.byKey(const ValueKey('lessons.dateSheet.weekday.0'))),
+      sunday,
+    );
+    expect(
+      colorOf(find.byKey(const ValueKey('lessons.dateSheet.weekday.6'))),
+      saturday,
+    );
+    // 2026-11-01은 일요일, 11-07은 토요일, 11-03은 화요일.
+    Finder day(int d) => find.descendant(
+      of: find.byKey(ValueKey('lessons.dateSheet.day.$d')),
+      matching: find.byType(Text),
+    );
+    expect(colorOf(day(1)), sunday);
+    expect(colorOf(day(7)), saturday);
+    expect(colorOf(day(3)), isNot(anyOf(sunday, saturday)));
+    // 달 이동 후에도 요일 칸이 맞다: 2026-12-06은 일요일.
+    await tester.tap(
+      find.byKey(const ValueKey('lessons.dateSheet.nextMonth.button')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('2026년 12월'), findsOneWidget);
+    expect(colorOf(day(6)), sunday);
+    await tester.tap(find.byKey(const ValueKey('lessons.dateSheet.day.6')));
+    await tester.tap(
+      find.byKey(const ValueKey('lessons.dateSheet.apply.button')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.text('2026.12.06 (일) ${keepPhrasesWhole('오후')}\u00A03:00'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('11 레슨 일시 시트는 320dp·2배 글꼴에서 넘치지 않는다', (tester) async {
+    await _pump(
+      tester,
+      initial: '/members/m1/lessons/new',
+      size: const Size(320, 640),
+      textScale: 2,
+      members: [_member('m1', '김서연')],
+    );
+    final field = find.byKey(const ValueKey('lessons.date.field'));
+    await tester.ensureVisible(field);
+    await tester.pumpAndSettle();
+    // 2배 글꼴에서는 행이 길어 가운데가 하단 저장 바에 가린다. 위쪽을 누른다.
+    await tester.tapAt(tester.getRect(field).topLeft + const Offset(24, 12));
+    await tester.pumpAndSettle();
+    expect(find.byType(LessonMonthCalendar), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -868,4 +1305,50 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+}
+
+/// 저장된 레슨만 기억하는 저장소. 실제 DB와 파일은 건드리지 않는다.
+class _RecordingMemberRepository implements MemberRepository {
+  final saved = <PhotoRecord>[];
+  @override
+  Future<void> saveLesson(PhotoRecord record, List<BodyPhoto> photos) async {
+    saved.add(record);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// 고정된 경로를 돌려주는 사진 선택기. 플랫폼 채널을 쓰지 않는다.
+class _FakePicker implements AppImagePicker {
+  final List<String> paths;
+  var calls = 0;
+  _FakePicker(this.paths);
+  @override
+  bool get supportsLostDataRecovery => false;
+  @override
+  Future<List<XFile>> pickMultiImage() async {
+    calls++;
+    return [for (final p in paths) XFile(p)];
+  }
+
+  @override
+  Future<XFile?> pickImage({required ImageSource source}) async => null;
+  @override
+  Future<LostDataResponse> retrieveLostData() async => LostDataResponse.empty();
+}
+
+class _MemoryRequestStore implements ImagePickerRequestStore {
+  ImagePickerRequestContext? value;
+  @override
+  Future<void> clear() async => value = null;
+  @override
+  Future<void> clearIfMatches(ImagePickerRequestContext context) async {
+    if (value == context) value = null;
+  }
+
+  @override
+  Future<ImagePickerRequestContext?> load() async => value;
+  @override
+  Future<void> save(ImagePickerRequestContext context) async => value = context;
 }

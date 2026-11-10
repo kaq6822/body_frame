@@ -265,7 +265,7 @@ void main() {
 
       final node = tester.getSemantics(slider);
       collect(node);
-      expect(node.label, '이전 사진 기본 투명도');
+      expect(node.label, '이전 사진 기본 진하기');
       // 라벨·값 글자는 화면용이라 읽기에서 빠지고 슬라이더 값 하나만 남는다.
       expect(values, ['30%']);
       handle.dispose();

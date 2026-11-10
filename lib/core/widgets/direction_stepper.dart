@@ -13,6 +13,10 @@ import '../theme/app_tokens.dart';
 /// 세그먼트마다 48dp 터치 영역을 보장한다. 네 칸이 한 줄에 들어가지 않으면(좁은
 /// 화면·큰 글꼴) 2×2로 줄바꿈한다. 글자를 줄이지 않는다.
 ///
+/// [singleRow]를 켜면 줄바꿈하지 않고 높이를 고정한다. 칸에 들어가지 않는 글자는
+/// 칸 안에서 축소한다. 카메라처럼 단계가 바뀌어도 아래 영역(뷰파인더) 크기가
+/// 흔들리면 안 되는 곳에서 쓴다.
+///
 /// 세그먼트 키와 Semantics identifier는 `<identifier>.<direction.key>`다.
 class DirectionStepper extends StatelessWidget {
   static const defaultIdentifier = 'common.direction.stepper';
@@ -39,6 +43,12 @@ class DirectionStepper extends StatelessWidget {
   /// 라벨을 바꿀 때 쓴다. 예: 활성 방향에만 "정면 1/4".
   final String Function(BodyDirection direction)? labelBuilder;
 
+  /// 방향 아래 작은 보조 문구. 예: "완료", "건너뜀". null을 돌려주면 생략한다.
+  final String? Function(BodyDirection direction)? captionBuilder;
+
+  /// 항상 한 줄·고정 높이로 그린다.
+  final bool singleRow;
+
   final String identifier;
 
   const DirectionStepper({
@@ -49,12 +59,18 @@ class DirectionStepper extends StatelessWidget {
     this.directions = standardDirections,
     this.onDark = false,
     this.labelBuilder,
+    this.captionBuilder,
+    this.singleRow = false,
     this.identifier = defaultIdentifier,
   });
 
   String _label(BodyDirection d) => labelBuilder?.call(d) ?? d.label;
 
   static const _gap = AppSpacing.sp2;
+
+  /// [singleRow]일 때의 고정 높이. 보조 문구가 있으면 한 줄만큼 더 둔다.
+  static const _singleRowHeight = AppSpacing.minTouchTarget;
+  static const _singleRowCaptionHeight = AppSpacing.minTouchTarget + 12;
   static const _checkSize = 12.0;
 
   /// 라벨 좌우 여백. 오른쪽 위 체크 표시가 라벨과 겹치지 않을 만큼 둔다.
@@ -89,6 +105,7 @@ class DirectionStepper extends StatelessWidget {
         builder: (context, constraints) {
           final count = directions.length;
           final fitsOneRow =
+              singleRow ||
               widest * count + _gap * (count - 1) <= constraints.maxWidth;
           final perRow = fitsOneRow ? count : (count / 2).ceil();
           final rows = <Widget>[];
@@ -111,6 +128,14 @@ class DirectionStepper extends StatelessWidget {
                   ],
                 ],
               ),
+            );
+          }
+          if (singleRow) {
+            return SizedBox(
+              height: captionBuilder == null
+                  ? _singleRowHeight
+                  : _singleRowCaptionHeight,
+              child: rows.single,
             );
           }
           return Column(
@@ -159,7 +184,12 @@ class DirectionStepper extends StatelessWidget {
     }
 
     final label = _label(d);
-    final state = [if (isRecorded) '기록됨', if (isActive) '현재 단계'].join(', ');
+    final caption = captionBuilder?.call(d);
+    final state = [
+      if (isRecorded) '기록됨',
+      if (isActive) '현재 단계',
+      if (caption != null && !isRecorded && !isActive) caption,
+    ].join(', ');
     final id = '$identifier.${d.key}';
 
     return Semantics(
@@ -190,14 +220,7 @@ class DirectionStepper extends StatelessWidget {
                     vertical: AppSpacing.sp1,
                   ),
                   child: Center(
-                    child: Text(
-                      label,
-                      textAlign: TextAlign.center,
-                      style: context.texts.labelLarge?.copyWith(
-                        color: foreground,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
-                    ),
+                    child: _content(context, label, caption, foreground),
                   ),
                 ),
               ),
@@ -212,5 +235,43 @@ class DirectionStepper extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Widget _content(
+    BuildContext context,
+    String label,
+    String? caption,
+    Color foreground,
+  ) {
+    Widget content = Text(
+      label,
+      textAlign: TextAlign.center,
+      maxLines: singleRow ? 1 : null,
+      style: context.texts.labelLarge?.copyWith(
+        color: foreground,
+        fontFeatures: const [FontFeature.tabularFigures()],
+      ),
+    );
+    if (caption != null) {
+      content = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          content,
+          Text(
+            caption,
+            textAlign: TextAlign.center,
+            maxLines: singleRow ? 1 : null,
+            style: context.texts.labelSmall?.copyWith(
+              color: foreground.withValues(alpha: 0.8),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      );
+    }
+    // 고정 높이 한 줄에서는 글자를 칸 안으로 축소해 줄바꿈·넘침을 막는다.
+    return singleRow
+        ? FittedBox(fit: BoxFit.scaleDown, child: content)
+        : content;
   }
 }

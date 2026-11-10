@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/models/models.dart';
+import '../../core/photo_frame.dart';
 import '../../core/providers.dart';
 import '../../core/router/app_routes.dart';
 import '../../core/theme/app_tokens.dart';
@@ -17,6 +18,7 @@ import 'compare_logic.dart';
 import 'compare_providers.dart';
 import 'widgets/compare_layered_pane.dart';
 import 'widgets/compare_missing_context.dart';
+import 'widgets/compare_mode_selector.dart';
 import 'widgets/compare_photo_pane.dart';
 import 'widgets/labeled_switch.dart';
 
@@ -346,13 +348,14 @@ class _CompareViewBodyState extends ConsumerState<_CompareViewBody> {
                 _changeDirection(d, bundle, beforePhotos!, afterPhotos!),
           );
 
-    final selector = _ModeSelector(
+    final selector = CompareModeSelector(
+      idPrefix: 'compare.mode',
       mode: _mode,
       onChanged: (m) => setState(() => _mode = m),
     );
     final panes = switch (_mode) {
       CompareMode.sideBySide => Padding(
-        padding: const EdgeInsets.all(12),
+        padding: _panePadding,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -386,7 +389,7 @@ class _CompareViewBodyState extends ConsumerState<_CompareViewBody> {
         ),
       ),
       CompareMode.overlay || CompareMode.slider => Padding(
-        padding: const EdgeInsets.all(12),
+        padding: _panePadding,
         child: CompareLayeredPane(
           mode: _mode,
           beforePhoto: bundle.beforePhoto,
@@ -492,11 +495,34 @@ class _CompareViewBodyState extends ConsumerState<_CompareViewBody> {
           );
         }
         final height = constraints.maxHeight;
-        final minBody =
-            _minCompareBodyHeight + (stepper == null ? 0 : _stepperHeight);
-        final controlsMaxHeight = height.isFinite
-            ? math.max(height * 0.3, height - minBody)
-            : double.infinity;
+        final top = _selectorHeight + (stepper == null ? 0 : _stepperHeight);
+        final double controlsMaxHeight;
+        if (!height.isFinite) {
+          controlsMaxHeight = double.infinity;
+        } else if (_mode == CompareMode.sideBySide) {
+          controlsMaxHeight = math.max(
+            height * 0.3,
+            height - top - _minSideBySidePaneHeight,
+          );
+        } else {
+          // 겹쳐 보기·슬라이더는 사진 한 장 크기의 캔버스라 컨트롤에 밀리면
+          // 나란히 보기 칸보다 작아진다. 나란히 보기 두 칸을 합친 넓이만큼
+          // 캔버스 자리를 먼저 잡고, 컨트롤은 남은 높이에서 스크롤한다.
+          controlsMaxHeight = math.max(
+            height * 0.2,
+            height -
+                top -
+                _layeredPaneHeight(
+                  constraints.maxWidth,
+                  CompareLayeredPane.headerHeight(
+                    context,
+                    beforeDateLabel: lessonDate(bundle.beforeRecord.shotAt),
+                    afterDateLabel: lessonDate(bundle.afterRecord.shotAt),
+                    width: constraints.maxWidth - _panePadding.horizontal,
+                  ),
+                ),
+          );
+        }
         return Column(
           children: [
             if (stepper != null) padded(stepper),
@@ -516,72 +542,34 @@ class _CompareViewBodyState extends ConsumerState<_CompareViewBody> {
 /// 방향 단계 한 줄이 차지하는 대략의 높이(논리 px).
 const double _stepperHeight = 56;
 
-/// 모드 선택기와 사진 영역이 최소한으로 차지해야 하는 높이(논리 px).
-const double _minCompareBodyHeight = 340;
+/// 모드 선택기 한 줄이 차지하는 대략의 높이(논리 px).
+const double _selectorHeight = 56;
 
-class _ModeSelector extends StatelessWidget {
-  final CompareMode mode;
-  final ValueChanged<CompareMode> onChanged;
+/// 나란히 보기 사진 영역이 최소한으로 차지해야 하는 높이(논리 px).
+const double _minSideBySidePaneHeight = 284;
 
-  const _ModeSelector({required this.mode, required this.onChanged});
+/// 사진 칸은 화면 가로 여백 16dp 안에 둔다.
+const EdgeInsets _panePadding = EdgeInsets.fromLTRB(
+  AppSpacing.sp4,
+  AppSpacing.sp3,
+  AppSpacing.sp4,
+  AppSpacing.sp3,
+);
 
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      identifier: 'compare.mode.selector',
-      label: '비교 방식 선택',
-      // 큰 글꼴에서 칩이 여러 줄로 쌓이면 사진 칸이 줄어든다. 한 줄을 유지하고
-      // 넘치면 가로로 밀어 본다.
-      child: SingleChildScrollView(
-        key: const ValueKey('compare.mode.scroll'),
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          spacing: 8,
-          children: [
-            _chip(
-              'compare.mode.sideBySide.button',
-              CompareMode.sideBySide.label,
-              CompareMode.sideBySide,
-            ),
-            _chip(
-              'compare.mode.overlay.button',
-              CompareMode.overlay.label,
-              CompareMode.overlay,
-            ),
-            _chip(
-              'compare.mode.slider.button',
-              CompareMode.slider.label,
-              CompareMode.slider,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _chip(String id, String label, CompareMode value) {
-    final selected = mode == value;
-    final icon = switch (value) {
-      CompareMode.sideBySide => Icons.view_column_outlined,
-      CompareMode.overlay => Icons.layers_outlined,
-      CompareMode.slider => Icons.compare_outlined,
-    };
-    return Semantics(
-      identifier: id,
-      label: label,
-      selected: selected,
-      child: ChoiceChip(
-        key: ValueKey(id),
-        // 선택 표시로 칩 폭이 바뀌면 누르는 동안 옆 칩이 밀린다. 체크 대신
-        // 색만 바꾸고 아이콘은 항상 둔다.
-        showCheckmark: false,
-        avatar: Icon(icon, size: 18),
-        label: Text(label),
-        selected: selected,
-        onSelected: (_) => onChanged(value),
-      ),
-    );
-  }
+/// 화면 폭이 [width]이고 머리글 높이가 [headerHeight]일 때 겹쳐 보기·슬라이더
+/// 영역이 차지할 높이.
+///
+/// 나란히 보기 두 칸(각 칸 폭 w, 3:4)을 합친 넓이와 같은 3:4 캔버스의 높이는
+/// 한 칸 높이의 √2배다. 화면 폭을 넘지 않게 묶는다.
+double _layeredPaneHeight(double width, double headerHeight) {
+  final content = width - _panePadding.horizontal;
+  final sideBySidePhotoWidth = (content - 8) / 2;
+  final sideBySidePhotoHeight = sideBySidePhotoWidth / kPhotoFrameAspect;
+  final canvasHeight = math.min(
+    sideBySidePhotoHeight * math.sqrt2,
+    content / kPhotoFrameAspect,
+  );
+  return canvasHeight + headerHeight + _panePadding.vertical;
 }
 
 class _Controls extends StatelessWidget {
@@ -627,7 +615,7 @@ class _Controls extends StatelessWidget {
             if (mode == CompareMode.overlay)
               _GridSlider(
                 id: 'compare.overlay.opacity.slider',
-                label: '이후 사진 투명도',
+                label: '이후 사진 진하기',
                 value: overlayOpacity,
                 min: 0,
                 max: 1,
@@ -644,6 +632,7 @@ class _Controls extends StatelessWidget {
                 format: _percent,
                 onChanged: onSliderPositionChanged,
               ),
+            if (mode != CompareMode.sideBySide) const _SliderLegend(),
             LabeledSwitch(
               id: 'compare.sync.toggle',
               title: '확대/이동 동기화',
@@ -730,6 +719,42 @@ class _Controls extends StatelessWidget {
 }
 
 String _percent(double v) => '${(v * 100).round()}%';
+
+/// 겹쳐 보기·슬라이더 조절 막대의 양끝 뜻. 0%는 이전 사진만, 100%는 이후
+/// 사진만 보인다. 슬라이더 칸 시작선과 끝선에 맞춘다.
+class _SliderLegend extends StatelessWidget {
+  const _SliderLegend();
+
+  @override
+  Widget build(BuildContext context) {
+    final style = context.texts.bodySmall?.copyWith(
+      color: context.colors.onSurfaceVariant,
+    );
+    return Semantics(
+      identifier: 'compare.slider.legend',
+      container: true,
+      label: '0%는 이전 사진만, 100%는 이후 사진만 보여요',
+      excludeSemantics: true,
+      child: Padding(
+        key: const ValueKey('compare.slider.legend'),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sp4),
+        child: Row(
+          children: [
+            Expanded(child: Text('이전 사진만 (0%)', style: style)),
+            const SizedBox(width: AppSpacing.sp2),
+            Expanded(
+              child: Text(
+                '이후 사진만 (100%)',
+                textAlign: TextAlign.end,
+                style: style,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _GridSlider extends StatelessWidget {
   final String id;

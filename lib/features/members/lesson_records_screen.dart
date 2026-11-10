@@ -236,7 +236,10 @@ class _Thumb extends StatelessWidget {
 }
 
 class LessonRecordsScreen extends ConsumerStatefulWidget {
-  const LessonRecordsScreen({super.key});
+  /// 처음 열 때 적용할 회원 필터. 'unlinked'면 회원 미연결 기록만 보여 준다.
+  final String? initialMemberFilter;
+
+  const LessonRecordsScreen({super.key, this.initialMemberFilter});
   @override
   ConsumerState<LessonRecordsScreen> createState() => _LessonRecordsState();
 }
@@ -244,7 +247,7 @@ class LessonRecordsScreen extends ConsumerStatefulWidget {
 class _LessonRecordsState extends ConsumerState<LessonRecordsScreen> {
   final search = TextEditingController();
   String query = '';
-  String? memberId;
+  late String? memberId = widget.initialMemberFilter;
   DateTimeRange? range;
   String shortDate(DateTime d) =>
       '${d.month.toString().padLeft(2, '0')}.${d.day.toString().padLeft(2, '0')}';

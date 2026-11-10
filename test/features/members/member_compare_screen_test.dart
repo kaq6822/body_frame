@@ -204,6 +204,20 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('정면'), findsWidgets);
+    // 30: 방향명·날짜 안에서는 줄이 끊기지 않는다(덩어리 안 공백은 NBSP).
+    final lines = tester
+        .widgetList<Text>(
+          find.descendant(
+            of: find.byKey(const ValueKey('members.compare.noDirection')),
+            matching: find.byType(Text),
+          ),
+        )
+        .map((t) => t.data ?? '')
+        .where((d) => d.startsWith('B'))
+        .toList();
+    expect(lines, hasLength(1));
+    expect(lines.single, contains('\u2060면'));
+    expect(lines.single.split(':').first, isNot(contains(' ')));
     expect(find.textContaining('후면'), findsWidgets);
     expect(openButton(tester).onPressed, isNull);
 
@@ -242,6 +256,54 @@ void main() {
       find.byKey(const ValueKey('members.compare.open.button')),
       findsNothing,
     );
+  });
+
+  testWidgets('29 사진 기록이 부족하면 지금 기록·팁을 보이고 버튼을 세로로 쌓는다', (tester) async {
+    await tester.pumpWidget(app([_item('r1', _at)]));
+    await tester.pumpAndSettle();
+
+    expect(find.text('현재 등록된 사진 기록 (1개)'), findsOneWidget);
+    // 지금 있는 기록은 보기 전용 카드로 보인다(선택 카드와 키가 다르다).
+    expect(
+      find.byKey(const ValueKey('members.compare.notEnough.r1:before')),
+      findsOneWidget,
+    );
+    expect(find.byIcon(Icons.radio_button_unchecked), findsNothing);
+    expect(
+      find.byKey(const ValueKey('members.compare.notEnough.tips')),
+      findsOneWidget,
+    );
+    final add = tester.getRect(
+      find.byKey(const ValueKey('members.compare.add.button')),
+    );
+    final back = tester.getRect(
+      find.byKey(const ValueKey('members.compare.back.button')),
+    );
+    expect(back.top, greaterThan(add.bottom));
+    expect(back.width, add.width);
+  });
+
+  testWidgets('29 사진 기록 부족 화면은 320dp·2배 글꼴에서 넘치지 않는다', (tester) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1.0;
+    tester.platformDispatcher.textScaleFactorTestValue = 2.0;
+    addTearDown(tester.view.reset);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await tester.pumpWidget(app([_item('r1', _at)]));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('29 사진 기록이 없으면 0개라고 알리고 카드 없이 팁을 보인다', (tester) async {
+    await tester.pumpWidget(app(const []));
+    await tester.pumpAndSettle();
+
+    expect(find.text('현재 등록된 사진 기록 (0개)'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('members.compare.notEnough.tips')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
   });
 
   for (final size in const [Size(320, 640), Size(640, 360)]) {

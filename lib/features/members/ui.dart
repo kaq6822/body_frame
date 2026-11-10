@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/korean_text.dart';
 import '../../core/models/models.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/status_pill.dart';
@@ -9,6 +10,14 @@ import '../../core/widgets/app_confirm_dialog.dart';
 const _weekdays = ['월', '화', '수', '목', '금', '토', '일'];
 String lessonDate(DateTime d) =>
     '${d.year}.${d.month.toString().padLeft(2, '0')}.${d.day.toString().padLeft(2, '0')} (${_weekdays[d.weekday - 1]}) ${d.hour < 12 ? '오전' : '오후'} ${d.hour % 12 == 0 ? 12 : d.hour % 12}:${d.minute.toString().padLeft(2, '0')}';
+
+/// 화면 표시용 레슨 일시. "오전 10:06"을 한 덩어리로 묶어(낱자 사이는
+/// [keepPhrasesWhole], 시각 앞은 줄바꿈 없는 공백) 폭이 좁으면 날짜와 시각
+/// 사이에서만 줄이 넘어가게 한다. 비교·낭독에는 [lessonDate]를 쓴다.
+String lessonDateDisplay(DateTime d) => lessonDate(d).replaceFirstMapped(
+  RegExp(r'(오전|오후) '),
+  (m) => '${keepPhrasesWhole(m[1]!)}\u00A0',
+);
 const phases = {'before': '수업 전', 'after': '수업 후', 'regular': '정기'};
 Widget mark(String id, Widget child) => Semantics(
   identifier: id,
@@ -144,18 +153,40 @@ String shortLessonDate(DateTime d) =>
 /// "14:55" — 같은 날 안에서 촬영 시각만 보일 때.
 String clockTime(DateTime d) => '${_two(d.hour)}:${_two(d.minute)}';
 
-/// 아바타 글자. 한글 세 글자 이상은 성을 뺀 이름 두 글자(김서연 → 서연),
-/// 띄어 쓴 영문은 단어 첫 글자 두 개(Lee Test → LT).
+/// 아바타 글자.
+///
+/// - 한글은 세 글자 이상이면 성을 뺀 이름 두 글자(김서연 → 서연).
+/// - 띄어 쓴 영문은 단어 첫 글자 두 개(Lee Test → LT).
+/// - 영문으로 시작하고 한글이 섞이면 첫 단어 앞 두 글자(QA 테스트 → QA).
+///   단어 첫 글자를 이으면 "Q테"처럼 두 문자 체계가 섞여 읽기 어렵다.
+/// - 영문 한 단어도 앞 두 글자(Lee → LE).
 String memberInitials(String name) {
   final trimmed = name.trim();
   if (trimmed.isEmpty) return '?';
   final words = trimmed.split(RegExp(r'\s+'));
+  final latin = RegExp(r'^[A-Za-z]');
+  final first = words.first;
+  if (latin.hasMatch(first)) {
+    if (words.length > 1 && words.every(latin.hasMatch)) {
+      return words.take(2).map((w) => w.characters.first).join().toUpperCase();
+    }
+    return first.characters.take(2).string.toUpperCase();
+  }
+  if (words.length > 1 && !words.every((w) => _hangulStart.hasMatch(w))) {
+    return _hangulInitials(first);
+  }
   if (words.length > 1) {
     return words.take(2).map((w) => w.characters.first).join().toUpperCase();
   }
-  final chars = trimmed.characters;
+  return _hangulInitials(trimmed);
+}
+
+final _hangulStart = RegExp(r'^[\uac00-\ud7a3]');
+
+String _hangulInitials(String word) {
+  final chars = word.characters;
   if (chars.length >= 3) return chars.skip(chars.length - 2).string;
-  return trimmed;
+  return word;
 }
 
 /// 주의사항의 첫 구절. 목록 칩처럼 한 줄 요약에 쓴다.
@@ -420,11 +451,9 @@ class _LessonDateSheetState extends State<LessonDateSheet> {
               // 다이얼로그처럼 1.3배까지만 키운다.
               MediaQuery.withClampedTextScaling(
                 maxScaleFactor: 1.3,
-                child: CalendarDatePicker(
-                  initialDate: day,
-                  firstDate: DateTime(2000),
-                  lastDate: DateTime(2100),
-                  onDateChanged: (d) => setState(() => day = d),
+                child: LessonMonthCalendar(
+                  selected: day,
+                  onSelected: (d) => setState(() => day = d),
                 ),
               ),
             ),
@@ -461,43 +490,61 @@ class _LessonDateSheetState extends State<LessonDateSheet> {
                         setState(() => hour = hour % 12 + (v.first ? 12 : 0)),
                   ),
                 ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
+                // 시·분 묶음은 좁은 폭·큰 글꼴에서 두 줄로 넘어간다(320dp 2배).
+                Wrap(
+                  spacing: AppSpacing.sp2,
+                  runSpacing: AppSpacing.sp2,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    _box(
-                      'lessons.dateSheet.hour',
-                      DropdownButton<int>(
-                        value: hour12,
-                        style: context.numericTexts.titleMedium.copyWith(
-                          color: colors.onSurface,
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _box(
+                          'lessons.dateSheet.hour',
+                          DropdownButton<int>(
+                            value: hour12,
+                            style: context.numericTexts.titleMedium.copyWith(
+                              color: colors.onSurface,
+                            ),
+                            items: [
+                              for (var h = 1; h <= 12; h++)
+                                DropdownMenuItem(
+                                  value: h,
+                                  child: Text(_two(h)),
+                                ),
+                            ],
+                            onChanged: (h) =>
+                                setState(() => hour = h! % 12 + (pm ? 12 : 0)),
+                          ),
                         ),
-                        items: [
-                          for (var h = 1; h <= 12; h++)
-                            DropdownMenuItem(value: h, child: Text(_two(h))),
-                        ],
-                        onChanged: (h) =>
-                            setState(() => hour = h! % 12 + (pm ? 12 : 0)),
-                      ),
+                        const SizedBox(width: AppSpacing.sp1),
+                        const Text('시'),
+                      ],
                     ),
-                    const SizedBox(width: AppSpacing.sp1),
-                    const Text('시'),
-                    const SizedBox(width: AppSpacing.sp2),
-                    _box(
-                      'lessons.dateSheet.minute',
-                      DropdownButton<int>(
-                        value: minute,
-                        style: context.numericTexts.titleMedium.copyWith(
-                          color: colors.onSurface,
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _box(
+                          'lessons.dateSheet.minute',
+                          DropdownButton<int>(
+                            value: minute,
+                            style: context.numericTexts.titleMedium.copyWith(
+                              color: colors.onSurface,
+                            ),
+                            items: [
+                              for (final m in minutes)
+                                DropdownMenuItem(
+                                  value: m,
+                                  child: Text(_two(m)),
+                                ),
+                            ],
+                            onChanged: (m) => setState(() => minute = m!),
+                          ),
                         ),
-                        items: [
-                          for (final m in minutes)
-                            DropdownMenuItem(value: m, child: Text(_two(m))),
-                        ],
-                        onChanged: (m) => setState(() => minute = m!),
-                      ),
+                        const SizedBox(width: AppSpacing.sp1),
+                        const Text('분'),
+                      ],
                     ),
-                    const SizedBox(width: AppSpacing.sp1),
-                    const Text('분'),
                   ],
                 ),
               ],
@@ -530,6 +577,170 @@ class _LessonDateSheetState extends State<LessonDateSheet> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 레슨 일시 시트의 달력(Stitch 11). 일요일은 빨강, 토요일은 파랑으로 구분한다.
+///
+/// [CalendarDatePicker]는 요일별 색을 바꿀 수 없어 직접 그린다. 달 이동은
+/// 위쪽 화살표, 날짜는 칸을 눌러 고른다.
+class LessonMonthCalendar extends StatefulWidget {
+  final DateTime selected;
+  final ValueChanged<DateTime> onSelected;
+  const LessonMonthCalendar({
+    super.key,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  /// 일요일 글자색. 오류색과 같은 빨강 계열이다.
+  static Color sundayColor(BuildContext context) => context.colors.error;
+
+  /// 토요일 글자색. 테마에 파랑 토큰이 없어 여기서만 쓴다.
+  static Color saturdayColor(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark
+      ? const Color(0xFF60A5FA)
+      : const Color(0xFF2563EB);
+
+  @override
+  State<LessonMonthCalendar> createState() => _LessonMonthCalendarState();
+}
+
+class _LessonMonthCalendarState extends State<LessonMonthCalendar> {
+  static const _sundayFirst = ['일', '월', '화', '수', '목', '금', '토'];
+  late DateTime month = DateTime(widget.selected.year, widget.selected.month);
+
+  void _move(int delta) =>
+      setState(() => month = DateTime(month.year, month.month + delta));
+
+  Color? _weekdayColor(int column) => switch (column) {
+    0 => LessonMonthCalendar.sundayColor(context),
+    6 => LessonMonthCalendar.saturdayColor(context),
+    _ => null,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final days = DateUtils.getDaysInMonth(month.year, month.month);
+    // DateTime.weekday는 월요일=1 … 일요일=7. 일요일 시작 칸 번호로 바꾼다.
+    final offset = DateTime(month.year, month.month).weekday % 7;
+    final cells = <int?>[
+      for (var i = 0; i < offset; i++) null,
+      for (var d = 1; d <= days; d++) d,
+    ];
+    while (cells.length % 7 != 0) {
+      cells.add(null);
+    }
+    Widget cell(int column, int? d) {
+      if (d == null) return const SizedBox(height: 44);
+      final date = DateTime(month.year, month.month, d);
+      final selected = DateUtils.isSameDay(date, widget.selected);
+      final color = selected
+          ? colors.onPrimary
+          : _weekdayColor(column) ?? colors.onSurface;
+      return Semantics(
+        identifier: 'lessons.dateSheet.day.$d',
+        button: true,
+        selected: selected,
+        label: '${month.year}년 ${month.month}월 $d일 ${_sundayFirst[column]}요일',
+        excludeSemantics: true,
+        child: InkResponse(
+          key: ValueKey('lessons.dateSheet.day.$d'),
+          onTap: () => widget.onSelected(date),
+          radius: 22,
+          child: SizedBox(
+            height: 44,
+            child: Center(
+              child: Container(
+                width: 36,
+                height: 36,
+                alignment: Alignment.center,
+                decoration: selected
+                    ? BoxDecoration(
+                        color: colors.primary,
+                        borderRadius: AppRadius.smAll,
+                      )
+                    : null,
+                child: Text(
+                  '$d',
+                  style: context.numericTexts.bodyMedium.copyWith(
+                    color: color,
+                    fontWeight: selected ? FontWeight.w700 : null,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Semantics(
+                liveRegion: true,
+                child: Text(
+                  '${month.year}년 ${month.month}월',
+                  key: const ValueKey('lessons.dateSheet.month'),
+                  style: context.texts.titleMedium,
+                ),
+              ),
+            ),
+            mark(
+              'lessons.dateSheet.prevMonth.button',
+              IconButton(
+                tooltip: '이전 달',
+                onPressed: month.year <= 2000 && month.month == 1
+                    ? null
+                    : () => _move(-1),
+                icon: const Icon(Icons.chevron_left),
+              ),
+            ),
+            mark(
+              'lessons.dateSheet.nextMonth.button',
+              IconButton(
+                tooltip: '다음 달',
+                onPressed: month.year >= 2100 && month.month == 12
+                    ? null
+                    : () => _move(1),
+                icon: const Icon(Icons.chevron_right),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sp2),
+        ExcludeSemantics(
+          child: Row(
+            children: [
+              for (var c = 0; c < 7; c++)
+                Expanded(
+                  child: Text(
+                    _sundayFirst[c],
+                    key: ValueKey('lessons.dateSheet.weekday.$c'),
+                    textAlign: TextAlign.center,
+                    style: context.texts.labelMedium?.copyWith(
+                      color: _weekdayColor(c) ?? colors.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sp1),
+        for (var r = 0; r < cells.length; r += 7)
+          Row(
+            children: [
+              for (var c = 0; c < 7; c++)
+                Expanded(child: cell(c, cells[r + c])),
+            ],
+          ),
+      ],
     );
   }
 }
@@ -704,8 +915,18 @@ Widget photoGrid(List<Widget> tiles) => Column(
 class MainNavigation extends StatelessWidget {
   final int index;
   const MainNavigation(this.index, {super.key});
+
+  /// 탭은 `go`로 스택을 통째로 바꾼다. 다른 화면 위에 push된 경우(카메라 →
+  /// 설정, 설정 → 기록 등) 탭을 누르면 아래의 카메라 촬영분이나 작성 중인 일지가
+  /// 확인 없이 사라진다. 그래서 탭은 탭 루트 화면에서만 보이고, 뒤로 갈 수 있는
+  /// 화면에서는 숨긴다.
   @override
-  Widget build(BuildContext context) => mark(
+  Widget build(BuildContext context) {
+    if (ModalRoute.of(context)?.canPop ?? false) return const SizedBox.shrink();
+    return _bar(context);
+  }
+
+  Widget _bar(BuildContext context) => mark(
     'main.navigation',
     NavigationBar(
       selectedIndex: index,

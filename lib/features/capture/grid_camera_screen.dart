@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:bodymark/core/korean_text.dart';
 import 'package:bodymark/core/models/models.dart';
 import 'package:bodymark/core/photo_frame.dart';
 import 'package:bodymark/core/providers.dart';
@@ -23,6 +24,7 @@ import 'providers/capture_providers.dart';
 import 'providers/capture_session_provider.dart';
 import 'utils/capture_guides.dart';
 import 'utils/temporary_capture.dart';
+import 'package:bodymark/core/widgets/app_confirm_dialog.dart';
 import 'package:bodymark/core/widgets/async_status_indicator.dart';
 import 'widgets/camera_notice_card.dart';
 import 'widgets/capture_progress_bar.dart';
@@ -70,6 +72,7 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
   List<CaptureShot> _draftShots = [];
   late final PhotoStorageService _draftStorage;
   late final AppLogger _draftLogger;
+  late final ScreenOrientationLock _orientationLock;
 
   bool _showQuickPanel = false;
   final ScrollController _quickPanelScroll = ScrollController();
@@ -82,6 +85,10 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
   /// 실패를 화면에 반영하지 못하는데, 그 사실을 잊으면 복귀 직후 같은 초기화를
   /// 다시 시도해 무한히 반복된다.
   bool _permissionDenied = false;
+
+  /// 권한 안내에서 시스템 설정을 열었는지. 설정에서 권한을 켜고 돌아오면 사용자가
+  /// 재시도를 누르지 않아도 한 번 다시 초기화한다.
+  bool _openedSettingsForPermission = false;
 
   bool _showPreviousPhotoGuide = true;
   double _previousPhotoGuideOpacity = 0.3;
@@ -111,6 +118,16 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
     _draftStorage = ref.read(photoStorageServiceProvider);
     _draftLogger = ref.read(appLoggerProvider);
     _lessonCapture = ref.read(lessonCaptureContextProvider) != null;
+    // 3:4 세로 프레임이라 가로 화면에서는 뷰파인더가 너무 작아진다. 이 화면이
+    // 떠 있는 동안만 세로로 고정하고 dispose에서 되돌린다.
+    // 카메라 위로 push한 화면(리뷰·기록·설정·갤러리 등록)도 카메라가 살아 있는
+    // 동안이라 세로로 유지된다. 모두 세로 전용 레이아웃이라 의도한 동작이다.
+    _orientationLock = ref.read(screenOrientationLockProvider);
+    unawaited(
+      _orientationLock.lockPortrait().catchError((Object _) {
+        _draftLogger.warn('capture.orientation.lock.failure');
+      }),
+    );
     ref.listenManual(
       captureSessionProvider,
       (_, next) => _draftShots = next.capturedShots,
@@ -212,6 +229,7 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
   /// 실패해도 화면 상태는 건드리지 않는다. 설정 앱이 없거나 열기가 막힌 기기에서도
   /// 카드에 남아 있는 경로 안내로 사용자가 직접 찾아갈 수 있다.
   void _openAppSettings() {
+    _openedSettingsForPermission = true;
     unawaited(
       ref.read(openAppSettingsProvider)().catchError((Object error) {
         ref
@@ -246,6 +264,14 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
     if (state == AppLifecycleState.resumed) {
       if (!_cameraSuspended) return;
       _cameraSuspended = false;
+      if (_permissionDenied && _openedSettingsForPermission) {
+        // 설정 화면에서 돌아왔다. 권한을 켰을 수 있으니 한 번만 다시 시도한다.
+        // 여전히 거부면 같은 안내로 돌아오고, 플래그를 지웠으므로 반복하지 않는다.
+        _openedSettingsForPermission = false;
+        _permissionDenied = false;
+        unawaited(_initCamera());
+        return;
+      }
       if (_permissionDenied) {
         // 권한 창은 뜨고 닫힐 때마다 이 콜백을 흔든다. 그때마다 초기화를 다시
         // 걸면 거부된 권한을 향해 무한히 재시도한다. 안내를 띄우고 사용자의
@@ -297,6 +323,11 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
     _countdownRemaining = null;
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_disposeCamera());
+    unawaited(
+      _orientationLock.restore().catchError((Object _) {
+        _draftLogger.warn('capture.orientation.restore.failure');
+      }),
+    );
     super.dispose();
   }
 
@@ -439,6 +470,56 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
     context.pushNamed(AppRoutes.records);
   }
 
+  /// 닫기·시스템 뒤로가기·일지로 돌아가기의 공통 출구.
+  Future<void> _requestLeave() async {
+    if (!await _confirmDiscardShots() || !mounted) return;
+    context.pop();
+  }
+
+  /// 찍은 사진이 있으면 버릴지 묻는다. 나가도 되면 true.
+  ///
+  /// 닫으면 dispose가 임시 촬영 파일을 지우므로 확인 없이 나가면 찍은 사진이
+  /// 조용히 사라진다. 사진이 없으면 묻지 않는다.
+  Future<bool> _confirmDiscardShots() async {
+    _stopCountdown();
+    final count = ref.read(captureSessionProvider).capturedCount;
+    if (count == 0) return true;
+    final discard = await showAppConfirm(
+      context,
+      title: '찍은 사진 $count장을 버릴까요?',
+      body: _isLessonCaptureNow
+          ? '버린 사진은 되돌릴 수 없어요. 작성 중인 일지는 그대로 남아요.'
+          : '버린 사진은 되돌릴 수 없어요.',
+      cancelLabel: '계속 촬영',
+      confirmLabel: '사진 버리기',
+      icon: Icons.delete_outline,
+      destructive: true,
+      preferCancel: true,
+      dialogKey: 'capture.discard.dialog',
+      cancelKey: 'capture.discard.keep.button',
+      confirmKey: 'capture.discard.confirm.button',
+    );
+    return discard && mounted;
+  }
+
+  bool get _isLessonCaptureNow =>
+      ref.read(lessonCaptureContextProvider) != null;
+
+  /// 카메라를 쓸 수 없을 때 갤러리 사진으로 대신 기록한다.
+  ///
+  /// 레슨 촬영이면 일지 화면이 갤러리 선택을 이어서 열도록 신호를 남기고 닫는다.
+  /// 단독 촬영이면 갤러리 등록 화면으로 간다.
+  Future<void> _pickFromGallery() async {
+    _stopCountdown();
+    if (!_isLessonCaptureNow) {
+      context.pushNamed(AppRoutes.galleryImport);
+      return;
+    }
+    if (!await _confirmDiscardShots() || !mounted) return;
+    ref.read(cameraGalleryFallbackRequestProvider.notifier).state = true;
+    context.pop();
+  }
+
   void _openSettings() {
     _stopCountdown();
     context.pushNamed(AppRoutes.settings);
@@ -491,9 +572,10 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
       identifier: GridCameraScreen.screenId,
       container: true,
       label: '연속 촬영',
-      // 열려 있는 임시 UI(패널·카운트다운)를 뒤로가기로 먼저 거둔다.
+      // 열려 있는 임시 UI(패널·카운트다운)를 뒤로가기로 먼저 거두고, 찍은
+      // 사진이 있으면 버릴지 묻는다.
       child: PopScope(
-        canPop: !_showQuickPanel && !_countingDown,
+        canPop: !_showQuickPanel && !_countingDown && !session.hasAnyCapture,
         onPopInvokedWithResult: (didPop, _) {
           if (didPop) return;
           if (_countingDown) {
@@ -502,7 +584,9 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
           }
           if (_showQuickPanel) {
             setState(() => _showQuickPanel = false);
+            return;
           }
+          unawaited(_requestLeave());
         },
         child: Scaffold(
           key: const ValueKey(GridCameraScreen.screenId),
@@ -556,7 +640,7 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
                         ),
                       ),
                     ),
-                    if (ready) _buildHint(direction),
+                    if (ready) _buildHint(session),
                     if (!blocked)
                       _buildToggleChips(
                         gridAsync.value,
@@ -607,7 +691,7 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
               label: '촬영을 닫고 일지로 돌아가기',
               child: IconButton(
                 key: const ValueKey('capture.close.button'),
-                onPressed: () => context.pop(),
+                onPressed: _requestLeave,
                 icon: Icon(Icons.close, color: photo.onChrome),
               ),
             )
@@ -635,8 +719,10 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
                   ),
                   if (subtitle != null)
                     Text(
-                      subtitle,
-                      maxLines: 1,
+                      // 레슨 일시·기준이 길면 두 줄까지 보여 준다. 한 줄이면 기준이
+                      // "기준 …"으로 잘려 무엇과 맞추는지 알 수 없다.
+                      keepPhrasesWhole(subtitle),
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
                       style: context.numericTexts.labelLarge.copyWith(
@@ -657,9 +743,18 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
     );
   }
 
-  /// 셔터 위 한 줄 안내. 자세한 내용은 촬영 가이드 화면에 있다.
-  Widget _buildHint(BodyDirection direction) {
-    final hint = captureHint(direction);
+  /// 셔터 위 한두 줄 안내. 자세한 내용은 촬영 가이드 화면에 있다.
+  ///
+  /// 방향마다 문장 길이가 달라 한 줄과 두 줄을 오가면 뷰파인더 크기가 단계마다
+  /// 흔들린다. 세션의 모든 방향 문장 중 가장 높은 높이를 미리 잡아 둔다.
+  Widget _buildHint(CaptureSessionState session) {
+    final hint = captureHint(session.current.direction);
+    final style = context.texts.bodyMedium?.copyWith(
+      color: context.photoColors.onChrome,
+      fontWeight: FontWeight.w500,
+    );
+    final scaler = MediaQuery.textScalerOf(context);
+    final textDirection = Directionality.of(context);
     return Semantics(
       identifier: 'capture.assist.panel',
       label: '촬영 보조 안내',
@@ -672,17 +767,38 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
           AppSpacing.sp4,
           0,
         ),
-        child: ExcludeSemantics(
-          child: Text(
-            hint,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: context.texts.bodyMedium?.copyWith(
-              color: context.photoColors.onChrome,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            var height = 0.0;
+            for (final shot in session.shots) {
+              final painter = TextPainter(
+                text: TextSpan(
+                  text: keepPhrasesWhole(captureHint(shot.direction)),
+                  style: style,
+                ),
+                textDirection: textDirection,
+                textScaler: scaler,
+                maxLines: 2,
+                textAlign: TextAlign.center,
+              )..layout(maxWidth: constraints.maxWidth);
+              if (painter.height > height) height = painter.height;
+              painter.dispose();
+            }
+            return SizedBox(
+              height: height,
+              child: Center(
+                child: ExcludeSemantics(
+                  child: Text(
+                    keepPhrasesWhole(hint),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: style,
+                  ),
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -703,45 +819,56 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
         AppSpacing.sp4,
         0,
       ),
-      child: Wrap(
-        alignment: WrapAlignment.center,
-        spacing: AppSpacing.sp2,
-        runSpacing: AppSpacing.sp2,
-        children: [
-          _HudChip(
-            id: 'capture.grid.chip',
-            icon: Icons.grid_on,
-            label: gridOn ? '격자 켜짐' : '격자 꺼짐',
-            active: gridOn,
-            semanticsLabel: '격자 표시',
-            toggled: gridOn,
-            onPressed: grid == null
-                ? null
-                : () => ref
-                      .read(gridSettingsControllerProvider.notifier)
-                      .update((s) => s.copyWith(visible: !s.visible)),
+      // 칩은 항상 한 줄이다. 줄바꿈하면 칩 줄 높이가 늘어 뷰파인더가 줄어든다.
+      // 넘치면 가로로 스크롤하고, 들어가면 가운데 놓는다.
+      child: LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          key: const ValueKey('capture.chips.row'),
+          scrollDirection: Axis.horizontal,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minWidth: constraints.maxWidth),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              spacing: AppSpacing.sp2,
+              children: [
+                _HudChip(
+                  id: 'capture.grid.chip',
+                  icon: Icons.grid_on,
+                  label: gridOn ? '격자 켜짐' : '격자 꺼짐',
+                  active: gridOn,
+                  semanticsLabel: '격자 표시',
+                  toggled: gridOn,
+                  onPressed: grid == null
+                      ? null
+                      : () => ref
+                            .read(gridSettingsControllerProvider.notifier)
+                            .update((s) => s.copyWith(visible: !s.visible)),
+                ),
+                _HudChip(
+                  id: 'capture.previousGuide.chip',
+                  icon: Icons.layers_outlined,
+                  label: !hasGuide
+                      ? '이전 사진 없음'
+                      : guideOn
+                      ? '이전 사진 $percent%'
+                      : '이전 사진 끔',
+                  active: guideOn,
+                  semanticsLabel: '이전 사진 표시 설정 열기',
+                  onPressed: () => setState(() => _showQuickPanel = true),
+                ),
+                _HudChip(
+                  id: 'capture.grid.settings.button',
+                  icon: Icons.tune,
+                  label: '설정',
+                  active: _showQuickPanel,
+                  semanticsLabel: '빠른 설정 패널 열기/닫기',
+                  onPressed: () =>
+                      setState(() => _showQuickPanel = !_showQuickPanel),
+                ),
+              ],
+            ),
           ),
-          _HudChip(
-            id: 'capture.previousGuide.chip',
-            icon: Icons.layers_outlined,
-            label: !hasGuide
-                ? '이전 사진 없음'
-                : guideOn
-                ? '이전 사진 켜짐 ($percent%)'
-                : '이전 사진 꺼짐',
-            active: guideOn,
-            semanticsLabel: '이전 사진 표시 설정 열기',
-            onPressed: () => setState(() => _showQuickPanel = true),
-          ),
-          _HudChip(
-            id: 'capture.grid.settings.button',
-            icon: Icons.tune,
-            label: '설정',
-            active: _showQuickPanel,
-            semanticsLabel: '빠른 설정 패널 열기/닫기',
-            onPressed: () => setState(() => _showQuickPanel = !_showQuickPanel),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -762,23 +889,37 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
   /// 레슨 촬영 중이면 일지로 돌아가게 하고(작성 내용은 일지 화면에 남아 있다),
   /// 단독 촬영이면 회원 기록을 보게 한다. 카드가 밝으므로 테마 기본 색을 쓴다.
   Widget _buildFallbackAction() {
+    final gallery = Semantics(
+      identifier: 'capture.camera.gallery.fallback.button',
+      button: true,
+      label: '갤러리에서 사진 선택',
+      child: OutlinedButton.icon(
+        key: const ValueKey('capture.camera.gallery.fallback.button'),
+        onPressed: _pickFromGallery,
+        icon: const Icon(Icons.photo_library_outlined),
+        label: const Text('사진 선택'),
+      ),
+    );
     if (_isLessonCapture) {
       return Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          gallery,
+          const SizedBox(height: AppSpacing.sp2),
           Semantics(
             identifier: 'capture.camera.lesson.back.button',
             button: true,
             label: '일지로 돌아가기',
             child: TextButton.icon(
               key: const ValueKey('capture.camera.lesson.back.button'),
-              onPressed: () => context.pop(),
+              onPressed: _requestLeave,
               icon: const Icon(Icons.edit_note_outlined),
               label: const Text('일지로 돌아가기'),
             ),
           ),
           Text(
-            '입력 중인 레슨 일지 내용은 그대로 남아 있어요.',
+            keepPhrasesWhole('입력 중인 레슨 일지 내용은 그대로 남아 있어요.'),
             textAlign: TextAlign.center,
             style: context.texts.bodySmall?.copyWith(
               color: context.colors.onSurfaceVariant,
@@ -787,16 +928,24 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
         ],
       );
     }
-    return Semantics(
-      identifier: 'capture.camera.records.fallback.button',
-      button: true,
-      label: '회원 기록 보기',
-      child: TextButton.icon(
-        key: const ValueKey('capture.camera.records.fallback.button'),
-        onPressed: _openRecords,
-        icon: const Icon(Icons.photo_library_outlined),
-        label: const Text('회원 기록 보기'),
-      ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        gallery,
+        const SizedBox(height: AppSpacing.sp2),
+        Semantics(
+          identifier: 'capture.camera.records.fallback.button',
+          button: true,
+          label: '회원 기록 보기',
+          child: TextButton.icon(
+            key: const ValueKey('capture.camera.records.fallback.button'),
+            onPressed: _openRecords,
+            icon: const Icon(Icons.photo_library_outlined),
+            label: const Text('회원 기록 보기'),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1072,7 +1221,7 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
           ),
           Semantics(
             identifier: 'capture.previousGuide.opacity.slider',
-            label: '이전 사진 가이드 농도',
+            label: '이전 사진 진하기',
             enabled: hasGuide,
             child: SliderTheme(
               data: SliderTheme.of(context).copyWith(
@@ -1304,11 +1453,13 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
                         children: [
                           _buildPreviousPhotoGuideControls(guideAsync),
                           Divider(height: 1, color: photo.hudOutline),
+                          // 격자 표시 스위치가 패널을 열자마자 보이도록 이전
+                          // 사진 바로 아래에 둔다.
+                          const GridSettingsPanel(),
+                          Divider(height: 1, color: photo.hudOutline),
                           const SizedBox(height: AppSpacing.sp2),
                           _buildLevelToggle(),
                           const SizedBox(height: AppSpacing.sp2),
-                          Divider(height: 1, color: photo.hudOutline),
-                          const GridSettingsPanel(),
                           Divider(height: 1, color: photo.hudOutline),
                           _buildPanelLink(
                             id: 'capture.guide.link',
@@ -1385,6 +1536,19 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
             child: Text(
               '촬영 보조 설정',
               style: context.texts.titleMedium?.copyWith(color: photo.onChrome),
+            ),
+          ),
+          // 촬영 가이드는 패널 아래쪽 목록에도 있지만, 스크롤하지 않고 바로
+          // 찾도록 머리에도 둔다.
+          Semantics(
+            identifier: 'capture.guide.header.button',
+            button: true,
+            label: '촬영 가이드 보기',
+            child: IconButton(
+              key: const ValueKey('capture.guide.header.button'),
+              tooltip: '촬영 가이드',
+              onPressed: _openGuide,
+              icon: Icon(Icons.help_outline, color: photo.onChrome),
             ),
           ),
           Semantics(

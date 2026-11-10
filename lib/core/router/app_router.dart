@@ -84,7 +84,10 @@ GoRouter createAppRouter({String initialLocation = '/'}) => GoRouter(
     GoRoute(
       path: '/records',
       name: AppRoutes.records,
-      builder: (_, _) => const LessonRecordsScreen(),
+      // 설정의 "기존 기록 연결"은 `?member=unlinked`로 회원 미연결 기록만 연다.
+      builder: (_, s) => LessonRecordsScreen(
+        initialMemberFilter: s.uri.queryParameters[AppParams.memberFilter],
+      ),
       routes: [
         GoRoute(
           path: ':${AppParams.recordId}',

@@ -8,6 +8,7 @@ import 'member.dart';
 import 'member_providers.dart';
 import 'lesson_screens.dart';
 import 'ui.dart';
+import '../../core/korean_text.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/section_header.dart';
 import '../../core/widgets/status_pill.dart';
@@ -61,7 +62,17 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
       'screen.members.list',
       Scaffold(
         appBar: AppBar(
-          title: const Text('회원'),
+          // Stitch 02: 앱바에는 워드마크, 화면 제목은 그 아래 큰 글씨로 둔다.
+          title: mark(
+            'members.brand.wordmark',
+            Text(
+              'BodyMark',
+              style: context.texts.titleLarge?.copyWith(
+                color: context.colors.primary,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
           actions: [
             Padding(
               padding: const EdgeInsets.only(right: AppSpacing.sp3),
@@ -86,6 +97,24 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
         bottomNavigationBar: const MainNavigation(0),
         body: Column(
           children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.sp4,
+                0,
+                AppSpacing.sp4,
+                AppSpacing.sp1,
+              ),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: mark(
+                  'members.title.label',
+                  Semantics(
+                    header: true,
+                    child: Text('회원', style: context.texts.headlineMedium),
+                  ),
+                ),
+              ),
+            ),
             if (ref
                     .watch(appImagePickerCoordinatorProvider)
                     ?.context
@@ -672,15 +701,22 @@ class _MemberEditorState extends ConsumerState<MemberEditorScreen> {
                       AppSpacing.sp4,
                       AppSpacing.sp2,
                     ),
-                    title: Text(
-                      '주의사항 및 관찰 내용',
-                      style: context.texts.titleMedium,
+                    // Stitch 04: "선택"은 제목 옆 칩으로 둔다.
+                    title: Wrap(
+                      spacing: AppSpacing.sp2,
+                      runSpacing: AppSpacing.sp1,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text('주의사항 및 관찰 내용', style: context.texts.titleMedium),
+                        const StatusPill(
+                          label: '선택',
+                          identifier: 'members.edit.care.optional',
+                        ),
+                      ],
                     ),
-                    subtitle: Text(
-                      original == null
-                          ? '선택'
-                          : '선택 · 최근 수정 ${lessonDate(original!.updatedAt)}',
-                    ),
+                    subtitle: original == null
+                        ? null
+                        : Text('최근 수정 ${lessonDate(original!.updatedAt)}'),
                     children: [
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -693,7 +729,9 @@ class _MemberEditorState extends ConsumerState<MemberEditorScreen> {
                           const SizedBox(width: AppSpacing.sp2),
                           Expanded(
                             child: Text(
-                              '수업에 필요한 내용만 기록해주세요. 진단을 대신하지 않아요.',
+                              keepPhrasesWhole(
+                                '수업에 필요한 내용만 기록해주세요. 진단을 대신하지 않아요.',
+                              ),
                               style: context.texts.bodySmall?.copyWith(
                                 color: context.colors.onSurfaceVariant,
                               ),
@@ -844,6 +882,12 @@ class _MemberDetailState extends ConsumerState<MemberDetailScreen> {
                 final list = lessons.valueOrNull
                     ?.where((x) => x.record.memberId == m.id)
                     .toList();
+                // 비교 화면과 같은 단위(레슨 × 수업 구분)로 사진 기록을 센다.
+                // 두 개보다 적으면 비교할 수 없으므로 링크를 숨긴다(Stitch 06).
+                final photoRecords = (list ?? const []).fold<int>(
+                  0,
+                  (n, x) => n + x.photos.map((p) => p.phase).toSet().length,
+                );
                 return ListView(
                   padding: const EdgeInsets.all(AppSpacing.sp4),
                   children: [
@@ -878,15 +922,34 @@ class _MemberDetailState extends ConsumerState<MemberDetailScreen> {
                       title: '레슨 기록',
                       count: list?.length,
                       identifier: 'members.lessons.header',
-                      trailing: mark(
-                        'members.compare.button',
-                        TextButton.icon(
-                          onPressed: () =>
-                              context.push('/members/${m.id}/compare'),
-                          icon: const Icon(Icons.compare_arrows),
-                          label: const Text('변화 비교'),
-                        ),
-                      ),
+                      trailing: (list?.isEmpty ?? true)
+                          ? null
+                          : Wrap(
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: AppSpacing.sp1,
+                              children: [
+                                mark(
+                                  'members.lessons.order.label',
+                                  Text(
+                                    '최신순',
+                                    style: context.texts.labelMedium?.copyWith(
+                                      color: context.colors.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
+                                if (photoRecords >= 2)
+                                  mark(
+                                    'members.compare.button',
+                                    TextButton.icon(
+                                      onPressed: () => context.push(
+                                        '/members/${m.id}/compare',
+                                      ),
+                                      icon: const Icon(Icons.compare_arrows),
+                                      label: const Text('변화 비교'),
+                                    ),
+                                  ),
+                              ],
+                            ),
                     ),
                     lessons.when(
                       loading: () => busy('members.lessons.loading'),

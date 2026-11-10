@@ -123,4 +123,53 @@ void main() {
     );
     expect(material.color, const Color(0xFF06B6D4));
   });
+
+  testWidgets('singleRow는 좁은 화면·큰 글꼴에서도 한 줄·고정 높이다', (tester) async {
+    for (final scale in [1.0, 2.0]) {
+      await tester.pumpWidget(
+        _host(
+          DirectionStepper(
+            selected: BodyDirection.leftSide,
+            singleRow: true,
+            labelBuilder: (d) =>
+                d == BodyDirection.leftSide ? '좌측 2/4' : d.label,
+            onSelected: (_) {},
+          ),
+          width: 320,
+          scale: scale,
+        ),
+      );
+      final rects = [
+        for (final d in DirectionStepper.standardDirections)
+          tester.getRect(
+            find.byKey(ValueKey('common.direction.stepper.${d.key}')),
+          ),
+      ];
+      expect({for (final r in rects) r.top}, hasLength(1), reason: '$scale');
+      expect(rects.first.height, 48, reason: '$scale');
+      expect(tester.takeException(), isNull);
+    }
+  });
+
+  testWidgets('captionBuilder는 방향 아래 보조 문구를 보여주고 상태로 읽힌다', (tester) async {
+    await tester.pumpWidget(
+      _host(
+        DirectionStepper(
+          selected: BodyDirection.front,
+          singleRow: true,
+          captionBuilder: (d) => d == BodyDirection.back ? '건너뜀' : null,
+          onSelected: (_) {},
+        ),
+      ),
+    );
+    expect(find.text('건너뜀'), findsOneWidget);
+    expect(
+      tester
+          .getSemantics(
+            find.byKey(const ValueKey('common.direction.stepper.back')),
+          )
+          .label,
+      '후면, 4/4단계, 건너뜀',
+    );
+  });
 }

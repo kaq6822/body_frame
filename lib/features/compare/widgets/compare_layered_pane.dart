@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/korean_text.dart';
 import '../../../core/models/models.dart';
 import '../../../core/photo_frame.dart';
 import '../../../core/theme/app_tokens.dart';
@@ -61,12 +62,13 @@ class CompareLayeredPane extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // "오후 10:50"처럼 한 덩어리인 날짜가 낱자 사이에서 끊기지 않게 한다.
           Text(
             _headerLabel(),
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.labelLarge,
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: _headerGap),
           Flexible(
             child: fixedPhotoSize != null
                 ? Center(
@@ -103,11 +105,41 @@ class CompareLayeredPane extends StatelessWidget {
     );
   }
 
-  String _headerLabel() {
+  String _headerLabel() => headerLabel(beforeDateLabel, afterDateLabel);
+
+  /// 머리글 문구. 이전·이후 날짜는 각각 한 덩어리로 묶고, 가운데 구분자에서만
+  /// 줄을 넘긴다.
+  static String headerLabel(String beforeDateLabel, String afterDateLabel) {
+    String whole(String text) =>
+        keepPhrasesWhole(text).replaceAll(' ', '\u00a0');
     final beforeDate = beforeDateLabel.isEmpty ? '이전' : '이전 $beforeDateLabel';
     final afterDate = afterDateLabel.isEmpty ? '이후' : '이후 $afterDateLabel';
-    return '$beforeDate  ·  $afterDate';
+    return '${whole(beforeDate)}  ·  ${whole(afterDate)}';
   }
+
+  /// 폭 [width]에서 머리글과 그 아래 간격이 차지하는 높이. 비교 화면이 캔버스
+  /// 자리를 미리 잡을 때 쓴다.
+  static double headerHeight(
+    BuildContext context, {
+    required String beforeDateLabel,
+    required String afterDateLabel,
+    required double width,
+  }) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: headerLabel(beforeDateLabel, afterDateLabel),
+        style: Theme.of(context).textTheme.labelLarge,
+      ),
+      textAlign: TextAlign.center,
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout(maxWidth: width);
+    final height = painter.height;
+    painter.dispose();
+    return height + _headerGap;
+  }
+
+  static const double _headerGap = 4;
 
   Size _frameSize(BoxConstraints constraints) {
     const targetAspect = kPhotoFrameAspect;
@@ -132,7 +164,7 @@ class CompareLayeredPane extends StatelessWidget {
     final opacity = overlayOpacity.clamp(0.0, 1.0);
     final position = sliderPosition.clamp(0.0, 1.0);
     final modeValue = mode == CompareMode.overlay
-        ? '이후 사진 투명도 ${(opacity * 100).round()}%'
+        ? '이후 사진 진하기 ${(opacity * 100).round()}%'
         : '비교 경계 ${(position * 100).round()}%';
 
     return Semantics(
