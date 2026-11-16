@@ -425,7 +425,90 @@ class _MemberEditorState extends ConsumerState<MemberEditorScreen> {
   final nameFocus = FocusNode();
   Member? original;
   bool loaded = false, saving = false, dirty = false, leaving = false;
-  String? error, nameError;
+  bool deleting = false;
+  String? error, nameError, deleteError;
+
+  /// 회원과 소속 레슨·사진을 지운다. 관리 동작이라 상세가 아니라 수정 화면
+  /// 맨 아래에 둔다(연락처 앱과 같은 위치). 끝나면 회원 목록으로 간다.
+  Future<void> remove(Member m) async {
+    // 수정 화면은 레슨 목록을 보지 않으므로 여기서 읽는다. 못 읽으면 개수 없이
+    // 묻는다(삭제 자체는 리포지토리가 소속 기록을 모두 정리한다).
+    List<RecordWithPhotos>? lessons;
+    try {
+      lessons = (await ref.read(
+        timelineProvider.future,
+      )).where((x) => x.record.memberId == m.id).toList();
+    } catch (_) {
+      lessons = null;
+    }
+    if (!mounted) return;
+    final photoCount = lessons?.fold<int>(0, (n, x) => n + x.photos.length);
+    if (!await confirm(
+      context,
+      '이 회원과 기록을 삭제할까요?',
+      lessons == null
+          ? '${m.name} 회원의 레슨 기록과 사진이 함께 삭제돼요.'
+          : '${m.name} 회원의 레슨 기록 ${lessons.length}개와 사진 $photoCount장이 함께 삭제돼요.',
+      button: '회원 삭제',
+      icon: Icons.person_remove_outlined,
+      destructive: true,
+      warning: '삭제 후 되돌릴 수 없어요.',
+    )) {
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      deleting = true;
+      deleteError = null;
+    });
+    try {
+      await ref.read(memberRepositoryProvider).delete(m.id);
+      ref.invalidate(membersProvider);
+      ref.invalidate(timelineProvider);
+      if (!mounted) return;
+      setState(() => leaving = true);
+      context.go('/');
+    } catch (_) {
+      if (mounted) setState(() => deleteError = '삭제를 완료하지 못했어요.');
+    } finally {
+      if (mounted) setState(() => deleting = false);
+    }
+  }
+
+  Widget _deleteSection(Member m) => mark(
+    'members.edit.delete.section',
+    panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('회원 삭제', style: context.texts.titleMedium),
+          const SizedBox(height: AppSpacing.sp1),
+          Text(
+            keepPhrasesWhole('이 회원의 레슨 기록과 사진이 모두 함께 삭제돼요.'),
+            style: context.texts.bodySmall?.copyWith(
+              color: context.colors.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sp3),
+          if (deleteError != null)
+            failure('members.delete.error', deleteError!, () => remove(m)),
+          if (deleting) busy('members.delete.busy', '회원 기록을 삭제하고 있어요'),
+          mark(
+            'members.delete.button',
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: context.colors.error,
+                side: BorderSide(color: context.colors.error),
+              ),
+              onPressed: deleting || saving ? null : () => remove(m),
+              icon: const Icon(Icons.person_remove_outlined),
+              label: const Text('회원 삭제'),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
   @override
   void dispose() {
     for (final f in fields) {
@@ -590,9 +673,9 @@ class _MemberEditorState extends ConsumerState<MemberEditorScreen> {
     loaded = true;
     final hasCare = [3, 4, 5].any((i) => fields[i].text.isNotEmpty);
     return PopScope(
-      canPop: leaving || !dirty && !saving,
+      canPop: leaving || !dirty && !saving && !deleting,
       onPopInvokedWithResult: (didPop, _) async {
-        if (didPop || saving) return;
+        if (didPop || saving || deleting) return;
         if (await confirm(
               context,
               '작성한 내용을 버릴까요?',
@@ -622,7 +705,7 @@ class _MemberEditorState extends ConsumerState<MemberEditorScreen> {
                       minimumSize: const Size(64, 40),
                       tapTargetSize: MaterialTapTargetSize.padded,
                     ),
-                    onPressed: saving ? null : save,
+                    onPressed: saving || deleting ? null : save,
                     child: Text(saving ? '저장 중' : '저장'),
                   ),
                 ),
@@ -757,6 +840,10 @@ class _MemberEditorState extends ConsumerState<MemberEditorScreen> {
                   ),
                 ),
               ),
+              if (original != null) ...[
+                const SizedBox(height: AppSpacing.sp6),
+                _deleteSection(original!),
+              ],
             ],
           ),
         ),
@@ -773,44 +860,6 @@ class MemberDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _MemberDetailState extends ConsumerState<MemberDetailScreen> {
-  bool deleting = false;
-  String? error;
-  Future<void> remove(Member m) async {
-    final lessons = ref
-        .read(timelineProvider)
-        .valueOrNull
-        ?.where((x) => x.record.memberId == m.id)
-        .toList();
-    final photoCount = lessons?.fold<int>(0, (n, x) => n + x.photos.length);
-    if (!await confirm(
-      context,
-      '이 회원과 기록을 삭제할까요?',
-      lessons == null
-          ? '${m.name} 회원의 레슨 기록과 사진이 함께 삭제돼요.'
-          : '${m.name} 회원의 레슨 기록 ${lessons.length}개와 사진 $photoCount장이 함께 삭제돼요.',
-      button: '회원 삭제',
-      icon: Icons.person_remove_outlined,
-      destructive: true,
-      warning: '삭제 후 되돌릴 수 없어요.',
-    )) {
-      return;
-    }
-    setState(() {
-      deleting = true;
-      error = null;
-    });
-    try {
-      await ref.read(memberRepositoryProvider).delete(m.id);
-      ref.invalidate(membersProvider);
-      ref.invalidate(timelineProvider);
-      if (mounted) context.go('/');
-    } catch (_) {
-      if (mounted) setState(() => error = '삭제를 완료하지 못했어요.');
-    } finally {
-      if (mounted) setState(() => deleting = false);
-    }
-  }
-
   void quickCapture(Member m) {
     final request = ref.read(quickCaptureRequestProvider.notifier);
     request.state = m.id;
@@ -852,9 +901,8 @@ class _MemberDetailState extends ConsumerState<MemberDetailScreen> {
               'members.edit.button',
               IconButton(
                 tooltip: '회원 정보 수정',
-                onPressed: deleting
-                    ? null
-                    : () => context.push('/members/${widget.memberId}/edit'),
+                onPressed: () =>
+                    context.push('/members/${widget.memberId}/edit'),
                 icon: const Icon(Icons.edit_outlined),
               ),
             ),
@@ -892,19 +940,12 @@ class _MemberDetailState extends ConsumerState<MemberDetailScreen> {
                   padding: const EdgeInsets.all(AppSpacing.sp4),
                   children: [
                     _MemberProfileCard(member: m),
-                    if (error != null)
-                      failure('members.delete.error', error!, () => remove(m)),
-                    if (deleting)
-                      busy('members.delete.busy', '회원 기록을 삭제하고 있어요'),
                     _TwoActions(
                       primary: mark(
                         'members.lesson.add.button',
                         FilledButton.icon(
-                          onPressed: deleting
-                              ? null
-                              : () => context.push(
-                                  '/members/${m.id}/lessons/new',
-                                ),
+                          onPressed: () =>
+                              context.push('/members/${m.id}/lessons/new'),
                           icon: const Icon(Icons.edit_note),
                           label: const Text('레슨 기록하기'),
                         ),
@@ -912,7 +953,7 @@ class _MemberDetailState extends ConsumerState<MemberDetailScreen> {
                       secondary: mark(
                         'members.capture.button',
                         OutlinedButton.icon(
-                          onPressed: deleting ? null : () => quickCapture(m),
+                          onPressed: () => quickCapture(m),
                           icon: const Icon(Icons.photo_camera_outlined),
                           label: const Text('바로 촬영'),
                         ),
@@ -977,21 +1018,6 @@ class _MemberDetailState extends ConsumerState<MemberDetailScreen> {
                         );
                       },
                     ),
-                    const SizedBox(height: AppSpacing.sp6),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: mark(
-                        'members.delete.button',
-                        TextButton.icon(
-                          style: TextButton.styleFrom(
-                            foregroundColor: context.colors.error,
-                          ),
-                          onPressed: deleting ? null : () => remove(m),
-                          icon: const Icon(Icons.person_remove_outlined),
-                          label: const Text('회원 삭제'),
-                        ),
-                      ),
-                    ),
                   ],
                 );
               },
@@ -1027,7 +1053,7 @@ class _TwoActions extends StatelessWidget {
   }
 }
 
-/// 운동 배경·목표(2열) + 주의사항 앰버 블록(펼치면 회원 전달·강사 관찰).
+/// 운동 배경·목표(위아래) + 주의사항 앰버 블록(펼치면 회원 전달·강사 관찰).
 class _MemberProfileCard extends StatefulWidget {
   final Member member;
   const _MemberProfileCard({required this.member});
@@ -1049,7 +1075,8 @@ class _MemberProfileCardState extends State<_MemberProfileCard> {
       ),
       const SizedBox(height: AppSpacing.sp1),
       Text(
-        value,
+        keepPhrasesWhole(value),
+        semanticsLabel: value,
         style: context.texts.bodyLarge?.copyWith(fontWeight: FontWeight.w700),
       ),
     ],
@@ -1088,21 +1115,16 @@ class _MemberProfileCardState extends State<_MemberProfileCard> {
                 ),
               )
             else
-              LayoutBuilder(
-                builder: (context, box) {
-                  // 두 항목은 반씩 나눠 쓰고, 좁으면 한 줄씩 쌓인다.
-                  final w = basics.length == 1 || box.maxWidth < 280
-                      ? box.maxWidth
-                      : (box.maxWidth - AppSpacing.sp4) / 2;
-                  return Wrap(
-                    spacing: AppSpacing.sp4,
-                    runSpacing: AppSpacing.sp3,
-                    children: [
-                      for (final b in basics)
-                        SizedBox(width: w, child: _value(b.$1, b.$2)),
-                    ],
-                  );
-                },
+              // 배경·목표는 위아래로 쌓는다. 좌우로 나누면 긴 문장이 반 폭에서
+              // 여러 줄로 꺾여 읽기 어렵다(사용자 확인 후 결정).
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final (i, b) in basics.indexed) ...[
+                    if (i > 0) const SizedBox(height: AppSpacing.sp3),
+                    _value(b.$1, b.$2),
+                  ],
+                ],
               ),
             if (m.memo.isNotEmpty) ...[
               const SizedBox(height: AppSpacing.sp3),

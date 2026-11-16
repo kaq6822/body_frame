@@ -1,3 +1,4 @@
+import 'package:bodymark/core/korean_text.dart';
 import 'package:bodymark/core/models/models.dart';
 import 'package:bodymark/core/theme/app_theme.dart';
 import 'package:bodymark/features/members/lesson_records_screen.dart';
@@ -103,8 +104,21 @@ void main() {
       0,
     );
     expect(find.text('운동 목표'), findsOneWidget);
-    expect(find.text('체형 교정'), findsOneWidget);
+    expect(find.text(keepPhrasesWhole('체형 교정')), findsOneWidget);
     expect(find.text('운동 시작 배경'), findsNothing);
+  });
+
+  testWidgets('운동 배경과 목표는 위아래로 쌓아 같은 왼쪽 선에서 시작한다', (tester) async {
+    await _pump(
+      tester,
+      const MemberDetailScreen(memberId: 'm1'),
+      _member(reason: '허리 통증', goal: '체형 교정'),
+      0,
+    );
+    final reason = tester.getTopLeft(find.text('운동 시작 배경'));
+    final goal = tester.getTopLeft(find.text('운동 목표'));
+    expect(goal.dx, reason.dx);
+    expect(goal.dy, greaterThan(reason.dy));
   });
 
   testWidgets('기록 필터 행은 검색 필드와 왼쪽 선이 같다', (tester) async {

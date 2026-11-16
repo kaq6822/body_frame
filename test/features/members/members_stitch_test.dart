@@ -110,6 +110,11 @@ Future<ProviderContainer> _pump(
             MemberDetailScreen(memberId: s.pathParameters['id']!),
       ),
       GoRoute(
+        path: '/members/:id/edit',
+        builder: (_, s) =>
+            MemberEditorScreen(memberId: s.pathParameters['id']!),
+      ),
+      GoRoute(
         path: '/members/:id/lessons/new',
         builder: (_, s) =>
             lessonNewBuilder?.call(s.pathParameters['id']!) ??
@@ -275,7 +280,7 @@ void main() {
   testWidgets('42 회원 삭제 확인은 함께 지워질 레슨·사진 수를 알려 준다', (tester) async {
     await _pump(
       tester,
-      initial: '/members/m1',
+      initial: '/members/m1/edit',
       members: [_member('m1', '김서연')],
       lessons: [
         _lesson('r1', 'm1', _at, phases: {'before': 4}),
@@ -283,11 +288,7 @@ void main() {
       ],
     );
     final delete = find.byKey(const ValueKey('members.delete.button'));
-    await tester.scrollUntilVisible(
-      delete,
-      300,
-      scrollable: find.byType(Scrollable).first,
-    );
+    await tester.scrollUntilVisible(delete, 300, scrollable: _editorScroll);
     await tester.ensureVisible(delete);
     await tester.pumpAndSettle();
     await tester.tap(delete);
@@ -299,6 +300,56 @@ void main() {
       find.byKey(const ValueKey('common.confirm.cancel.button')),
     );
     await tester.pumpAndSettle();
+  });
+
+  testWidgets('회원 상세에는 삭제 버튼이 없고 수정 화면 맨 아래에 있다', (tester) async {
+    await _pump(
+      tester,
+      initial: '/members/m1',
+      members: [_member('m1', '김서연')],
+      lessons: [
+        _lesson('r1', 'm1', _at, phases: {'before': 4}),
+      ],
+    );
+    final scrollable = find.byType(Scrollable).first;
+    await tester.drag(scrollable, const Offset(0, -3000));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('members.delete.button')), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('members.edit.button')));
+    await tester.pumpAndSettle();
+    final delete = find.byKey(const ValueKey('members.delete.button'));
+    await tester.scrollUntilVisible(delete, 300, scrollable: _editorScroll);
+    // 삭제 영역은 입력 카드들 아래, 화면 맨 끝이다.
+    final care = tester.getRect(
+      find.byKey(const ValueKey('members.edit.care.section')),
+    );
+    final section = tester.getRect(
+      find.byKey(const ValueKey('members.edit.delete.section')),
+    );
+    expect(section.top, greaterThan(care.bottom));
+  });
+
+  testWidgets('수정 화면에서 회원을 삭제하면 회원 목록으로 돌아간다', (tester) async {
+    final repo = _RecordingMemberRepository();
+    await _pump(
+      tester,
+      initial: '/members/m1/edit',
+      members: [_member('m1', '김서연')],
+      overrides: [memberRepositoryProvider.overrideWithValue(repo)],
+    );
+    final delete = find.byKey(const ValueKey('members.delete.button'));
+    await tester.scrollUntilVisible(delete, 300, scrollable: _editorScroll);
+    await tester.ensureVisible(delete);
+    await tester.pumpAndSettle();
+    await tester.tap(delete);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('common.confirm.accept.button')),
+    );
+    await tester.pumpAndSettle();
+    expect(repo.deleted, ['m1']);
+    expect(find.byKey(const ValueKey('screen.members.list')), findsOneWidget);
   });
 
   testWidgets('11 레슨 일시는 한 시트에서 날짜와 시각을 함께 바꾼다', (tester) async {
@@ -1308,8 +1359,20 @@ void main() {
 }
 
 /// 저장된 레슨만 기억하는 저장소. 실제 DB와 파일은 건드리지 않는다.
+/// 회원 수정 화면 목록의 스크롤. 여러 줄 입력칸에도 Scrollable이 있어 구분한다.
+final _editorScroll = find
+    .ancestor(
+      of: find.byKey(const ValueKey('members.edit.basic.section')),
+      matching: find.byType(Scrollable),
+    )
+    .first;
+
 class _RecordingMemberRepository implements MemberRepository {
   final saved = <PhotoRecord>[];
+  final deleted = <String>[];
+  @override
+  Future<void> delete(String id) async => deleted.add(id);
+
   @override
   Future<void> saveLesson(PhotoRecord record, List<BodyPhoto> photos) async {
     saved.add(record);
