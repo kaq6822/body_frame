@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:bodymark/core/korean_text.dart';
 import 'package:bodymark/core/models/models.dart';
 import 'package:bodymark/core/providers.dart';
 import 'package:bodymark/core/repositories/lesson_video_repository.dart';
@@ -16,7 +17,8 @@ import 'package:bodymark/features/members/lesson_editor_screen.dart';
 import 'package:bodymark/features/members/member.dart';
 import 'package:bodymark/features/members/member_providers.dart';
 import 'package:bodymark/features/members/member_repository.dart';
-import 'package:bodymark/features/members/member_screens.dart';
+import 'package:bodymark/features/home/home_screen.dart';
+import 'package:bodymark/features/settings/providers/settings_providers.dart';
 import 'package:bodymark/features/records/providers/records_providers.dart';
 import 'package:bodymark/features/records/services/photo_export_sink.dart';
 import 'package:bodymark/features/videos/lesson_video_tile.dart';
@@ -806,9 +808,11 @@ void main() {
             (path) async => cleaned.add(path),
           ),
           timelineProvider.overrideWith((ref) async => const []),
+          unlinkedRecordCountProvider.overrideWith((ref) async => 0),
         ],
         routes: [
-          GoRoute(path: '/members', builder: (_, _) => const MembersScreen()),
+          // 복구 배너는 앱을 다시 열면 보이는 홈 한 곳에만 있다.
+          GoRoute(path: '/start', builder: (_, _) => const HomeScreen()),
           GoRoute(
             path: '/members/:id/lessons/new',
             builder: (_, s) =>
@@ -823,7 +827,7 @@ void main() {
             ),
           ),
         ],
-        push: '/members',
+        push: '/start',
       );
       return (store, cleaned);
     }
@@ -831,7 +835,10 @@ void main() {
     testWidgets('복구된 동영상 선택은 회원 이름과 함께 알리고 그 회원의 새 레슨을 연다', (tester) async {
       await pumpMembers(tester);
       expect(key('members.recoveredVideo.banner'), findsOneWidget);
-      expect(find.textContaining('김서연'), findsWidgets);
+      expect(
+        find.textContaining(keepPhrasesWhole('김서연 회원의 레슨에 붙일 수 있어요')),
+        findsOneWidget,
+      );
       await tester.tap(key('members.recoveredVideo.open.button'));
       await tester.pumpAndSettle();
       expect(find.text('new m1'), findsOneWidget);

@@ -37,7 +37,7 @@ class SettingsScreen extends ConsumerWidget {
       child: Scaffold(
         key: const ValueKey(screenId),
         appBar: AppBar(title: const Text('설정')),
-        bottomNavigationBar: const MainNavigation(2),
+        bottomNavigationBar: const MainNavigation(3),
         body: settingsAsync.when(
           data: (settings) => const _SettingsBody(),
           loading: () => const Center(

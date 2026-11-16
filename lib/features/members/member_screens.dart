@@ -1,12 +1,10 @@
 import 'dart:async';
-import '../../core/services/app_image_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/providers.dart';
 import '../records/providers/records_providers.dart';
-import '../videos/video_providers.dart';
 import 'member.dart';
 import 'member_providers.dart';
 import 'lesson_screens.dart';
@@ -46,62 +44,6 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
     search.clear();
     query = '';
   });
-
-  /// Android에서 동영상 선택 중 앱이 종료돼 복구된 결과. 어느 레슨에도 자동으로
-  /// 붙이지 않고, 선택을 시작한 회원의 레슨 편집을 열 수 있게만 안내한다.
-  Widget _recoveredVideoBanner(RecoveredImagePickerSelection recovered) {
-    final c = recovered.context;
-    final member = ref
-        .watch(membersProvider)
-        .valueOrNull
-        ?.where((m) => m.id == c.memberId)
-        .firstOrNull;
-    return mark(
-      'members.recoveredVideo.banner',
-      MaterialBanner(
-        content: Text(
-          keepPhrasesWhole(
-            member == null
-                ? '중단된 동영상 선택을 복구했어요. 선택한 회원을 찾을 수 없어요.'
-                : '중단된 동영상 선택을 복구했어요. ${member.name} 회원의 레슨에 붙일 수 있어요.',
-          ),
-        ),
-        actions: [
-          mark(
-            'members.recoveredVideo.discard.button',
-            TextButton(
-              onPressed: () async {
-                final cleaner = ref.read(pickerCopyCleanerProvider);
-                try {
-                  await ref
-                      .read(appImagePickerCoordinatorProvider.notifier)
-                      .acknowledgeRecovered(c);
-                } catch (_) {
-                  return;
-                }
-                for (final f in recovered.files) {
-                  unawaited(cleaner(f.path));
-                }
-              },
-              child: const Text('버리기'),
-            ),
-          ),
-          if (member != null)
-            mark(
-              'members.recoveredVideo.open.button',
-              TextButton(
-                onPressed: () => context.push(
-                  c.recordId == null
-                      ? '/members/${member.id}/lessons/new'
-                      : '/members/${member.id}/lessons/${c.recordId}/edit',
-                ),
-                child: const Text('레슨에서 확인'),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -153,7 +95,7 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
             ),
           ],
         ),
-        bottomNavigationBar: const MainNavigation(0),
+        bottomNavigationBar: const MainNavigation(1),
         body: Column(
           children: [
             Padding(
@@ -174,28 +116,6 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
                 ),
               ),
             ),
-            if (ref
-                    .watch(appImagePickerCoordinatorProvider)
-                    ?.context
-                    .operation ==
-                ImagePickerOperation.galleryImport)
-              mark(
-                'members.recoveredPhotos.banner',
-                MaterialBanner(
-                  content: const Text('중단된 사진 선택을 복구했어요. 확인 후 회원에게 연결할 수 있어요.'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => context.push('/import'),
-                      child: const Text('사진 확인'),
-                    ),
-                  ],
-                ),
-              ),
-            if (ref.watch(appImagePickerCoordinatorProvider)
-                case final recovered?
-                when recovered.context.operation ==
-                    ImagePickerOperation.lessonVideo)
-              _recoveredVideoBanner(recovered),
             // 회원이 없으면 검색할 대상도 없어 첫 등록 안내만 보여 준다.
             if (hasMembers || query.isNotEmpty)
               Padding(
@@ -547,7 +467,8 @@ class _MemberEditorState extends ConsumerState<MemberEditorScreen> {
       ref.invalidate(timelineProvider);
       if (!mounted) return;
       setState(() => leaving = true);
-      context.go('/');
+      // 회원 목록으로 돌아간다(홈이 아니라 지운 회원이 있던 목록).
+      context.go('/members');
     } catch (_) {
       if (mounted) setState(() => deleteError = '삭제를 완료하지 못했어요.');
     } finally {

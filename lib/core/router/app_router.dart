@@ -2,6 +2,7 @@ import '../../features/capture/capture_guide_screen.dart';
 import '../../features/settings/information_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../../features/home/home_screen.dart';
 import '../../features/members/member_screens.dart';
 import '../../features/members/lesson_screens.dart';
 import '../../features/capture/capture_review_screen.dart';
@@ -28,6 +29,11 @@ GoRouter createAppRouter({String initialLocation = '/'}) => GoRouter(
     GoRoute(
       path: '/',
       name: AppRoutes.home,
+      builder: (_, _) => const HomeScreen(),
+    ),
+    GoRoute(
+      path: '/members',
+      name: AppRoutes.members,
       builder: (_, _) => const MembersScreen(),
     ),
     GoRoute(

@@ -357,7 +357,7 @@ class _LessonRecordsState extends ConsumerState<LessonRecordsScreen> {
       'screen.lessons.records',
       Scaffold(
         appBar: AppBar(title: const Text('기록')),
-        bottomNavigationBar: const MainNavigation(1),
+        bottomNavigationBar: const MainNavigation(2),
         body: Column(
           children: [
             Padding(
@@ -535,7 +535,7 @@ class _LessonRecordsState extends ConsumerState<LessonRecordsScreen> {
                                   mark(
                                     'lessons.records.members.button',
                                     FilledButton.icon(
-                                      onPressed: () => context.go('/'),
+                                      onPressed: () => context.go('/members'),
                                       icon: const Icon(Icons.people_outline),
                                       label: const Text('회원 보기'),
                                     ),

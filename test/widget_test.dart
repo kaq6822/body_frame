@@ -60,33 +60,81 @@ void main() {
     );
   }
 
-  testWidgets('앱은 회원 화면으로 시작하고 카메라 권한을 요청하지 않는다', (tester) async {
+  testWidgets('앱은 홈 화면으로 시작하고 카메라 권한을 요청하지 않는다', (tester) async {
     SharedPreferences.setMockInitialValues({});
     final picker = _CountingLostDataPicker();
     final camera = FakeCaptureCameraController();
     await tester.pumpWidget(buildApp(picker, camera: camera));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('screen.members.list')), findsOneWidget);
+    expect(find.byKey(const ValueKey('screen.home')), findsOneWidget);
+    // 회원이 없으면 첫 회원 등록 안내 하나만 보인다.
+    expect(find.byKey(const ValueKey('home.empty')), findsOneWidget);
     expect(camera.initializeCalls, 0);
     expect(picker.retrieveLostDataCalls, 1);
   });
-  testWidgets('회원·기록·설정 하단 탐색이 동작한다', (tester) async {
+  testWidgets('홈·회원·기록·설정 하단 탐색 4탭이 동작한다', (tester) async {
     SharedPreferences.setMockInitialValues({});
     await tester.pumpWidget(buildApp(_CountingLostDataPicker()));
     await tester.pumpAndSettle();
+    expect(find.byType(NavigationDestination), findsNWidgets(4));
     await tester.tap(find.byType(NavigationDestination).at(1));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('screen.members.list')), findsOneWidget);
+    await tester.tap(find.byType(NavigationDestination).at(2));
     await tester.pumpAndSettle();
     expect(
       find.byKey(const ValueKey('screen.lessons.records')),
       findsOneWidget,
     );
-    await tester.tap(find.byType(NavigationDestination).at(2));
+    await tester.tap(find.byType(NavigationDestination).at(3));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey(SettingsScreen.screenId)), findsOneWidget);
+    await tester.tap(find.byType(NavigationDestination).at(0));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('screen.home')), findsOneWidget);
   });
+  testWidgets('홈이 아닌 탭 루트에서 뒤로가기는 홈으로 가고 push된 화면은 평소처럼 닫힌다', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(buildApp(_CountingLostDataPicker()));
+    await tester.pumpAndSettle();
+    for (final tab in [1, 2, 3]) {
+      await tester.tap(find.byType(NavigationDestination).at(tab));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('screen.home')), findsNothing);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('screen.home')),
+        findsOneWidget,
+        reason: 'tab $tab',
+      );
+    }
+
+    // push된 화면(회원 등록)은 탭 규칙과 무관하게 바로 아래로 돌아간다.
+    await tester.tap(find.byType(NavigationDestination).at(1));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('members.add.button')));
+    await tester.pumpAndSettle();
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('screen.members.list')), findsOneWidget);
+
+    // 홈에서는 가로채지 않는다(앱 종료는 시스템이 처리한다).
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(NavigationDestination).at(0));
+    await tester.pumpAndSettle();
+    final handled = await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('screen.home')), findsOneWidget);
+    expect(handled, isFalse);
+  });
+
   testWidgets('회원 등록은 전체 화면에서 이름과 목표를 저장한다', (tester) async {
     SharedPreferences.setMockInitialValues({});
     await tester.pumpWidget(buildApp(_CountingLostDataPicker()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(NavigationDestination).at(1));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('members.add.button')));
     await tester.pumpAndSettle();
@@ -106,6 +154,8 @@ void main() {
   testWidgets('회원 등록 후 사진 없이 레슨 일지를 저장·열람한다', (tester) async {
     SharedPreferences.setMockInitialValues({});
     await tester.pumpWidget(buildApp(_CountingLostDataPicker()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(NavigationDestination).at(1));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('members.add.button')));
     await tester.pumpAndSettle();

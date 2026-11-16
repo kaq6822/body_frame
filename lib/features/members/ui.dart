@@ -923,7 +923,16 @@ class MainNavigation extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (ModalRoute.of(context)?.canPop ?? false) return const SizedBox.shrink();
-    return _bar(context);
+    if (index == 0) return _bar(context);
+    // 홈이 아닌 탭 루트에서 시스템 뒤로가기는 앱을 닫지 않고 홈으로 간다.
+    // 홈에서는 평소처럼 앱이 닫힌다. push된 화면은 위에서 이미 걸러졌다.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) context.go('/');
+      },
+      child: _bar(context),
+    );
   }
 
   Widget _bar(BuildContext context) => mark(
@@ -931,8 +940,13 @@ class MainNavigation extends StatelessWidget {
     NavigationBar(
       selectedIndex: index,
       onDestinationSelected: (i) =>
-          context.go(['/', '/records', '/settings'][i]),
+          context.go(['/', '/members', '/records', '/settings'][i]),
       destinations: const [
+        NavigationDestination(
+          icon: Icon(Icons.home_outlined),
+          selectedIcon: Icon(Icons.home),
+          label: '홈',
+        ),
         NavigationDestination(
           icon: Icon(Icons.people_outline),
           selectedIcon: Icon(Icons.people),

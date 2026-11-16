@@ -107,6 +107,7 @@ Future<ProviderContainer> _pump(
     initialLocation: initial,
     routes: [
       GoRoute(path: '/', builder: (_, _) => const MembersScreen()),
+      GoRoute(path: '/members', builder: (_, _) => const MembersScreen()),
       GoRoute(path: '/records', builder: (_, _) => const LessonRecordsScreen()),
       GoRoute(
         path: '/members/:id',

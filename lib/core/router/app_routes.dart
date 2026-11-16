@@ -5,10 +5,13 @@
 class AppRoutes {
   AppRoutes._();
 
-  /// 1. 홈 = 회원 목록.
+  /// 1. 홈: 오늘 예상 회원·최근 레슨·이번 주 요약.
   ///
   /// 촬영은 레슨 작성에서 명시적으로 진입한다.
   static const home = 'home';
+
+  /// 1-1. 회원 목록.
+  static const members = 'members';
 
   // --- 사진 등록 ---
   /// 2. 촬영 결과 일괄 확인 화면.
