@@ -14,6 +14,7 @@ import 'package:bodymark/core/models/models.dart';
 import 'package:bodymark/core/photo_frame.dart';
 import 'package:bodymark/core/providers.dart';
 import 'package:bodymark/core/router/app_routes.dart';
+import 'package:bodymark/core/services/tick_haptic.dart';
 import 'package:bodymark/core/services/app_logger.dart';
 import 'package:bodymark/core/theme/app_tokens.dart';
 import 'package:bodymark/features/records/providers/records_providers.dart';
@@ -397,11 +398,7 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
         true;
     if (!enabled) return;
     unawaited(SystemSound.play(SystemSoundType.click));
-    unawaited(
-      remaining <= 2
-          ? HapticFeedback.heavyImpact()
-          : HapticFeedback.selectionClick(),
-    );
+    tickHaptic(strong: remaining <= 2);
   }
 
   Future<void> _takePicture() async {

@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../core/services/tick_haptic.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 
 /// 가속도계 한 샘플(m/s², 중력 포함). 좌표는 sensors_plus 규약을 따른다.
@@ -217,6 +218,5 @@ final levelSensorProvider = Provider<LevelSensor>(
 
 /// 잠금 진입 피드백. 테스트에서 호출 횟수를 센다.
 final levelLockFeedbackProvider = Provider<void Function()>(
-  (ref) =>
-      () => unawaited(HapticFeedback.selectionClick()),
+  (ref) => tickHaptic,
 );
