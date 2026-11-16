@@ -4,11 +4,12 @@ import '../database/app_database.dart';
 import '../models/photo_record.dart';
 import '../services/app_logger.dart';
 import '../services/photo_storage_service.dart';
+import '../services/video_storage_service.dart';
 
 /// 촬영 기록 CRUD.
 ///
-/// 촬영 기록 삭제 시 소속 사진 DB 행은 외래 키 CASCADE로 정리되지만
-/// 사진 파일은 이 리포지토리가 명시적으로 지운다.
+/// 촬영 기록 삭제 시 소속 사진·동영상 DB 행은 외래 키 CASCADE로 정리되지만
+/// 파일은 이 리포지토리가 명시적으로 지운다.
 abstract class PhotoRecordRepository {
   /// 전체 촬영 기록 목록(최신 촬영일 먼저).
   Future<List<PhotoRecord>> listAll();
@@ -19,21 +20,24 @@ abstract class PhotoRecordRepository {
 
   Future<void> update(PhotoRecord record);
 
-  /// 촬영 기록과 소속 사진(행+파일)을 삭제한다.
+  /// 촬영 기록과 소속 사진·동영상(행+파일)을 삭제한다.
   Future<void> delete(String id);
 }
 
 class PhotoRecordRepositoryImpl implements PhotoRecordRepository {
   final AppDatabase _db;
   final PhotoStorageService _storage;
+  final VideoStorageService _videoStorage;
   final AppLogger _logger;
 
   PhotoRecordRepositoryImpl({
     required AppDatabase database,
     required PhotoStorageService storage,
+    VideoStorageService? videoStorage,
     AppLogger? logger,
   }) : _db = database,
        _storage = storage,
+       _videoStorage = videoStorage ?? VideoStorageServiceImpl(logger: logger),
        _logger = logger ?? AppLogger.instance;
 
   @override
@@ -67,7 +71,11 @@ class PhotoRecordRepositoryImpl implements PhotoRecordRepository {
       record.toMap(),
       conflictAlgorithm: ConflictAlgorithm.abort,
     );
-    _logger.phase('record.insert', LogPhase.success, context: {'id': record.id});
+    _logger.phase(
+      'record.insert',
+      LogPhase.success,
+      context: {'id': record.id},
+    );
   }
 
   @override
@@ -82,7 +90,11 @@ class PhotoRecordRepositoryImpl implements PhotoRecordRepository {
     if (updated != 1) {
       throw StateError('수정할 촬영 기록을 찾을 수 없습니다.');
     }
-    _logger.phase('record.update', LogPhase.success, context: {'id': record.id});
+    _logger.phase(
+      'record.update',
+      LogPhase.success,
+      context: {'id': record.id},
+    );
   }
 
   @override
@@ -91,6 +103,12 @@ class PhotoRecordRepositoryImpl implements PhotoRecordRepository {
     final db = await _db.database;
     final rows = await db.query(
       AppDatabase.tableBodyPhotos,
+      columns: ['file_path'],
+      where: 'record_id = ?',
+      whereArgs: [id],
+    );
+    final videoRows = await db.query(
+      AppDatabase.tableLessonVideos,
       columns: ['file_path'],
       where: 'record_id = ?',
       whereArgs: [id],
@@ -109,6 +127,13 @@ class PhotoRecordRepositoryImpl implements PhotoRecordRepository {
         await _storage.deleteFile(row['file_path'] as String);
       } catch (_) {
         _logger.warn('storage.delete.failure');
+      }
+    }
+    for (final row in videoRows) {
+      try {
+        await _videoStorage.deleteFile(row['file_path'] as String);
+      } catch (_) {
+        _logger.warn('video.delete.cleanup.failure');
       }
     }
     _logger.phase('record.delete', LogPhase.success, context: {'id': id});

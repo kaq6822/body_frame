@@ -4,10 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
+import '../../core/korean_text.dart';
 import '../../core/models/models.dart';
 import '../../core/providers.dart';
 import '../../core/services/photo_storage_service.dart';
 import '../../core/services/app_image_picker.dart';
+import '../../core/services/video_storage_service.dart';
+import '../videos/lesson_video_tile.dart';
+import '../videos/video_providers.dart';
 import '../capture/providers/capture_providers.dart';
 import '../capture/providers/capture_session_provider.dart';
 import '../capture/utils/image_meta.dart';
@@ -40,6 +44,31 @@ class PendingLessonPhoto {
   });
 }
 
+/// 저장 전 동영상. [temporary]면 카메라 캐시 파일이다. 갤러리에서 고른
+/// 파일은 image_picker가 앱 임시 디렉터리에 만든 사본이라 역시 이 화면이
+/// 정리한다(임시 디렉터리 밖의 원본은 건드리지 않는다).
+class PendingLessonVideo {
+  /// 화면 식별자용. 목록 순서가 바뀌어도 키가 다른 항목으로 옮겨 가지 않는다.
+  final String id;
+  final String path;
+  final String phase;
+  final Duration? duration;
+  final int? sizeBytes;
+  final DateTime? capturedAt;
+  final LessonVideoSource source;
+  final bool temporary;
+  PendingLessonVideo({
+    String? id,
+    required this.path,
+    required this.phase,
+    required this.source,
+    this.duration,
+    this.sizeBytes,
+    this.capturedAt,
+    this.temporary = false,
+  }) : id = id ?? const Uuid().v4();
+}
+
 class LessonEditorScreen extends ConsumerStatefulWidget {
   final String memberId;
   final String? recordId;
@@ -51,25 +80,36 @@ class LessonEditorScreen extends ConsumerStatefulWidget {
 class _LessonEditorState extends ConsumerState<LessonEditorScreen> {
   final memo = TextEditingController(), condition = TextEditingController();
   final pending = <PendingLessonPhoto>[];
+  final pendingVideos = <PendingLessonVideo>[];
   late PhotoStorageService draftStorage;
   late AppLogger draftLogger;
+  late Future<void> Function(String path) pickerCleaner;
+
+  /// 복구 결과 반영을 이미 예약했는지. 바쁜 동안 도착하면 바쁨이 풀린 뒤 다시 본다.
+  bool recoveryScheduled = false;
   PhotoRecord? original;
   late DateTime date;
   bool initialized = false,
       dirty = false,
       saving = false,
       leaving = false,
-      choosing = false;
+      choosing = false,
+      preparingVideo = false;
   String phase = 'before';
   String? error;
 
   /// 사진 카드 위치. 촬영·사진 추가 뒤 이 카드로 스크롤한다.
   final photosSectionKey = GlobalKey();
 
+  /// 동영상 카드 위치. 촬영·선택 뒤 이 카드로 스크롤한다.
+  final videosSectionKey = GlobalKey();
+
   /// 방금 추가한 사진이 화면 밖에 남지 않게 사진 카드를 보이는 곳으로 옮긴다.
-  void revealPhotos() {
+  void revealPhotos() => _reveal(photosSectionKey);
+
+  void _reveal(GlobalKey key) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final target = photosSectionKey.currentContext;
+      final target = key.currentContext;
       if (!mounted || target == null) return;
       Scrollable.ensureVisible(
         target,
@@ -86,6 +126,7 @@ class _LessonEditorState extends ConsumerState<LessonEditorScreen> {
     date = ref.read(clockProvider)();
     draftStorage = ref.read(photoStorageServiceProvider);
     draftLogger = ref.read(appLoggerProvider);
+    pickerCleaner = ref.read(pickerCopyCleanerProvider);
     if (widget.recordId == null) {
       // 회원 상세의 "바로 촬영"으로 들어오면 첫 프레임 뒤 촬영 흐름을 연다.
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -122,6 +163,254 @@ class _LessonEditorState extends ConsumerState<LessonEditorScreen> {
       }
       dirty = true;
     });
+  }
+
+  ImagePickerRequestContext get videoPickerContext =>
+      ImagePickerRequestContext.lessonVideo(
+        memberId: widget.memberId,
+        recordId: widget.recordId,
+      );
+
+  bool get videoInputBusy => saving || choosing || preparingVideo;
+
+  Future<int?> _fileSize(String path) => ref.read(videoFileSizeProvider)(path);
+
+  /// 이 화면이 소유한 동영상 임시 파일을 지운다. 카메라 녹화본은 관리 저장소
+  /// 밖이면 지우고, 갤러리 사본은 앱 임시 디렉터리 안일 때만 지운다.
+  void _discardVideoFile(PendingLessonVideo v) {
+    if (v.temporary) {
+      unawaited(
+        deleteTemporaryCaptureBestEffort(
+          v.path,
+          storage: draftStorage,
+          logger: draftLogger,
+        ),
+      );
+    } else {
+      unawaited(pickerCleaner(v.path));
+    }
+  }
+
+  void _addVideo(PendingLessonVideo video) {
+    setState(() {
+      pendingVideos.add(video);
+      dirty = true;
+    });
+    _reveal(videosSectionKey);
+  }
+
+  /// 동영상 촬영 화면을 열고 녹화본을 저장 전 목록에 더한다.
+  Future<void> recordVideo() async {
+    if (videoInputBusy) return;
+    setState(() {
+      preparingVideo = true;
+      error = null;
+    });
+    try {
+      final recorded = await context.push<RecordedVideo>('/video-camera');
+      if (recorded == null) return;
+      final video = PendingLessonVideo(
+        path: recorded.path,
+        phase: phase,
+        source: LessonVideoSource.camera,
+        duration: recorded.duration,
+        sizeBytes: mounted ? await _fileSize(recorded.path) : null,
+        capturedAt: recorded.capturedAt,
+        temporary: true,
+      );
+      // 크기를 읽는 사이 화면이 닫혔으면 녹화본을 받을 곳이 없다.
+      if (!mounted) {
+        _discardVideoFile(video);
+        return;
+      }
+      _addVideo(video);
+    } catch (_) {
+      if (mounted) setState(() => error = '동영상을 가져오지 못했어요. 다시 시도해주세요.');
+    } finally {
+      if (mounted) setState(() => preparingVideo = false);
+    }
+  }
+
+  Future<PendingLessonVideo> _galleryVideo(String path) async =>
+      PendingLessonVideo(
+        path: path,
+        phase: phase,
+        source: LessonVideoSource.gallery,
+        duration: await ref.read(videoDurationProbeProvider)(path),
+        sizeBytes: await _fileSize(path),
+      );
+
+  /// 갤러리에서 동영상 한 개를 고른다.
+  Future<void> pickVideo() async {
+    if (videoInputBusy) return;
+    setState(() {
+      preparingVideo = true;
+      error = null;
+    });
+    try {
+      final file = await ref
+          .read(appImagePickerCoordinatorProvider.notifier)
+          .pickVideo(context: videoPickerContext);
+      if (file == null) return;
+      if (!mounted) {
+        unawaited(pickerCleaner(file.path));
+        return;
+      }
+      final video = await _galleryVideo(file.path);
+      if (!mounted) {
+        _discardVideoFile(video);
+        return;
+      }
+      _addVideo(video);
+    } catch (_) {
+      if (mounted) setState(() => error = '동영상을 가져오지 못했어요. 다시 시도해주세요.');
+    } finally {
+      if (mounted) setState(() => preparingVideo = false);
+    }
+  }
+
+  /// Android에서 선택 중 앱이 종료돼 돌아온 결과를 붙인다. 바쁜 동안 도착하면
+  /// build가 바쁨이 풀린 뒤 다시 예약한다([scheduleRecoveryIfNeeded]).
+  Future<void> recoverLostVideo() async {
+    if (videoInputBusy) return;
+    final coordinator = ref.read(appImagePickerCoordinatorProvider.notifier);
+    final file = coordinator.recoveredFor(videoPickerContext)?.lastFile;
+    if (file == null) return;
+    setState(() => preparingVideo = true);
+    try {
+      final video = await _galleryVideo(file.path);
+      if (!mounted) return;
+      _addVideo(video);
+      await coordinator.acknowledgeRecovered(videoPickerContext);
+    } catch (_) {
+      if (mounted) {
+        setState(() => error = '이전 동영상 선택 결과를 복구하지 못했어요.');
+      }
+    } finally {
+      if (mounted) setState(() => preparingVideo = false);
+    }
+  }
+
+  void scheduleRecoveryIfNeeded(RecoveredImagePickerSelection? recovered) {
+    if (recovered?.context != videoPickerContext ||
+        videoInputBusy ||
+        recoveryScheduled) {
+      return;
+    }
+    recoveryScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      recoveryScheduled = false;
+      if (mounted) unawaited(recoverLostVideo());
+    });
+  }
+
+  Future<void> removePendingVideo(PendingLessonVideo v) async {
+    if (!await confirm(
+          context,
+          '이 동영상을 뺄까요?',
+          '저장 전 추가한 목록에서만 빠져요. 다른 동영상과 일지는 그대로예요.',
+          button: '빼기',
+          icon: Icons.videocam_off_outlined,
+        ) ||
+        !mounted) {
+      return;
+    }
+    setState(() {
+      pendingVideos.remove(v);
+      _discardVideoFile(v);
+      dirty = true;
+    });
+  }
+
+  /// 이미 저장된 동영상은 확인 후 바로 삭제한다(행과 파일을 함께 정리).
+  Future<void> deleteSavedVideo(LessonVideo v) async {
+    if (videoInputBusy) return;
+    if (_isLastSavedContent(v)) {
+      await _offerLessonDelete();
+      return;
+    }
+    if (!await confirm(
+          context,
+          '저장된 동영상을 삭제할까요?',
+          '레슨을 저장하지 않아도 바로 삭제돼요. 일지와 사진은 그대로 남아요.',
+          icon: Icons.delete_outline,
+          destructive: true,
+          warning: '삭제 후 되돌릴 수 없어요.',
+        ) ||
+        !mounted) {
+      return;
+    }
+    setState(() {
+      preparingVideo = true;
+      error = null;
+    });
+    try {
+      await ref.read(lessonVideoRepositoryProvider).delete(v.id);
+      ref.invalidate(recordVideosProvider(v.recordId));
+      ref.invalidate(timelineProvider);
+    } catch (_) {
+      if (mounted) setState(() => error = '동영상을 삭제하지 못했어요. 다시 시도해주세요.');
+    } finally {
+      if (mounted) setState(() => preparingVideo = false);
+    }
+  }
+
+  /// [v]를 지우면 저장된 레슨에 아무 내용도 남지 않는지. 그런 레슨은 다시
+  /// 저장할 수 없으므로 동영상만 지우지 않고 레슨 삭제를 제안한다.
+  bool _isLastSavedContent(LessonVideo v) {
+    final id = widget.recordId;
+    if (id == null) return false;
+    final photos = ref.read(recordPhotosProvider(id)).valueOrNull;
+    final videos = ref.read(recordVideosProvider(id)).valueOrNull;
+    if (photos == null || videos == null) return false;
+    return photos.isEmpty &&
+        videos.length == 1 &&
+        videos.single.id == v.id &&
+        (original?.memo ?? '').trim().isEmpty &&
+        (original?.condition ?? '').trim().isEmpty &&
+        memo.text.trim().isEmpty &&
+        condition.text.trim().isEmpty &&
+        pending.isEmpty &&
+        pendingVideos.isEmpty;
+  }
+
+  Future<void> _offerLessonDelete() async {
+    final id = widget.recordId!;
+    if (!await confirm(
+          context,
+          '마지막 동영상이에요',
+          '이 동영상을 지우면 레슨에 남는 내용이 없어요. 레슨 기록까지 함께 삭제할까요?',
+          button: '레슨 삭제',
+          icon: Icons.delete_outline,
+          destructive: true,
+          warning: '삭제 후 되돌릴 수 없어요.',
+        ) ||
+        !mounted) {
+      return;
+    }
+    setState(() {
+      preparingVideo = true;
+      error = null;
+    });
+    try {
+      // 기록 리포지토리가 사진·동영상 행과 파일을 함께 정리한다.
+      await ref.read(photoRecordRepositoryProvider).delete(id);
+      ref.invalidate(timelineProvider);
+      ref.invalidate(allRecordsProvider);
+      ref.invalidate(recordProvider(id));
+      ref.invalidate(recordPhotosProvider(id));
+      ref.invalidate(recordVideosProvider(id));
+      if (!mounted) return;
+      setState(() {
+        dirty = false;
+        leaving = true;
+      });
+      context.go('/members/${widget.memberId}');
+    } catch (_) {
+      if (mounted) setState(() => error = '레슨을 삭제하지 못했어요. 다시 시도해주세요.');
+    } finally {
+      if (mounted) setState(() => preparingVideo = false);
+    }
   }
 
   Future<void> changeDate() async {
@@ -167,11 +456,14 @@ class _LessonEditorState extends ConsumerState<LessonEditorScreen> {
         ),
       );
     }
+    // 저장했으면 이미 관리 저장소로 복사했고, 저장하지 않았으면 버린 것이다.
+    // 어느 쪽이든 카메라 녹화본과 picker 사본은 더 쓰지 않는다.
+    pendingVideos.forEach(_discardVideoFile);
     super.dispose();
   }
 
   Future<void> capture() async {
-    if (choosing || saving) return;
+    if (choosing || saving || preparingVideo) return;
     setState(() => choosing = true);
     var openGallery = false;
     try {
@@ -234,7 +526,7 @@ class _LessonEditorState extends ConsumerState<LessonEditorScreen> {
   }
 
   Future<void> importPhotos() async {
-    if (choosing || saving) return;
+    if (choosing || saving || preparingVideo) return;
     setState(() {
       choosing = true;
       error = null;
@@ -275,16 +567,24 @@ class _LessonEditorState extends ConsumerState<LessonEditorScreen> {
   }
 
   Future<void> save() async {
-    if (saving || choosing) return;
+    if (saving || choosing || preparingVideo) return;
     final oldPhotos = widget.recordId == null
         ? <BodyPhoto>[]
         : (ref.read(recordPhotosProvider(widget.recordId!)).valueOrNull ??
               <BodyPhoto>[]);
-    if (memo.text.trim().isEmpty &&
+    final oldVideos = widget.recordId == null
+        ? <LessonVideo>[]
+        : ref.read(recordVideosProvider(widget.recordId!)).valueOrNull;
+    // 저장된 동영상을 아직 못 읽었으면 화면에서 판단하지 않고 리포지토리 검증에
+    // 맡긴다. 동영상만 있는 레슨이 비어 보이는 것을 막는다.
+    if (oldVideos != null &&
+        memo.text.trim().isEmpty &&
         condition.text.trim().isEmpty &&
         pending.isEmpty &&
-        oldPhotos.isEmpty) {
-      setState(() => error = '일지 또는 사진을 추가해주세요.');
+        oldPhotos.isEmpty &&
+        pendingVideos.isEmpty &&
+        oldVideos.isEmpty) {
+      setState(() => error = '일지, 사진 또는 동영상을 추가해주세요.');
       return;
     }
     setState(() {
@@ -292,7 +592,11 @@ class _LessonEditorState extends ConsumerState<LessonEditorScreen> {
       error = null;
     });
     final storage = ref.read(photoStorageServiceProvider);
+    final VideoStorageService videoStorage = ref.read(
+      videoStorageServiceProvider,
+    );
     final prepared = <String>[];
+    final preparedVideos = <String>[];
     var committed = false;
     try {
       final now = ref.read(clockProvider)();
@@ -330,12 +634,37 @@ class _LessonEditorState extends ConsumerState<LessonEditorScreen> {
           ),
         );
       }
-      await ref.read(memberRepositoryProvider).saveLesson(record, photos);
+      final videos = <LessonVideo>[];
+      for (final v in pendingVideos) {
+        // 원본을 그대로 복사한다. 트랜스코딩·압축은 하지 않는다.
+        final path = await videoStorage.saveOriginal(
+          capturedAt: v.capturedAt ?? date,
+          sourcePath: v.path,
+        );
+        preparedVideos.add(path);
+        videos.add(
+          LessonVideo(
+            id: const Uuid().v4(),
+            recordId: record.id,
+            filePath: path,
+            phase: v.phase,
+            durationMs: v.duration?.inMilliseconds,
+            sizeBytes: v.sizeBytes,
+            capturedAt: v.capturedAt,
+            source: v.source,
+            createdAt: now,
+          ),
+        );
+      }
+      await ref
+          .read(memberRepositoryProvider)
+          .saveLesson(record, photos, addedVideos: videos);
       committed = true;
       ref.invalidate(timelineProvider);
       ref.invalidate(allRecordsProvider);
       ref.invalidate(recordProvider(record.id));
       ref.invalidate(recordPhotosProvider(record.id));
+      ref.invalidate(recordVideosProvider(record.id));
       if (!mounted) return;
       setState(() {
         dirty = false;
@@ -349,6 +678,11 @@ class _LessonEditorState extends ConsumerState<LessonEditorScreen> {
             await storage.deleteFile(path);
           } catch (_) {}
         }
+        for (final path in preparedVideos) {
+          try {
+            await videoStorage.deleteFile(path);
+          } catch (_) {}
+        }
       }
       if (mounted) {
         setState(() => error = '레슨을 저장하지 못했어요. 입력 내용과 사진은 유지돼요. 다시 저장해주세요.');
@@ -360,6 +694,7 @@ class _LessonEditorState extends ConsumerState<LessonEditorScreen> {
 
   @override
   Widget build(BuildContext context) {
+    scheduleRecoveryIfNeeded(ref.watch(appImagePickerCoordinatorProvider));
     final members = ref.watch(membersProvider);
     final member = members.valueOrNull
         ?.where((m) => m.id == widget.memberId)
@@ -402,8 +737,13 @@ class _LessonEditorState extends ConsumerState<LessonEditorScreen> {
       condition.text = original!.condition ?? '';
     }
     initialized = true;
-    final busyInput = saving || choosing;
+    final busyInput = saving || choosing || preparingVideo;
     final total = pending.length + photos.length;
+    final savedVideos = widget.recordId == null
+        ? const AsyncValue<List<LessonVideo>>.data([])
+        : ref.watch(recordVideosProvider(widget.recordId!));
+    final videoTotal =
+        pendingVideos.length + (savedVideos.valueOrNull?.length ?? 0);
     final caution = member == null
         ? ''
         : member.precautions.split('\n').first.trim();
@@ -532,7 +872,11 @@ class _LessonEditorState extends ConsumerState<LessonEditorScreen> {
                             ),
                           ),
                           StatusPill(
-                            label: total == 0 ? '수업 일지' : '사진 $total장',
+                            label: total > 0
+                                ? '사진 $total장'
+                                : videoTotal > 0
+                                ? '동영상 $videoTotal개'
+                                : '수업 일지',
                             tone: StatusPillTone.primary,
                             identifier: 'lessons.kind.status',
                           ),
@@ -724,8 +1068,115 @@ class _LessonEditorState extends ConsumerState<LessonEditorScreen> {
                   ),
                 ),
               ),
+              KeyedSubtree(
+                key: videosSectionKey,
+                child: _videoCard(savedVideos, videoTotal, secondary),
+              ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _videoCard(
+    AsyncValue<List<LessonVideo>> saved,
+    int videoTotal,
+    TextStyle? secondary,
+  ) {
+    final busyInput = saving || choosing || preparingVideo;
+    return mark(
+      'lessons.video.section',
+      panel(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            cardTitle(
+              Icons.videocam_outlined,
+              '동영상',
+              trailing: videoTotal == 0
+                  ? null
+                  : StatusPill(
+                      label: '총 $videoTotal개',
+                      tone: StatusPillTone.primary,
+                      identifier: 'lessons.video.count',
+                    ),
+            ),
+            if (videoTotal == 0)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.sp3),
+                child: Text(
+                  keepPhrasesWhole('소리와 함께 녹화해요. 길이 제한은 없어요.'),
+                  style: secondary,
+                ),
+              ),
+            // 사진 카드의 촬영·사진 추가 줄과 같은 1:1 꽉 찬 배치다.
+            Row(
+              children: [
+                Expanded(
+                  child: mark(
+                    'lessons.video.record.button',
+                    FilledButton.tonalIcon(
+                      onPressed: busyInput ? null : recordVideo,
+                      icon: const Icon(Icons.videocam_outlined),
+                      label: const Text('동영상 촬영'),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sp3),
+                Expanded(
+                  child: mark(
+                    'lessons.video.pick.button',
+                    OutlinedButton.icon(
+                      onPressed: busyInput ? null : pickVideo,
+                      icon: const Icon(Icons.video_library_outlined),
+                      label: const Text('동영상 선택'),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (preparingVideo) busy('lessons.video.busy', '동영상을 준비하고 있어요'),
+            ...saved.when(
+              loading: () => [busy('lessons.video.loading')],
+              error: (_, _) => [
+                failure(
+                  'lessons.video.error',
+                  '저장된 동영상을 불러오지 못했어요.',
+                  () => ref.invalidate(recordVideosProvider(widget.recordId!)),
+                ),
+              ],
+              data: (videos) => [
+                for (final v in videos)
+                  LessonVideoTile(
+                    identifier: 'lessons.video.existing.${v.id}.tile',
+                    phase: v.phase,
+                    source: v.source,
+                    duration: v.duration,
+                    sizeBytes: v.sizeBytes,
+                    removable: true,
+                    removeTooltip: '저장된 동영상 삭제',
+                    onTap: busyInput
+                        ? null
+                        : () => context.push(
+                            '/lessons/${v.recordId}/videos/${v.id}',
+                          ),
+                    onRemove: busyInput ? null : () => deleteSavedVideo(v),
+                  ),
+              ],
+            ),
+            for (final v in pendingVideos)
+              LessonVideoTile(
+                identifier: 'lessons.video.pending.${v.id}.tile',
+                phase: v.phase,
+                source: v.source,
+                duration: v.duration,
+                sizeBytes: v.sizeBytes,
+                pending: true,
+                removable: true,
+                onRemove: saving ? null : () => removePendingVideo(v),
+              ),
+          ],
         ),
       ),
     );

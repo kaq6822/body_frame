@@ -6,7 +6,7 @@ import 'services/storage_stats_service.dart';
 
 /// 저장 공간 관리 화면.
 ///
-/// 전체 저장 공간 사용량과 회원별 사진 용량·개수를 표시한다.
+/// 전체 저장 공간 사용량과 월별 사진·동영상 용량·개수를 표시한다.
 class StorageScreen extends ConsumerWidget {
   static const screenId = 'screen.settings.storage';
 
@@ -94,7 +94,17 @@ class _StorageBody extends StatelessWidget {
                   key: const ValueKey('storage.total.value'),
                   style: const TextStyle(fontSize: 24),
                 ),
-                Text('사진 ${report.totalPhotoCount}장'),
+                Text(
+                  report.totalVideoCount == 0
+                      ? '사진 ${report.totalPhotoCount}장'
+                      : '사진 ${report.totalPhotoCount}장 · 동영상 ${report.totalVideoCount}개',
+                  key: const ValueKey('storage.total.count'),
+                ),
+                if (report.totalVideoCount > 0)
+                  Text(
+                    '동영상 ${formatBytes(report.videoBytes)}',
+                    key: const ValueKey('storage.video.value'),
+                  ),
               ],
             ),
           ),
@@ -104,14 +114,18 @@ class _StorageBody extends StatelessWidget {
         if (report.byMonth.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
-            child: Text('저장된 사진이 없어요'),
+            child: Text('저장된 사진이나 동영상이 없어요'),
           )
         else
           ...report.byMonth.map(
             (m) => ListTile(
               key: ValueKey('storage.month.item.${m.month}'),
               title: Text(_formatMonth(m.month)),
-              subtitle: Text('사진 ${m.photoCount}장'),
+              subtitle: Text(
+                m.videoCount == 0
+                    ? '사진 ${m.photoCount}장'
+                    : '사진 ${m.photoCount}장 · 동영상 ${m.videoCount}개',
+              ),
               trailing: Text(formatBytes(m.totalBytes)),
             ),
           ),

@@ -8,6 +8,7 @@ import '../../core/router/app_routes.dart';
 import '../records/providers/records_providers.dart';
 import 'member_providers.dart';
 import 'ui.dart';
+import '../videos/lesson_video_tile.dart';
 import '../../core/widgets/bottom_action_bar.dart';
 import '../../core/widgets/info_row.dart';
 import '../../core/widgets/status_pill.dart';
@@ -25,11 +26,21 @@ class _LessonDetailState extends ConsumerState<LessonDetailScreen> {
   String? error;
   Future<void> remove(PhotoRecord r) async {
     final count = ref.read(recordPhotosProvider(r.id)).valueOrNull?.length;
-    final what = count == null || count == 0 ? '일지' : '일지와 사진 $count장';
+    final videoCount = ref.read(recordVideosProvider(r.id)).valueOrNull?.length;
+    final photos = count == null || count == 0 ? '' : '사진 $count장';
+    // 동영상 수를 아직 모르면 0개로 단정하지 않고 "동영상 포함"으로 알린다.
+    // 마지막 말에 맞춰 조사를 붙인다(장→이, 개·일지→가).
+    final what = videoCount == null
+        ? '일지${photos.isEmpty ? '' : '와 $photos'}(동영상 포함)이'
+        : videoCount > 0
+        ? '일지${photos.isEmpty ? '와' : ', $photos,'} 동영상 $videoCount개가'
+        : photos.isEmpty
+        ? '일지가'
+        : '일지와 $photos이';
     if (!await confirm(
       context,
       '이 레슨 기록을 삭제할까요?',
-      '${shortLessonDate(r.shotAt)} 레슨의 $what이 함께 삭제돼요. 회원 정보와 다른 레슨은 그대로 남아요.',
+      '${shortLessonDate(r.shotAt)} 레슨의 $what 함께 삭제돼요. 회원 정보와 다른 레슨은 그대로 남아요.',
       icon: Icons.delete_outline,
       destructive: true,
       warning: '삭제 후 되돌릴 수 없어요.',
@@ -45,6 +56,7 @@ class _LessonDetailState extends ConsumerState<LessonDetailScreen> {
       ref.invalidate(timelineProvider);
       ref.invalidate(recordProvider(r.id));
       ref.invalidate(recordPhotosProvider(r.id));
+      ref.invalidate(recordVideosProvider(r.id));
       if (mounted) context.pop();
     } catch (_) {
       if (mounted) setState(() => error = '삭제하지 못했어요. 다시 시도해주세요.');
@@ -223,6 +235,20 @@ class _LessonDetailState extends ConsumerState<LessonDetailScreen> {
                   ),
                   data: (photos) => _photos(r, photos, addPhotos, secondary),
                 ),
+                ...ref
+                    .watch(recordVideosProvider(r.id))
+                    .when(
+                      loading: () => [busy('lessons.video.loading')],
+                      error: (_, _) => [
+                        failure(
+                          'lessons.video.error',
+                          '동영상을 불러오지 못했어요.',
+                          () => ref.invalidate(recordVideosProvider(r.id)),
+                        ),
+                      ],
+                      data: (videos) =>
+                          videos.isEmpty ? const [] : [_videos(r, videos)],
+                    ),
                 if (member != null)
                   mark(
                     'lessons.member.open.button',
@@ -363,6 +389,35 @@ class _LessonDetailState extends ConsumerState<LessonDetailScreen> {
       ),
     );
   }
+
+  Widget _videos(PhotoRecord r, List<LessonVideo> videos) => mark(
+    'lessons.video.section',
+    panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          cardTitle(Icons.videocam_outlined, '동영상 (${videos.length}개)'),
+          for (final v in videos)
+            LessonVideoTile(
+              identifier: 'lessons.video.${v.id}.button',
+              phase: v.phase,
+              source: v.source,
+              duration: v.duration,
+              sizeBytes: v.sizeBytes,
+              onTap: deleting
+                  ? null
+                  : () => context.pushNamed(
+                      AppRoutes.videoPlayer,
+                      pathParameters: {
+                        AppParams.recordId: r.id,
+                        AppParams.videoId: v.id,
+                      },
+                    ),
+            ),
+        ],
+      ),
+    ),
+  );
 
   List<Widget> _group(PhotoRecord r, String phase, List<BodyPhoto> photos) {
     final group = photos.where((p) => p.phase == phase).toList()

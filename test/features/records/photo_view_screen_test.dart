@@ -1074,6 +1074,9 @@ class _LostReplacementPicker implements AppImagePicker {
   Future<List<XFile>> pickMultiImage() async => const [];
 
   @override
+  Future<XFile?> pickVideo({required ImageSource source}) async => null;
+
+  @override
   Future<LostDataResponse> retrieveLostData() async {
     return LostDataResponse(file: XFile(file.path));
   }

@@ -15,11 +15,12 @@ import '../services/app_logger.dart';
 class AppDatabase {
   static const String dbName = 'body_frame.db';
 
-  /// 회원·레슨 정보와 촬영 목적/시각을 추가한 버전.
-  static const int schemaVersion = 2;
+  /// 2: 회원·레슨 정보와 촬영 목적/시각. 3: 레슨 동영상.
+  static const int schemaVersion = 3;
 
   static const String tablePhotoRecords = 'photo_records';
   static const String tableBodyPhotos = 'body_photos';
+  static const String tableLessonVideos = 'lesson_videos';
 
   final AppLogger _logger;
 
@@ -110,10 +111,33 @@ class AppDatabase {
 
     await batch.commit(noResult: true);
     await _addMemberSchema(db);
+    await _addVideoSchema(db);
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) await _addMemberSchema(db);
+    if (oldVersion < 3) await _addVideoSchema(db);
+  }
+
+  /// 레슨 동영상. 비교·방향·격자 로직이 사진 전제라 body_photos와 섞지 않는다.
+  /// 기록 삭제 cascade는 행만 지우므로 파일은 리포지토리가 정리한다.
+  Future<void> _addVideoSchema(DatabaseExecutor db) async {
+    await db.execute('''CREATE TABLE $tableLessonVideos (
+      id TEXT PRIMARY KEY,
+      record_id TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      phase TEXT NOT NULL DEFAULT 'regular',
+      duration_ms INTEGER,
+      size_bytes INTEGER,
+      captured_at INTEGER,
+      source TEXT NOT NULL,
+      memo TEXT,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (record_id) REFERENCES $tablePhotoRecords (id) ON DELETE CASCADE
+    )''');
+    await db.execute(
+      'CREATE INDEX idx_videos_record ON $tableLessonVideos (record_id)',
+    );
   }
 
   Future<void> _addMemberSchema(DatabaseExecutor db) async {

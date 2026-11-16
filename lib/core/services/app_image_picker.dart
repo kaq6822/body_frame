@@ -16,6 +16,9 @@ abstract class AppImagePicker {
 
   Future<List<XFile>> pickMultiImage();
 
+  /// 동영상 한 개를 고르거나 촬영한다. 길이 제한은 두지 않는다.
+  Future<XFile?> pickVideo({required ImageSource source});
+
   Future<LostDataResponse> retrieveLostData();
 }
 
@@ -38,13 +41,18 @@ class AppImagePickerImpl implements AppImagePicker {
   }
 
   @override
+  Future<XFile?> pickVideo({required ImageSource source}) {
+    return _picker.pickVideo(source: source);
+  }
+
+  @override
   Future<LostDataResponse> retrieveLostData() {
     return _picker.retrieveLostData();
   }
 }
 
 /// Android Activity가 사진 선택 중 종료되었을 때 결과를 돌려받을 기능 구분.
-enum ImagePickerOperation { galleryImport, photoReplacement }
+enum ImagePickerOperation { galleryImport, photoReplacement, lessonVideo }
 
 /// picker 실행 전에 남기는 비식별 작업 문맥.
 ///
@@ -54,10 +62,14 @@ class ImagePickerRequestContext {
   final String? recordId;
   final String? photoId;
 
+  /// 레슨 동영상 선택의 소유 회원. 다른 회원의 레슨에 결과가 붙지 않게 한다.
+  final String? memberId;
+
   const ImagePickerRequestContext._({
     required this.operation,
     this.recordId,
     this.photoId,
+    this.memberId,
   });
 
   factory ImagePickerRequestContext.galleryImport() {
@@ -77,9 +89,22 @@ class ImagePickerRequestContext {
     );
   }
 
+  /// 레슨 편집 화면의 동영상 선택. 새 레슨이면 [recordId]가 없다.
+  factory ImagePickerRequestContext.lessonVideo({
+    required String memberId,
+    String? recordId,
+  }) {
+    return ImagePickerRequestContext._(
+      operation: ImagePickerOperation.lessonVideo,
+      memberId: _requiredId(memberId, 'memberId'),
+      recordId: recordId == null ? null : _requiredId(recordId, 'recordId'),
+    );
+  }
+
   factory ImagePickerRequestContext.fromJson(Map<String, Object?> json) {
     if (json.keys.any(
-      (key) => !const {'operation', 'recordId', 'photoId'}.contains(key),
+      (key) =>
+          !const {'operation', 'recordId', 'photoId', 'memberId'}.contains(key),
     )) {
       throw const FormatException('알 수 없는 picker 문맥 필드입니다.');
     }
@@ -105,20 +130,26 @@ class ImagePickerRequestContext {
 
     final recordId = optionalId('recordId');
     final photoId = optionalId('photoId');
+    final memberId = optionalId('memberId');
     switch (operation) {
       case ImagePickerOperation.galleryImport:
-        if (recordId != null || photoId != null) {
+        if (recordId != null || photoId != null || memberId != null) {
           throw const FormatException('갤러리 등록 picker 문맥이 올바르지 않습니다.');
         }
       case ImagePickerOperation.photoReplacement:
-        if (recordId == null || photoId == null) {
+        if (recordId == null || photoId == null || memberId != null) {
           throw const FormatException('사진 교체 picker 문맥이 올바르지 않습니다.');
+        }
+      case ImagePickerOperation.lessonVideo:
+        if (memberId == null || photoId != null) {
+          throw const FormatException('레슨 동영상 picker 문맥이 올바르지 않습니다.');
         }
     }
     return ImagePickerRequestContext._(
       operation: operation,
       recordId: recordId,
       photoId: photoId,
+      memberId: memberId,
     );
   }
 
@@ -126,6 +157,7 @@ class ImagePickerRequestContext {
     'operation': operation.name,
     if (recordId != null) 'recordId': recordId,
     if (photoId != null) 'photoId': photoId,
+    if (memberId != null) 'memberId': memberId,
   };
 
   @override
@@ -133,11 +165,12 @@ class ImagePickerRequestContext {
     return other is ImagePickerRequestContext &&
         operation == other.operation &&
         recordId == other.recordId &&
-        photoId == other.photoId;
+        photoId == other.photoId &&
+        memberId == other.memberId;
   }
 
   @override
-  int get hashCode => Object.hash(operation, recordId, photoId);
+  int get hashCode => Object.hash(operation, recordId, photoId, memberId);
 
   static String _requiredId(String value, String name) {
     if (value.trim().isEmpty) {
@@ -400,6 +433,22 @@ class AppImagePickerCoordinator
     await _requestStore.save(context);
     try {
       return await _picker.pickMultiImage();
+    } finally {
+      await _clearRequestAfterPicker(context);
+    }
+  }
+
+  /// 동영상 한 개를 고른다. Android에서 Activity가 종료되면 사진과 같은 경로로
+  /// [recoveredFor]에 결과가 돌아온다.
+  Future<XFile?> pickVideo({
+    required ImagePickerRequestContext context,
+    ImageSource source = ImageSource.gallery,
+  }) async {
+    await initialize();
+    await _prepareForNewRequest(context);
+    await _requestStore.save(context);
+    try {
+      return await _picker.pickVideo(source: source);
     } finally {
       await _clearRequestAfterPicker(context);
     }

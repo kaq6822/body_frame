@@ -46,6 +46,13 @@ class AppRoutes {
 
   /// 12. 저장 공간 관리 화면.
   static const storage = 'settings.storage';
+
+  // --- 레슨 동영상 ---
+  /// 13. 레슨 동영상 촬영 화면.
+  static const videoCamera = 'video.camera';
+
+  /// 14. 레슨 동영상 재생 화면.
+  static const videoPlayer = 'video.player';
 }
 
 /// 경로 파라미터 키. 안정적 UUID 식별자를 전달한다.
@@ -54,6 +61,7 @@ class AppParams {
 
   static const recordId = 'recordId';
   static const photoId = 'photoId';
+  static const videoId = 'videoId';
 
   /// 방향/날짜 등은 쿼리 파라미터로 전달한다.
   static const direction = 'direction';

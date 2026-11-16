@@ -20,6 +20,7 @@ final storageStatsServiceProvider = Provider<StorageStatsService>((ref) {
   return StorageStatsServiceImpl(
     database: ref.watch(appDatabaseProvider),
     storage: ref.watch(photoStorageServiceProvider),
+    videoStorage: ref.watch(videoStorageServiceProvider),
   );
 });
 

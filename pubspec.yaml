@@ -71,6 +71,7 @@ dependencies:
 
   # 수평계(가속도계 기반 기울기 표시)
   sensors_plus: ^7.1.1
+  video_player: ^2.14.1
 
 dev_dependencies:
   flutter_test:

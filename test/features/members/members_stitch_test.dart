@@ -1,3 +1,5 @@
+import 'package:bodymark/core/providers.dart';
+import 'package:bodymark/core/repositories/lesson_video_repository.dart';
 import 'package:bodymark/core/korean_text.dart';
 import 'package:bodymark/core/models/models.dart';
 import 'package:bodymark/core/theme/app_theme.dart';
@@ -93,6 +95,8 @@ Future<ProviderContainer> _pump(
     overrides: [
       membersProvider.overrideWith((ref) async => ref.watch(membersState)),
       timelineProvider.overrideWith((ref) async => lessons),
+      recordVideosProvider.overrideWith((ref, id) async => const []),
+      lessonVideoRepositoryProvider.overrideWithValue(_NoVideos()),
       clockProvider.overrideWithValue(() => clock ?? _at),
       ...overrides,
     ],
@@ -398,7 +402,7 @@ void main() {
     await tester.pumpAndSettle();
     final error = find.byKey(const ValueKey('lessons.save.error'));
     expect(find.descendant(of: barFinder, matching: error), findsOneWidget);
-    expect(find.text('일지 또는 사진을 추가해주세요.'), findsOneWidget);
+    expect(find.text('일지, 사진 또는 동영상을 추가해주세요.'), findsOneWidget);
   });
 
   testWidgets('14 삭제된 회원으로 걸린 필터는 전체 회원으로 돌아간다', (tester) async {
@@ -1374,7 +1378,11 @@ class _RecordingMemberRepository implements MemberRepository {
   Future<void> delete(String id) async => deleted.add(id);
 
   @override
-  Future<void> saveLesson(PhotoRecord record, List<BodyPhoto> photos) async {
+  Future<void> saveLesson(
+    PhotoRecord record,
+    List<BodyPhoto> photos, {
+    List<LessonVideo> addedVideos = const [],
+  }) async {
     saved.add(record);
   }
 
@@ -1396,6 +1404,9 @@ class _FakePicker implements AppImagePicker {
   }
 
   @override
+  Future<XFile?> pickVideo({required ImageSource source}) async => null;
+
+  @override
   Future<XFile?> pickImage({required ImageSource source}) async => null;
   @override
   Future<LostDataResponse> retrieveLostData() async => LostDataResponse.empty();
@@ -1414,4 +1425,15 @@ class _MemoryRequestStore implements ImagePickerRequestStore {
   Future<ImagePickerRequestContext?> load() async => value;
   @override
   Future<void> save(ImagePickerRequestContext context) async => value = context;
+}
+
+class _NoVideos implements LessonVideoRepository {
+  @override
+  Future<List<LessonVideo>> listAll() async => const [];
+  @override
+  Future<List<LessonVideo>> listByRecord(String recordId) async => const [];
+  @override
+  Future<LessonVideo?> getById(String id) async => null;
+  @override
+  Future<void> delete(String id) async {}
 }

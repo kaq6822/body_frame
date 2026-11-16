@@ -1,9 +1,12 @@
+import 'dart:async';
 import '../../core/services/app_image_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
+import '../../core/providers.dart';
 import '../records/providers/records_providers.dart';
+import '../videos/video_providers.dart';
 import 'member.dart';
 import 'member_providers.dart';
 import 'lesson_screens.dart';
@@ -43,6 +46,62 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
     search.clear();
     query = '';
   });
+
+  /// Android에서 동영상 선택 중 앱이 종료돼 복구된 결과. 어느 레슨에도 자동으로
+  /// 붙이지 않고, 선택을 시작한 회원의 레슨 편집을 열 수 있게만 안내한다.
+  Widget _recoveredVideoBanner(RecoveredImagePickerSelection recovered) {
+    final c = recovered.context;
+    final member = ref
+        .watch(membersProvider)
+        .valueOrNull
+        ?.where((m) => m.id == c.memberId)
+        .firstOrNull;
+    return mark(
+      'members.recoveredVideo.banner',
+      MaterialBanner(
+        content: Text(
+          keepPhrasesWhole(
+            member == null
+                ? '중단된 동영상 선택을 복구했어요. 선택한 회원을 찾을 수 없어요.'
+                : '중단된 동영상 선택을 복구했어요. ${member.name} 회원의 레슨에 붙일 수 있어요.',
+          ),
+        ),
+        actions: [
+          mark(
+            'members.recoveredVideo.discard.button',
+            TextButton(
+              onPressed: () async {
+                final cleaner = ref.read(pickerCopyCleanerProvider);
+                try {
+                  await ref
+                      .read(appImagePickerCoordinatorProvider.notifier)
+                      .acknowledgeRecovered(c);
+                } catch (_) {
+                  return;
+                }
+                for (final f in recovered.files) {
+                  unawaited(cleaner(f.path));
+                }
+              },
+              child: const Text('버리기'),
+            ),
+          ),
+          if (member != null)
+            mark(
+              'members.recoveredVideo.open.button',
+              TextButton(
+                onPressed: () => context.push(
+                  c.recordId == null
+                      ? '/members/${member.id}/lessons/new'
+                      : '/members/${member.id}/lessons/${c.recordId}/edit',
+                ),
+                child: const Text('레슨에서 확인'),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -132,6 +191,11 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
                   ],
                 ),
               ),
+            if (ref.watch(appImagePickerCoordinatorProvider)
+                case final recovered?
+                when recovered.context.operation ==
+                    ImagePickerOperation.lessonVideo)
+              _recoveredVideoBanner(recovered),
             // 회원이 없으면 검색할 대상도 없어 첫 등록 안내만 보여 준다.
             if (hasMembers || query.isNotEmpty)
               Padding(
@@ -442,12 +506,28 @@ class _MemberEditorState extends ConsumerState<MemberEditorScreen> {
       lessons = null;
     }
     if (!mounted) return;
+    // 타임라인은 동영상 조회가 실패해도 빈 목록으로 대신하므로, 개수는 따로
+    // 읽어 모를 때 0개로 단정하지 않는다.
+    int? videoCount;
+    try {
+      final ids = {for (final x in lessons ?? const []) x.record.id};
+      videoCount = (await ref.read(lessonVideoRepositoryProvider).listAll())
+          .where((v) => ids.contains(v.recordId))
+          .length;
+    } catch (_) {
+      videoCount = null;
+    }
+    if (!mounted) return;
     final photoCount = lessons?.fold<int>(0, (n, x) => n + x.photos.length);
     if (!await confirm(
       context,
       '이 회원과 기록을 삭제할까요?',
       lessons == null
-          ? '${m.name} 회원의 레슨 기록과 사진이 함께 삭제돼요.'
+          ? '${m.name} 회원의 레슨 기록과 사진·동영상이 함께 삭제돼요.'
+          : videoCount == null
+          ? '${m.name} 회원의 레슨 기록 ${lessons.length}개와 사진 $photoCount장(동영상 포함)이 함께 삭제돼요.'
+          : videoCount > 0
+          ? '${m.name} 회원의 레슨 기록 ${lessons.length}개와 사진 $photoCount장, 동영상 $videoCount개가 함께 삭제돼요.'
           : '${m.name} 회원의 레슨 기록 ${lessons.length}개와 사진 $photoCount장이 함께 삭제돼요.',
       button: '회원 삭제',
       icon: Icons.person_remove_outlined,

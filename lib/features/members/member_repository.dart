@@ -3,20 +3,32 @@ import 'package:sqflite/sqflite.dart';
 import '../../core/database/app_database.dart';
 import '../../core/models/models.dart';
 import '../../core/services/photo_storage_service.dart';
+import '../../core/services/video_storage_service.dart';
 import 'member.dart';
 
 abstract class MemberRepository {
   Future<List<Member>> list();
   Future<void> save(Member member);
   Future<void> delete(String id);
-  Future<void> saveLesson(PhotoRecord record, List<BodyPhoto> addedPhotos);
+
+  /// 일지·사진·동영상 중 하나만 있어도 저장한다. 파일은 미리 저장소에 복사해 둔다.
+  Future<void> saveLesson(
+    PhotoRecord record,
+    List<BodyPhoto> addedPhotos, {
+    List<LessonVideo> addedVideos = const [],
+  });
   Future<void> linkRecord(String recordId, String memberId, DateTime lessonAt);
 }
 
 class SqliteMemberRepository implements MemberRepository {
   final AppDatabase database;
   final PhotoStorageService storage;
-  SqliteMemberRepository(this.database, this.storage);
+  final VideoStorageService videoStorage;
+  SqliteMemberRepository(
+    this.database,
+    this.storage, [
+    VideoStorageService? videoStorage,
+  ]) : videoStorage = videoStorage ?? VideoStorageServiceImpl();
 
   @override
   Future<List<Member>> list() async => (await (await database.database).query(
@@ -51,8 +63,9 @@ class SqliteMemberRepository implements MemberRepository {
   @override
   Future<void> saveLesson(
     PhotoRecord record,
-    List<BodyPhoto> addedPhotos,
-  ) async {
+    List<BodyPhoto> addedPhotos, {
+    List<LessonVideo> addedVideos = const [],
+  }) async {
     if (record.memberId == null) throw ArgumentError('회원이 필요합니다.');
     final maps = <Map<String, Object?>>[];
     for (final p in addedPhotos) {
@@ -62,6 +75,15 @@ class SqliteMemberRepository implements MemberRepository {
         throw ArgumentError('앱 사진 저장소 경로가 아닙니다.');
       }
       maps.add({...p.toMap(), 'file_path': path});
+    }
+    final videoMaps = <Map<String, Object?>>[];
+    for (final v in addedVideos) {
+      if (v.recordId != record.id) throw ArgumentError('동영상 소속이 다릅니다.');
+      final path = await videoStorage.toStoredPath(v.filePath);
+      if (!RegExp(r'^videos/\d{6}/[^/]+$').hasMatch(path)) {
+        throw ArgumentError('앱 동영상 저장소 경로가 아닙니다.');
+      }
+      videoMaps.add({...v.toMap(), 'file_path': path});
     }
     final db = await database.database;
     await db.transaction((tx) async {
@@ -88,11 +110,21 @@ class SqliteMemberRepository implements MemberRepository {
             ),
           ) ??
           0;
+      final existingVideos =
+          Sqflite.firstIntValue(
+            await tx.rawQuery(
+              'SELECT COUNT(*) FROM lesson_videos WHERE record_id = ?',
+              [record.id],
+            ),
+          ) ??
+          0;
       if ((record.memo ?? '').trim().isEmpty &&
           (record.condition ?? '').trim().isEmpty &&
           existing == 0 &&
-          maps.isEmpty) {
-        throw ArgumentError('일지 또는 사진을 추가해주세요.');
+          existingVideos == 0 &&
+          maps.isEmpty &&
+          videoMaps.isEmpty) {
+        throw ArgumentError('일지·사진·동영상 중 하나를 추가해주세요.');
       }
       if (current.isEmpty) {
         await tx.insert('photo_records', record.toMap());
@@ -106,6 +138,9 @@ class SqliteMemberRepository implements MemberRepository {
       }
       for (final photo in maps) {
         await tx.insert('body_photos', photo);
+      }
+      for (final video in videoMaps) {
+        await tx.insert('lesson_videos', video);
       }
     });
   }
@@ -134,16 +169,30 @@ class SqliteMemberRepository implements MemberRepository {
         'SELECT p.file_path FROM body_photos p JOIN photo_records r ON r.id = p.record_id WHERE r.member_id = ?',
         [id],
       );
+      final videoRows = await tx.rawQuery(
+        'SELECT v.file_path FROM lesson_videos v JOIN photo_records r ON r.id = v.record_id WHERE r.member_id = ?',
+        [id],
+      );
       await tx.delete('photo_records', where: 'member_id = ?', whereArgs: [id]);
       await tx.delete('members', where: 'id = ?', whereArgs: [id]);
-      return rows.map((r) => r['file_path'] as String).toList();
+      return (
+        photos: rows.map((r) => r['file_path'] as String).toList(),
+        videos: videoRows.map((r) => r['file_path'] as String).toList(),
+      );
     });
     // Same deletion contract as record repository: no broken live DB references.
-    for (final path in paths) {
+    for (final path in paths.photos) {
       try {
         await storage.deleteFile(path);
       } catch (_) {
         AppLogger.instance.warn('member.photo.cleanup.failure');
+      }
+    }
+    for (final path in paths.videos) {
+      try {
+        await videoStorage.deleteFile(path);
+      } catch (_) {
+        AppLogger.instance.warn('member.video.cleanup.failure');
       }
     }
   }

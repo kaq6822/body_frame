@@ -9,7 +9,7 @@
 | 항목 | 결과 및 증거 |
 | --- | --- |
 | Android 빌드·설치 | `flutter build apk --debug`, `adb install -r` 성공 |
-| 앱 이름·권한 | Body Frame 카메라 권한 팝업 확인. 설치 권한에 CAMERA 존재, RECORD_AUDIO·READ_MEDIA_IMAGES·READ_EXTERNAL_STORAGE 없음 |
+| 앱 이름·권한 | Body Frame 카메라 권한 팝업 확인. 설치 권한에 CAMERA·RECORD_AUDIO(레슨 동영상 소리) 존재, READ_MEDIA_IMAGES·READ_EXTERNAL_STORAGE 없음 |
 | 카메라 촬영 | 셔터로 정면 촬영 후 `2 / 4 · 좌측면`으로 자동 전환 |
 | 촬영 리뷰 저장 | 저장 진행 상태와 재촬영·날짜·저장 비활성화 확인. 완료 후 카메라 복귀, 기록 1건 및 이전 사진 가이드 표시 |
 | 시스템 갤러리 선택 | Android Photo Picker로 사진 선택. 추가 저장소 권한 팝업 없이 등록 목록으로 복귀 |

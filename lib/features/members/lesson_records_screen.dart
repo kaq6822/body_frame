@@ -34,11 +34,16 @@ class LessonCard extends StatelessWidget {
     final colors = context.colors;
     final photos = item.photos;
     final summary = phaseSummary(photos);
-    final subtitle = photos.isEmpty
+    final photoSubtitle = photos.isEmpty
         ? '수업 일지'
         : summary.isEmpty
         ? '체형 사진 ${photos.length}장'
         : '체형 사진 ${photos.length}장 ($summary)';
+    final subtitle = item.videos.isEmpty
+        ? photoSubtitle
+        : photos.isEmpty
+        ? '동영상 ${item.videos.length}개'
+        : '$photoSubtitle · 동영상 ${item.videos.length}개';
     final (phase, group) = _shownGroup(photos);
     final dateStyle = memberName == null
         ? context.numericTexts.titleMedium.copyWith(

@@ -13,6 +13,8 @@ import '../../features/compare/compare_view_screen.dart';
 import '../../features/records/photo_view_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../features/settings/storage_screen.dart';
+import '../../features/videos/video_camera_screen.dart';
+import '../../features/videos/video_player_screen.dart';
 import 'app_routes.dart';
 
 /// Members are the entry point. Camera exists only inside an explicit capture flow.
@@ -63,6 +65,20 @@ GoRouter createAppRouter({String initialLocation = '/'}) => GoRouter(
       path: '/lessons/:recordId',
       builder: (_, s) =>
           LessonDetailScreen(recordId: s.pathParameters['recordId']!),
+    ),
+    GoRoute(
+      path: '/lessons/:recordId/videos/:videoId',
+      name: AppRoutes.videoPlayer,
+      builder: (_, s) => LessonVideoPlayerScreen(
+        recordId: s.pathParameters[AppParams.recordId]!,
+        videoId: s.pathParameters[AppParams.videoId]!,
+      ),
+    ),
+    // 레슨 편집이 push하고 녹화본(RecordedVideo)을 결과로 받는다.
+    GoRoute(
+      path: '/video-camera',
+      name: AppRoutes.videoCamera,
+      builder: (_, _) => const VideoCameraScreen(),
     ),
     GoRoute(
       path: '/camera',

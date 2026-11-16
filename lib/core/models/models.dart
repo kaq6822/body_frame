@@ -3,4 +3,5 @@ export 'app_settings.dart';
 export 'body_direction.dart';
 export 'body_photo.dart';
 export 'grid_settings.dart';
+export 'lesson_video.dart';
 export 'photo_record.dart';

@@ -5,6 +5,7 @@ import 'package:bodymark/core/korean_text.dart';
 import 'package:bodymark/core/models/models.dart';
 import 'package:bodymark/core/providers.dart';
 import 'package:bodymark/core/repositories/body_photo_repository.dart';
+import 'package:bodymark/core/repositories/lesson_video_repository.dart';
 import 'package:bodymark/core/repositories/photo_record_repository.dart';
 import 'package:bodymark/core/services/app_image_picker.dart';
 import 'package:bodymark/features/capture/providers/capture_providers.dart';
@@ -42,6 +43,9 @@ void main() {
         photoRecordRepositoryProvider.overrideWithValue(records),
         bodyPhotoRepositoryProvider.overrideWithValue(
           _EmptyBodyPhotoRepository(),
+        ),
+        lessonVideoRepositoryProvider.overrideWithValue(
+          _EmptyLessonVideoRepository(),
         ),
         appImagePickerProvider.overrideWithValue(picker),
         imagePickerRequestStoreProvider.overrideWithValue(
@@ -127,7 +131,7 @@ void main() {
     );
     await tester.tap(find.byKey(const ValueKey('lessons.save.button')));
     await tester.pumpAndSettle();
-    expect(find.text('일지 또는 사진을 추가해주세요.'), findsOneWidget);
+    expect(find.text('일지, 사진 또는 동영상을 추가해주세요.'), findsOneWidget);
     final memo = find.descendant(
       of: find.byKey(const ValueKey('lessons.memo.field')),
       matching: find.byType(TextField),
@@ -189,6 +193,20 @@ class _EmptyBodyPhotoRepository implements BodyPhotoRepository {
   Future<void> update(BodyPhoto photo) async {}
 }
 
+class _EmptyLessonVideoRepository implements LessonVideoRepository {
+  @override
+  Future<List<LessonVideo>> listAll() async => const [];
+
+  @override
+  Future<List<LessonVideo>> listByRecord(String recordId) async => const [];
+
+  @override
+  Future<LessonVideo?> getById(String id) async => null;
+
+  @override
+  Future<void> delete(String id) async {}
+}
+
 class _CountingLostDataPicker implements AppImagePicker {
   int retrieveLostDataCalls = 0;
 
@@ -200,6 +218,9 @@ class _CountingLostDataPicker implements AppImagePicker {
 
   @override
   Future<List<XFile>> pickMultiImage() async => const [];
+
+  @override
+  Future<XFile?> pickVideo({required ImageSource source}) async => null;
 
   @override
   Future<LostDataResponse> retrieveLostData() async {
@@ -241,8 +262,9 @@ class _MemoryMembers implements MemberRepository {
   @override
   Future<void> saveLesson(
     PhotoRecord record,
-    List<BodyPhoto> addedPhotos,
-  ) async {
+    List<BodyPhoto> addedPhotos, {
+    List<LessonVideo> addedVideos = const [],
+  }) async {
     records.records[record.id] = record;
   }
 

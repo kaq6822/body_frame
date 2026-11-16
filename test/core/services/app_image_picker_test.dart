@@ -370,6 +370,9 @@ class FakeAppImagePicker implements AppImagePicker {
   }
 
   @override
+  Future<XFile?> pickVideo({required ImageSource source}) async => null;
+
+  @override
   Future<LostDataResponse> retrieveLostData() async {
     retrieveLostDataCalls += 1;
     if (throwOnRetrieve) throw StateError('retrieve failure');

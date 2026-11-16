@@ -8,6 +8,7 @@ final memberRepositoryProvider = Provider<MemberRepository>(
   (ref) => SqliteMemberRepository(
     ref.watch(appDatabaseProvider),
     ref.watch(photoStorageServiceProvider),
+    ref.watch(videoStorageServiceProvider),
   ),
 );
 final membersProvider = FutureProvider<List<Member>>(
