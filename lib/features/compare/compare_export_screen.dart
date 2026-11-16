@@ -209,7 +209,11 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
       if (renderObject is! RenderRepaintBoundary) {
         throw StateError('미리보기를 렌더링할 수 없습니다.');
       }
-      final image = await renderObject.toImage(pixelRatio: 2.0);
+      // 화면 폭에 상관없이 같은 해상도로 만든다. 고정 2배면 작은 휴대폰에서
+      // 704px(사진 칸 약 320px)밖에 안 돼 공유하기에 흐리다.
+      final image = await renderObject.toImage(
+        pixelRatio: exportPixelRatio(renderObject.size.width),
+      );
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       if (byteData == null) {
         throw StateError('이미지 인코딩에 실패했습니다.');
@@ -1146,6 +1150,13 @@ class _CompareExportScreenState extends ConsumerState<CompareExportScreen> {
     );
   }
 }
+
+/// 공유 이미지 가로 픽셀. 사진 한 칸이 약 950px가 된다.
+const compareExportWidthPx = 2048.0;
+
+/// 구성 위젯 폭(논리 픽셀)을 [compareExportWidthPx]로 맞추는 배율.
+double exportPixelRatio(double logicalWidth) =>
+    logicalWidth <= 0 ? 2.0 : compareExportWidthPx / logicalWidth;
 
 final _summaryDate = DateFormat('yyyy.MM.dd');
 

@@ -335,12 +335,20 @@ void main() {
         await openExport(tester);
         expect(tester.takeException(), isNull);
 
+        // toImage는 실제 이벤트 루프에서만 끝난다. 고정 지연은 부하에서
+        // 모자라므로 미리보기가 보일 때까지(최대 10초) 나눠 기다린다.
+        final preview = find.byKey(
+          const ValueKey('compare.export.result.thumbnail'),
+        );
         await tester.runAsync(() async {
           await tester.tap(
             find.byKey(const ValueKey('compare.export.generate.button')),
           );
           await tester.pump();
-          await Future<void>.delayed(const Duration(milliseconds: 100));
+          for (var i = 0; i < 500 && preview.evaluate().isEmpty; i++) {
+            await Future<void>.delayed(const Duration(milliseconds: 20));
+            await tester.pump();
+          }
         });
         await tester.pumpAndSettle();
         expect(
