@@ -9,6 +9,8 @@ import '../../core/widgets/status_pill.dart';
 import 'member.dart';
 import 'member_providers.dart';
 import 'ui.dart';
+import 'widgets/member_filter_sheet.dart';
+import 'widgets/record_range_calendar.dart';
 
 /// 레슨 한 건 요약 카드. [memberName]을 주면 전체 기록 목록용(이름이 제목)이다.
 class LessonCard extends StatelessWidget {
@@ -254,8 +256,6 @@ class _LessonRecordsState extends ConsumerState<LessonRecordsScreen> {
   String query = '';
   late String? memberId = widget.initialMemberFilter;
   DateTimeRange? range;
-  String shortDate(DateTime d) =>
-      '${d.month.toString().padLeft(2, '0')}.${d.day.toString().padLeft(2, '0')}';
 
   bool filtered(String? member) =>
       query.isNotEmpty || (member ?? '').isNotEmpty || range != null;
@@ -283,60 +283,125 @@ class _LessonRecordsState extends ConsumerState<LessonRecordsScreen> {
         '전체 회원';
   }
 
-  /// 칩 모양 필터 라벨. 선택된 값이 있으면 주요 색 옅은 면으로 표시한다.
-  Widget _chip(IconData icon, String label, bool active) {
+  /// 알약 모양 필터. 누르면 [onTap]으로 시트를 연다. [onClear]가 있으면
+  /// 선택된 상태로 그리고, 펼침 화살표 대신 같은 알약 안에 해제 버튼을 둔다.
+  Widget _pill({
+    required String id,
+    required String semanticLabel,
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    required String clearId,
+    required String clearTooltip,
+    VoidCallback? onClear,
+  }) {
     final colors = context.colors;
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: AppSpacing.minTouchTarget),
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.sp3,
-          vertical: AppSpacing.sp2,
-        ),
-        decoration: BoxDecoration(
-          color: active
-              ? colors.primaryContainer
-              : colors.surfaceContainerLowest,
-          border: Border.all(color: active ? colors.primary : colors.outline),
-          borderRadius: AppRadius.fullAll,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 18,
-              color: active ? colors.onPrimaryContainer : colors.onSurface,
-            ),
-            const SizedBox(width: AppSpacing.sp1),
-            Flexible(
-              child: Text(
-                label,
-                overflow: TextOverflow.ellipsis,
-                style: context.texts.labelLarge?.copyWith(
-                  color: active ? colors.onPrimaryContainer : colors.onSurface,
+    final active = onClear != null;
+    final fg = active ? colors.onPrimaryContainer : colors.onSurface;
+    // DecoratedBox는 테두리만큼 안쪽 여백을 넣지 않아 칩이 검색 필드와 같은
+    // 왼쪽 선에서 시작한다.
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: active ? colors.primaryContainer : colors.surfaceContainerLowest,
+        border: Border.all(color: active ? colors.primary : colors.outline),
+        borderRadius: AppRadius.fullAll,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: mark(
+              id,
+              Tooltip(
+                message: semanticLabel,
+                child: Semantics(
+                  button: true,
+                  child: InkWell(
+                    borderRadius: AppRadius.fullAll,
+                    onTap: onTap,
+                    // 알약 모양은 칩 그림일 뿐이다. 값은 툴팁으로 한 번만 읽힌다.
+                    child: ExcludeSemantics(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          minHeight: AppSpacing.minTouchTarget,
+                        ),
+                        child: Padding(
+                          padding: EdgeInsets.only(
+                            left: AppSpacing.sp3,
+                            right: active ? AppSpacing.sp1 : AppSpacing.sp3,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(icon, size: 18, color: fg),
+                              const SizedBox(width: AppSpacing.sp1),
+                              Flexible(
+                                child: Text(
+                                  label,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: context.numericTexts.labelLarge
+                                      .copyWith(color: fg),
+                                ),
+                              ),
+                              if (!active)
+                                Icon(
+                                  Icons.keyboard_arrow_down,
+                                  size: 18,
+                                  color: fg,
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
-            Icon(
-              Icons.keyboard_arrow_down,
-              size: 18,
-              color: active ? colors.onPrimaryContainer : colors.onSurface,
+          ),
+          if (active)
+            mark(
+              clearId,
+              IconButton(
+                tooltip: clearTooltip,
+                onPressed: onClear,
+                color: fg,
+                iconSize: 18,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(
+                  width: AppSpacing.minTouchTarget,
+                  height: AppSpacing.minTouchTarget,
+                ),
+                icon: const Icon(Icons.close),
+              ),
             ),
-          ],
-        ),
+        ],
       ),
     );
   }
 
-  Future<void> pickRange() async {
-    final r = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-      initialDateRange: range,
+  Future<void> pickMember(String? selected) async {
+    final picked = await showMemberFilterSheet(
+      context,
+      members: ref.read(membersProvider).valueOrNull ?? const [],
+      records: ref.read(timelineProvider).valueOrNull ?? const [],
+      selected: selected,
+      now: ref.read(clockProvider)(),
     );
-    if (r != null && mounted) setState(() => range = r);
+    if (picked != null && mounted) setState(() => memberId = picked);
+  }
+
+  Future<void> pickRange(String? selected) async {
+    final choice = await showRecordRangeSheet(
+      context,
+      counts: recordCountsByDay(
+        ref.read(timelineProvider).valueOrNull ?? const [],
+        selected,
+      ),
+      initial: range,
+      now: ref.read(clockProvider)(),
+    );
+    if (choice != null && mounted) setState(() => range = choice.range);
   }
 
   @override
@@ -353,6 +418,8 @@ class _LessonRecordsState extends ConsumerState<LessonRecordsScreen> {
             loaded.every((m) => m.id != memberId)
         ? null
         : memberId;
+    final memberLabel = memberFilterLabel(members, selectedMember);
+    final now = ref.watch(clockProvider)();
     return mark(
       'screen.lessons.records',
       Scaffold(
@@ -403,67 +470,34 @@ class _LessonRecordsState extends ConsumerState<LessonRecordsScreen> {
                       runSpacing: AppSpacing.sp2,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        mark(
-                          'lessons.member.filter',
-                          PopupMenuButton<String>(
-                            // 기본 툴팁("메뉴 표시")이 스크린리더 이름을 덮지 않게
-                            // 현재 필터 값을 그대로 읽힌다.
-                            tooltip:
-                                '회원 필터: ${memberFilterLabel(members, selectedMember)}',
-                            initialValue: selectedMember ?? '',
-                            onSelected: (v) => setState(() => memberId = v),
-                            itemBuilder: (_) => [
-                              const PopupMenuItem(
-                                value: '',
-                                child: Text('전체 회원'),
-                              ),
-                              const PopupMenuItem(
-                                value: 'unlinked',
-                                child: Text('회원 미연결'),
-                              ),
-                              for (final m in members.valueOrNull ?? [])
-                                PopupMenuItem(value: m.id, child: Text(m.name)),
-                            ],
-                            // 메뉴는 PopupMenuButton이 연다. 칩은 모양만 그리므로
-                            // 스크린리더에 따로 잡히지 않게 의미에서 뺀다.
-                            child: ExcludeSemantics(
-                              child: _chip(
-                                Icons.person_outline,
-                                memberFilterLabel(members, selectedMember),
-                                (selectedMember ?? '').isNotEmpty,
-                              ),
-                            ),
-                          ),
+                        _pill(
+                          id: 'lessons.member.filter',
+                          semanticLabel: '회원 필터: $memberLabel',
+                          icon: Icons.person_outline,
+                          label: memberLabel,
+                          onTap: () => pickMember(selectedMember),
+                          clearId: 'lessons.member.clear.button',
+                          clearTooltip: '회원 필터 해제',
+                          onClear: (selectedMember ?? '').isEmpty
+                              ? null
+                              : () => setState(() => memberId = null),
                         ),
-                        mark(
-                          'lessons.date.filter',
-                          Semantics(
-                            button: true,
-                            label: range == null
-                                ? '기간 필터: 전체 기간'
-                                : '기간 필터: ${shortDate(range!.start)}부터 ${shortDate(range!.end)}까지',
-                            excludeSemantics: true,
-                            child: InkWell(
-                              borderRadius: AppRadius.fullAll,
-                              onTap: pickRange,
-                              child: _chip(
-                                Icons.calendar_month,
-                                range == null
-                                    ? '전체 기간'
-                                    : '${shortDate(range!.start)} ~ ${shortDate(range!.end)}',
-                                range != null,
-                              ),
-                            ),
-                          ),
+                        _pill(
+                          id: 'lessons.date.filter',
+                          semanticLabel: range == null
+                              ? '기간 필터: 전체 기간'
+                              : '기간 필터: ${recordRangeLabel(range!, now)}',
+                          icon: Icons.calendar_month,
+                          label: range == null
+                              ? '전체 기간'
+                              : recordRangeLabel(range!, now),
+                          onTap: () => pickRange(selectedMember),
+                          clearId: 'lessons.date.reset.button',
+                          clearTooltip: '기간 초기화',
+                          onClear: range == null
+                              ? null
+                              : () => setState(() => range = null),
                         ),
-                        if (range != null)
-                          mark(
-                            'lessons.date.reset.button',
-                            TextButton(
-                              onPressed: () => setState(() => range = null),
-                              child: const Text('기간 초기화'),
-                            ),
-                          ),
                       ],
                     ),
                   ),
@@ -495,16 +529,11 @@ class _LessonRecordsState extends ConsumerState<LessonRecordsScreen> {
                       };
                       final list = items.where((x) {
                         final r = x.record;
-                        return (selectedMember == null ||
-                                selectedMember == '' ||
-                                (selectedMember == 'unlinked'
-                                    ? r.memberId == null
-                                    : r.memberId == selectedMember)) &&
-                            (range == null ||
-                                !r.shotAt.isBefore(range!.start) &&
-                                    r.shotAt.isBefore(
-                                      range!.end.add(const Duration(days: 1)),
-                                    )) &&
+                        return matchesMemberFilter(
+                              r.memberId,
+                              selectedMember,
+                            ) &&
+                            (range == null || inDayRange(r.shotAt, range!)) &&
                             '${names[r.memberId] ?? r.label ?? ''} ${r.memo ?? ''} ${r.condition ?? ''}'
                                 .toLowerCase()
                                 .contains(query);
