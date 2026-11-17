@@ -12,8 +12,7 @@ import '../../core/theme/app_tokens.dart';
 import '../members/ui.dart';
 import '../records/providers/records_providers.dart';
 import '../records/services/photo_export_sink.dart';
-import 'video_providers.dart';
-import '../../core/widgets/media_orientation_lock.dart';
+import 'video_playback_view.dart';
 
 /// 레슨 동영상 재생 화면.
 ///
@@ -40,7 +39,7 @@ class _LessonVideoPlayerScreenState
   String? actionError;
 
   /// 확인창·공유 시트가 떠 있는 동안 소리가 계속 나지 않게 재생을 멈춘다.
-  final _playerKey = GlobalKey<_PlayerViewState>();
+  final _playerKey = GlobalKey<VideoPlaybackViewState>();
 
   Future<void> _delete(LessonVideo video) async {
     if (deleting) return;
@@ -161,7 +160,10 @@ class _LessonVideoPlayerScreenState
                 : Column(
                     children: [
                       Expanded(
-                        child: _PlayerView(key: _playerKey, video: video),
+                        child: VideoPlaybackView(
+                          key: _playerKey,
+                          path: video.filePath,
+                        ),
                       ),
                       if (deleting)
                         busy('video.player.delete.busy', '삭제하고 있어요'),
@@ -186,227 +188,6 @@ class _LessonVideoPlayerScreenState
                   ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-enum _PlayerStatus { loading, ready, failure }
-
-class _PlayerView extends ConsumerStatefulWidget {
-  final LessonVideo video;
-  const _PlayerView({super.key, required this.video});
-
-  @override
-  ConsumerState<_PlayerView> createState() => _PlayerViewState();
-}
-
-class _PlayerViewState extends ConsumerState<_PlayerView> {
-  LessonVideoPlayer? _player;
-  _PlayerStatus _status = _PlayerStatus.loading;
-
-  /// 탐색 바를 끄는 중인 위치. 놓기 전까지 재생 위치 갱신이 손가락을 덮지 않게 한다.
-  double? _dragMs;
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_open());
-  }
-
-  void _onTick() {
-    if (mounted) setState(() {});
-  }
-
-  Future<void> _open() async {
-    final previous = _player;
-    _player = null;
-    previous?.removeListener(_onTick);
-    if (previous != null) unawaited(previous.dispose());
-    setState(() => _status = _PlayerStatus.loading);
-    final player = ref.read(lessonVideoPlayerFactoryProvider)(
-      widget.video.filePath,
-    );
-    try {
-      await player.initialize();
-      if (!mounted) {
-        unawaited(player.dispose());
-        return;
-      }
-      player.addListener(_onTick);
-      setState(() {
-        _player = player;
-        _status = _PlayerStatus.ready;
-      });
-    } catch (_) {
-      unawaited(player.dispose().catchError((Object _) {}));
-      if (mounted) setState(() => _status = _PlayerStatus.failure);
-    }
-  }
-
-  @override
-  void dispose() {
-    final player = _player;
-    _player = null;
-    player?.removeListener(_onTick);
-    if (player != null) unawaited(player.dispose());
-    super.dispose();
-  }
-
-  Future<void> pause() async {
-    final player = _player;
-    if (player == null || !player.isPlaying) return;
-    await player.pause();
-    if (mounted) setState(() {});
-  }
-
-  Future<void> _togglePlay() async {
-    final player = _player;
-    if (player == null) return;
-    if (player.isPlaying) {
-      await player.pause();
-    } else {
-      // 끝까지 본 뒤 다시 누르면 처음부터 재생한다.
-      if (player.duration > Duration.zero &&
-          player.position >= player.duration) {
-        await player.seekTo(Duration.zero);
-      }
-      await player.play();
-    }
-    if (mounted) setState(() {});
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final photo = context.photoColors;
-    switch (_status) {
-      case _PlayerStatus.loading:
-        return mark(
-          'video.player.status',
-          Semantics(
-            label: '동영상을 여는 중이에요',
-            child: Center(
-              child: CircularProgressIndicator(color: photo.onChrome),
-            ),
-          ),
-        );
-      case _PlayerStatus.failure:
-        return Center(
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.sp4),
-            child: Card(
-              child: EmptyState(
-                identifier: 'video.player.status',
-                icon: Icons.videocam_off_outlined,
-                title: '동영상을 재생하지 못했어요',
-                body: keepPhrasesWhole('파일이 손상됐거나 이 기기에서 열 수 없는 형식일 수 있어요.'),
-                error: true,
-                compact: true,
-                actions: [
-                  mark(
-                    'video.player.retry.button',
-                    FilledButton.icon(
-                      onPressed: _open,
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('다시 시도'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      case _PlayerStatus.ready:
-        break;
-    }
-    final player = _player!;
-    final totalMs = player.duration.inMilliseconds.toDouble();
-    final positionMs = player.position.inMilliseconds
-        .clamp(0, totalMs <= 0 ? 0 : totalMs)
-        .toDouble();
-    final shownMs = _dragMs ?? positionMs;
-    final timeText =
-        '${formatVideoDuration(Duration(milliseconds: shownMs.round()))} / ${formatVideoDuration(player.duration)}';
-    // 세로 영상은 세로로 고정한다. 가로로 돌리면 좌우가 비어 작게만 보인다.
-    return MediaOrientationLock(
-      aspectRatio: player.aspectRatio,
-      child: Column(
-        children: [
-          Expanded(
-            child: ColoredBox(
-              color: photo.backdrop,
-              child: Center(
-                // 원본 비율을 지켜 화면 안에 맞춘다(잘라내지 않는다).
-                child: AspectRatio(
-                  key: const ValueKey('video.player.view'),
-                  aspectRatio: player.aspectRatio,
-                  child: player.buildView(),
-                ),
-              ),
-            ),
-          ),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.sp2,
-                AppSpacing.sp1,
-                AppSpacing.sp4,
-                AppSpacing.sp2,
-              ),
-              child: Row(
-                children: [
-                  mark(
-                    'video.player.play.button',
-                    IconButton(
-                      tooltip: player.isPlaying ? '일시정지' : '재생',
-                      onPressed: _togglePlay,
-                      iconSize: 32,
-                      color: photo.onChrome,
-                      icon: Icon(
-                        player.isPlaying
-                            ? Icons.pause_circle_filled
-                            : Icons.play_circle_fill,
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: mark(
-                      'video.player.seek.slider',
-                      Slider(
-                        value: totalMs <= 0 ? 0 : shownMs,
-                        max: totalMs <= 0 ? 1 : totalMs,
-                        semanticFormatterCallback: (v) => formatVideoDuration(
-                          Duration(milliseconds: v.round()),
-                        ),
-                        onChanged: totalMs <= 0
-                            ? null
-                            : (v) => setState(() => _dragMs = v),
-                        onChangeEnd: totalMs <= 0
-                            ? null
-                            : (v) async {
-                                await player.seekTo(
-                                  Duration(milliseconds: v.round()),
-                                );
-                                if (mounted) setState(() => _dragMs = null);
-                              },
-                      ),
-                    ),
-                  ),
-                  mark(
-                    'video.player.time.value',
-                    Text(
-                      timeText,
-                      style: context.numericTexts.bodySmall.copyWith(
-                        color: photo.onChrome,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }

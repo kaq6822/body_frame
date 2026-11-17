@@ -1,6 +1,7 @@
 import 'package:camera/camera.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../../core/models/models.dart';
 import 'capture_camera_controller.dart';
 
 /// 레슨 동영상 촬영 화면이 의존하는 카메라 경계.
@@ -53,15 +54,42 @@ bool isAudioPermissionError(Object error) {
       (code.contains('AccessDenied') || code.contains('AccessRestricted'));
 }
 
-/// 동영상은 사진보다 해상도를 낮춰도 동작 확인에 충분하고 파일이 훨씬 커진다.
-/// 1080p부터 시도하고 실패하면 한 단계씩 낮춘다.
-const List<ResolutionPreset> kVideoResolutionFallbackChain = [
-  ResolutionPreset.veryHigh,
-  ResolutionPreset.high,
-  ResolutionPreset.medium,
-];
+/// 화질 설정에 따라 시도할 해상도 순서. 고른 해상도부터 시도하고 기기가
+/// 지원하지 않으면 한 단계씩 낮춘다. 위로 올라가지는 않는다.
+///
+/// Android CameraX 플러그인은 비트레이트 지정을 무시하므로 해상도만 조절한다.
+List<ResolutionPreset> videoResolutionChainFor(VideoQuality quality) =>
+    switch (quality) {
+      VideoQuality.standard => const [
+        ResolutionPreset.high,
+        ResolutionPreset.medium,
+      ],
+      VideoQuality.high => const [
+        ResolutionPreset.veryHigh,
+        ResolutionPreset.high,
+        ResolutionPreset.medium,
+      ],
+    };
 
 class DeviceVideoCameraController implements VideoCameraController {
+  /// 카메라를 열 때마다 현재 화질 설정을 읽는다. 설정을 읽기 전에 화면이
+  /// 열려도 저장된 값으로 시작하도록 생성 시점이 아니라 열 때 묻는다.
+  final Future<VideoQuality> Function() _loadQuality;
+
+  DeviceVideoCameraController({Future<VideoQuality> Function()? loadQuality})
+    : _loadQuality = loadQuality ?? (() async => VideoQuality.defaults);
+
+  /// 이번에 열 때 시도할 해상도 순서. 설정을 읽지 못하면 기본 화질로 연다.
+  Future<List<ResolutionPreset>> resolvePresets() async {
+    VideoQuality quality;
+    try {
+      quality = await _loadQuality();
+    } catch (_) {
+      quality = VideoQuality.defaults;
+    }
+    return videoResolutionChainFor(quality);
+  }
+
   CameraController? _controller;
   List<CameraDescription>? _cameras;
   bool _isFrontLens = false;
@@ -118,7 +146,7 @@ class DeviceVideoCameraController implements VideoCameraController {
     _audioEnabled = tryAudio;
 
     await selectWorkingPreset(
-      presets: kVideoResolutionFallbackChain,
+      presets: await resolvePresets(),
       attempt: (preset) => _initializeWith(description, preset),
       onFailure: (preset, error) {
         debugPrint('video.camera.preset.fallback: ${preset.name} 실패');

@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../core/router/app_routes.dart';
+import '../../core/theme/app_tokens.dart';
+import '../members/ui.dart';
 import 'providers/settings_providers.dart';
 import 'services/storage_stats_service.dart';
 
 /// 저장 공간 관리 화면.
 ///
-/// 전체 저장 공간 사용량과 월별 사진·동영상 용량·개수를 표시한다.
+/// 전체 저장 공간 사용량과 회원별·월별 사진·동영상 용량·개수를 표시한다.
 class StorageScreen extends ConsumerWidget {
   static const screenId = 'screen.settings.storage';
 
@@ -110,6 +114,8 @@ class _StorageBody extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
+        _MemberUsageSection(usages: report.byMember),
+        const SizedBox(height: 16),
         const Text('월별 사용량', style: TextStyle(fontWeight: FontWeight.bold)),
         if (report.byMonth.isEmpty)
           const Padding(
@@ -130,6 +136,176 @@ class _StorageBody extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// 개수 문구. 0인 종류는 빼고, 둘 다 0이면 사진 0장으로 둔다.
+String _countLabel(int photos, int videos) {
+  if (videos == 0) return '사진 $photos장';
+  if (photos == 0) return '동영상 $videos개';
+  return '사진 $photos장 · 동영상 $videos개';
+}
+
+/// 회원별 사용량. 큰 순서로 [collapsedCount]명까지 보이고 "전체 보기"로 펼친다.
+class _MemberUsageSection extends StatefulWidget {
+  static const collapsedCount = 10;
+
+  final List<MemberStorageUsage> usages;
+
+  const _MemberUsageSection({required this.usages});
+
+  @override
+  State<_MemberUsageSection> createState() => _MemberUsageSectionState();
+}
+
+class _MemberUsageSectionState extends State<_MemberUsageSection> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final usages = widget.usages;
+    final visible = _expanded
+        ? usages
+        : usages.take(_MemberUsageSection.collapsedCount).toList();
+    final largest = usages.isEmpty ? 0 : usages.first.totalBytes;
+    return Semantics(
+      identifier: 'storage.members.section',
+      container: true,
+      child: Column(
+        key: const ValueKey('storage.members.section'),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('회원별 사용량', style: TextStyle(fontWeight: FontWeight.bold)),
+          if (usages.isEmpty)
+            Semantics(
+              identifier: 'storage.members.empty',
+              child: const Padding(
+                key: ValueKey('storage.members.empty'),
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Text('회원별로 집계할 사진이나 동영상이 없어요'),
+              ),
+            )
+          else ...[
+            const SizedBox(height: AppSpacing.sp2),
+            for (final usage in visible)
+              _MemberUsageRow(usage: usage, largestBytes: largest),
+            if (!_expanded &&
+                usages.length > _MemberUsageSection.collapsedCount)
+              Semantics(
+                identifier: 'storage.members.showAll.button',
+                button: true,
+                child: TextButton(
+                  key: const ValueKey('storage.members.showAll.button'),
+                  onPressed: () => setState(() => _expanded = true),
+                  child: Text('전체 보기 (${usages.length}명)'),
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _MemberUsageRow extends StatelessWidget {
+  final MemberStorageUsage usage;
+  final int largestBytes;
+
+  const _MemberUsageRow({required this.usage, required this.largestBytes});
+
+  @override
+  Widget build(BuildContext context) {
+    final id = usage.memberId ?? 'unlinked';
+    final name = usage.isUnlinked ? '회원 미연결 기록' : usage.name;
+    final counts = _countLabel(usage.photoCount, usage.videoCount);
+    final size = formatBytes(usage.totalBytes);
+    final ratio = largestBytes <= 0
+        ? 0.0
+        : (usage.totalBytes / largestBytes).clamp(0.0, 1.0);
+    final colors = context.colors;
+    // 글자가 크면 오른쪽 용량이 이름 칸을 밀어내므로 개수 아래 줄로 내린다.
+    final stackSize = MediaQuery.textScalerOf(context).scale(14) > 14 * 1.3;
+    final sizeText = Text(
+      size,
+      key: ValueKey('storage.member.size.$id'),
+      style: context.texts.labelLarge,
+    );
+    return Semantics(
+      identifier: 'storage.member.item.$id',
+      button: true,
+      label: '$name, $counts, $size',
+      excludeSemantics: true,
+      child: InkWell(
+        key: ValueKey('storage.member.item.$id'),
+        borderRadius: AppRadius.mdAll,
+        onTap: () {
+          if (usage.isUnlinked) {
+            context.push(
+              Uri(
+                path: '/records',
+                queryParameters: {
+                  AppParams.memberFilter: AppParams.unlinkedMembers,
+                },
+              ).toString(),
+            );
+          } else {
+            context.push('/members/${usage.memberId}');
+          }
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.sp2),
+          child: Row(
+            children: [
+              if (usage.isUnlinked)
+                CircleAvatar(
+                  radius: 20,
+                  backgroundColor: colors.surfaceContainerHigh,
+                  foregroundColor: colors.onSurfaceVariant,
+                  child: const Icon(Icons.link_off_outlined, size: 20),
+                )
+              else
+                MemberAvatar(usage.name),
+              const SizedBox(width: AppSpacing.sp3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: context.texts.titleSmall,
+                    ),
+                    Text(
+                      counts,
+                      key: ValueKey('storage.member.count.$id'),
+                      style: context.texts.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                    if (stackSize) sizeText,
+                    const SizedBox(height: AppSpacing.sp1),
+                    ClipRRect(
+                      borderRadius: AppRadius.mdAll,
+                      child: LinearProgressIndicator(
+                        key: ValueKey('storage.member.bar.$id'),
+                        value: ratio,
+                        minHeight: 4,
+                        backgroundColor: colors.surfaceContainerHigh,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (!stackSize) ...[
+                const SizedBox(width: AppSpacing.sp3),
+                sizeText,
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -52,6 +52,26 @@ class ExportImageOptions {
   }
 }
 
+/// 앱에서 촬영하는 레슨 동영상의 화질.
+///
+/// Android CameraX는 비트레이트 지정을 무시하므로 해상도가 파일 크기를 정하는
+/// 유일한 수단이다. 1080p는 1분에 100MB를 넘어 기본값은 720p로 둔다.
+enum VideoQuality {
+  /// 720p. 자세·동작 확인에 충분하다.
+  standard,
+
+  /// 1080p.
+  high;
+
+  static const VideoQuality defaults = VideoQuality.standard;
+
+  /// 저장된 이름이 없거나 알 수 없으면 기본값으로 본다.
+  static VideoQuality fromName(Object? name) => VideoQuality.values.firstWhere(
+    (q) => q.name == name,
+    orElse: () => defaults,
+  );
+}
+
 /// 촬영 편의 설정.
 ///
 /// 기기를 거치해 놓고 혼자 전신을 찍는 것이 이 앱의 기본 사용 방식이라,
@@ -71,12 +91,16 @@ class CaptureOptions {
   /// 촬영 화면 수평계 표시. 보조 지표라 꺼도 촬영에는 영향이 없다.
   final bool showLevel;
 
+  /// 앱에서 촬영하는 동영상의 화질. 갤러리에서 고른 동영상에는 적용하지 않는다.
+  final VideoQuality videoQuality;
+
   const CaptureOptions({
     this.timerSeconds = 0,
     this.countdownFeedback = true,
     this.previousGuide = true,
     this.guideOpacity = 0.3,
     this.showLevel = true,
+    this.videoQuality = VideoQuality.defaults,
   });
 
   static const CaptureOptions defaults = CaptureOptions();
@@ -94,6 +118,7 @@ class CaptureOptions {
     bool? previousGuide,
     double? guideOpacity,
     bool? showLevel,
+    VideoQuality? videoQuality,
   }) {
     return CaptureOptions(
       timerSeconds: timerSeconds ?? this.timerSeconds,
@@ -101,6 +126,7 @@ class CaptureOptions {
       guideOpacity: guideOpacity ?? this.guideOpacity,
       countdownFeedback: countdownFeedback ?? this.countdownFeedback,
       showLevel: showLevel ?? this.showLevel,
+      videoQuality: videoQuality ?? this.videoQuality,
     );
   }
 
@@ -110,6 +136,7 @@ class CaptureOptions {
     'previousGuide': previousGuide,
     'guideOpacity': guideOpacity,
     'showLevel': showLevel,
+    'videoQuality': videoQuality.name,
   };
 
   factory CaptureOptions.fromMap(Map<String, dynamic> map) {
@@ -122,6 +149,7 @@ class CaptureOptions {
         1.0,
       ),
       showLevel: (map['showLevel'] as bool?) ?? true,
+      videoQuality: VideoQuality.fromName(map['videoQuality']),
     );
   }
 
@@ -132,7 +160,8 @@ class CaptureOptions {
       other.countdownFeedback == countdownFeedback &&
       other.previousGuide == previousGuide &&
       other.guideOpacity == guideOpacity &&
-      other.showLevel == showLevel;
+      other.showLevel == showLevel &&
+      other.videoQuality == videoQuality;
 
   @override
   int get hashCode => Object.hash(
@@ -141,6 +170,7 @@ class CaptureOptions {
     previousGuide,
     guideOpacity,
     showLevel,
+    videoQuality,
   );
 }
 

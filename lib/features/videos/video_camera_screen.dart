@@ -19,6 +19,7 @@ import '../capture/utils/temporary_capture.dart';
 import '../capture/widgets/camera_notice_card.dart';
 import '../members/member_providers.dart';
 import '../members/ui.dart' show mark;
+import 'video_playback_view.dart';
 import 'video_providers.dart';
 
 /// 레슨 동영상 촬영 화면.
@@ -361,26 +362,94 @@ class _VideoCameraScreenState extends ConsumerState<VideoCameraScreen>
           body: AnnotatedRegion<SystemUiOverlayStyle>(
             // 어두운 촬영 화면 위에서 상태바 아이콘을 밝게 그린다.
             value: SystemUiOverlayStyle.light,
-            child: Stack(
-              fit: StackFit.expand,
+            // 녹화를 마치면 카메라 대신 방금 찍은 영상을 재생해 확인하게 한다.
+            child: _result != null
+                ? _reviewLayout(_result!)
+                : Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Semantics(
+                        label: '레슨 동영상 촬영',
+                        container: true,
+                        child: _cameraArea(),
+                      ),
+                      Positioned(top: 0, left: 0, right: 0, child: _topBar()),
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: _bottomBar(ready),
+                      ),
+                    ],
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 촬영본 확인: 위에 닫기·제목·길이, 가운데 재생기, 아래 다시 녹화·쓰기.
+  Widget _reviewLayout(RecordedVideo result) {
+    final photo = context.photoColors;
+    return Column(
+      children: [
+        SafeArea(
+          bottom: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.sp3,
+              AppSpacing.sp2,
+              AppSpacing.sp3,
+              AppSpacing.sp2,
+            ),
+            child: Row(
               children: [
-                Semantics(
-                  label: '레슨 동영상 촬영',
-                  container: true,
-                  child: _cameraArea(),
+                _hudIconButton(
+                  id: 'video.camera.close.button',
+                  tooltip: '닫기',
+                  icon: Icons.close,
+                  onPressed: _busy ? null : _requestLeave,
                 ),
-                Positioned(top: 0, left: 0, right: 0, child: _topBar()),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: _bottomBar(ready),
+                const SizedBox(width: AppSpacing.sp3),
+                Expanded(
+                  child: Text(
+                    '촬영본 확인',
+                    overflow: TextOverflow.ellipsis,
+                    style: context.texts.titleMedium?.copyWith(
+                      color: photo.onChrome,
+                    ),
+                  ),
                 ),
+                _timePill(),
               ],
             ),
           ),
         ),
-      ),
+        Expanded(
+          child: mark(
+            'video.camera.review',
+            // 카메라 화면이 이미 세로로 고정돼 있다. 재생기가 떠날 때 고정을
+            // 풀면 다시 녹화할 때 카메라가 돌아가므로 방향은 건드리지 않는다.
+            VideoPlaybackView(
+              key: ValueKey(result.path),
+              path: result.path,
+              fitOrientation: false,
+            ),
+          ),
+        ),
+        SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.sp4,
+              AppSpacing.sp2,
+              AppSpacing.sp4,
+              AppSpacing.sp4,
+            ),
+            child: _controls(),
+          ),
+        ),
+      ],
     );
   }
 

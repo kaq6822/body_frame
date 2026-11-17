@@ -285,6 +285,7 @@ class _SettingsBodyState extends ConsumerState<_SettingsBody> {
             ),
           ),
         ),
+        _videoQualityItem(capture),
         const _SectionHeader('데이터'),
         ListTile(
           key: const ValueKey('settings.data.item'),
@@ -308,7 +309,7 @@ class _SettingsBodyState extends ConsumerState<_SettingsBody> {
           key: const ValueKey('settings.storage.item'),
           leading: const Icon(Icons.storage_outlined),
           title: const Text('저장 공간 관리'),
-          subtitle: Text(keepPhrasesWhole('사진 저장 용량 확인')),
+          subtitle: Text(keepPhrasesWhole('사진·동영상 용량과 회원별 사용량')),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => context.pushNamed(AppRoutes.storage),
         ),
@@ -416,6 +417,47 @@ class _SettingsBodyState extends ConsumerState<_SettingsBody> {
     );
   }
 
+  /// 앱 안 동영상 촬영 화질. 시트에서 고르면 바로 저장한다.
+  Widget _videoQualityItem(CaptureOptions capture) {
+    final quality = capture.videoQuality;
+    return Semantics(
+      identifier: 'settings.videoQuality.item',
+      label: '동영상 화질',
+      value: videoQualityLabel(quality),
+      button: true,
+      child: ListTile(
+        key: const ValueKey('settings.videoQuality.item'),
+        leading: const Icon(Icons.videocam_outlined),
+        title: const Text('동영상 화질'),
+        subtitle: Text(
+          keepPhrasesWhole('앱에서 촬영하는 레슨 동영상'),
+          key: const ValueKey('settings.videoQuality.subtitle'),
+        ),
+        trailing: Text(
+          videoQualityLabel(quality),
+          key: const ValueKey('settings.videoQuality.value'),
+          style: context.texts.labelLarge?.copyWith(
+            color: context.colors.primary,
+          ),
+        ),
+        onTap: () async {
+          final picked = await showModalBottomSheet<VideoQuality>(
+            context: context,
+            isScrollControlled: true,
+            useSafeArea: true,
+            showDragHandle: true,
+            builder: (_) => _VideoQualitySheet(current: quality),
+          );
+          if (!mounted || picked == null || picked == quality) return;
+          final latest =
+              ref.read(appSettingsControllerProvider).valueOrNull?.capture ??
+              capture;
+          _updateCapture(latest.copyWith(videoQuality: picked));
+        },
+      ),
+    );
+  }
+
   static String _timerLabel(int seconds) => seconds == 0 ? '끔' : '$seconds초';
 
   void _updateCapture(CaptureOptions next) {
@@ -425,6 +467,80 @@ class _SettingsBodyState extends ConsumerState<_SettingsBody> {
       ref
           .read(appSettingsControllerProvider.notifier)
           .updateSettings((current) => current.copyWith(capture: next)),
+    );
+  }
+}
+
+/// 설정 목록과 시트가 함께 쓰는 화질 이름.
+String videoQualityLabel(VideoQuality quality) => switch (quality) {
+  VideoQuality.standard => '표준 720p',
+  VideoQuality.high => '고화질 1080p',
+};
+
+/// 동영상 화질 선택 시트. 고르면 그 값으로 닫힌다.
+class _VideoQualitySheet extends StatelessWidget {
+  final VideoQuality current;
+
+  const _VideoQualitySheet({required this.current});
+
+  static const _descriptions = {
+    VideoQuality.standard: '자세·동작 확인에 충분해요 · 1분에 약 70MB',
+    VideoQuality.high: '세부까지 선명해요 · 1분에 약 115MB',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      identifier: 'settings.videoQuality.sheet',
+      container: true,
+      child: SingleChildScrollView(
+        key: const ValueKey('settings.videoQuality.sheet'),
+        padding: const EdgeInsets.only(bottom: AppSpacing.sp4),
+        child: RadioGroup<VideoQuality>(
+          groupValue: current,
+          onChanged: (value) => Navigator.of(context).pop(value),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sp4),
+                child: Text('동영상 화질', style: context.texts.titleMedium),
+              ),
+              const SizedBox(height: AppSpacing.sp2),
+              for (final quality in VideoQuality.values)
+                Semantics(
+                  identifier: 'settings.videoQuality.option.${quality.name}',
+                  child: RadioListTile<VideoQuality>(
+                    key: ValueKey(
+                      'settings.videoQuality.option.${quality.name}',
+                    ),
+                    value: quality,
+                    title: Text(videoQualityLabel(quality)),
+                    subtitle: Text(keepPhrasesWhole(_descriptions[quality]!)),
+                  ),
+                ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.sp4,
+                  AppSpacing.sp2,
+                  AppSpacing.sp4,
+                  0,
+                ),
+                child: Text(
+                  keepPhrasesWhole(
+                    '앱에서 촬영할 때만 적용돼요. 갤러리에서 고른 동영상은 원본 그대로 저장돼요.',
+                  ),
+                  key: const ValueKey('settings.videoQuality.note'),
+                  style: context.texts.bodySmall?.copyWith(
+                    color: context.colors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

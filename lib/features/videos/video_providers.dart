@@ -10,11 +10,17 @@ import '../../core/providers.dart';
 import '../../core/services/app_logger.dart';
 
 import '../capture/camera/video_camera_controller.dart';
+import '../settings/providers/settings_providers.dart';
 
 /// 동영상 촬영 화면이 쓸 카메라 컨트롤러 팩토리. 테스트에서 가짜로 바꾼다.
+///
+/// 컨트롤러는 카메라를 열 때 [videoQualityProvider]를 읽어 그 화질부터 시도한다.
 final videoCameraControllerFactoryProvider =
     Provider<VideoCameraController Function()>(
-      (ref) => DeviceVideoCameraController.new,
+      (ref) =>
+          () => DeviceVideoCameraController(
+            loadQuality: () => ref.read(videoQualityProvider.future),
+          ),
     );
 
 /// 촬영 화면이 레슨 편집으로 돌려주는 임시 녹화본.

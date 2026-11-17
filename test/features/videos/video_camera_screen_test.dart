@@ -28,6 +28,7 @@ void main() {
   RecordedVideo? result;
   late bool popped;
   late GlobalKey<NavigatorState> navigator;
+  late List<FakeLessonVideoPlayer> openedPlayers;
 
   setUp(() async {
     root = Directory.systemTemp.createTempSync('bodymark_video_cam_');
@@ -38,6 +39,7 @@ void main() {
     result = null;
     popped = false;
     navigator = GlobalKey<NavigatorState>();
+    openedPlayers = [];
   });
 
   tearDown(() {
@@ -50,6 +52,11 @@ void main() {
         overrides: [
           videoCameraControllerFactoryProvider.overrideWithValue(() => camera),
           screenOrientationLockProvider.overrideWithValue(lock),
+          lessonVideoPlayerFactoryProvider.overrideWithValue((path) {
+            final player = FakeLessonVideoPlayer(path);
+            openedPlayers.add(player);
+            return player;
+          }),
           openAppSettingsProvider.overrideWithValue(
             () async => settingsOpened++,
           ),
@@ -158,6 +165,31 @@ void main() {
     expect(foreground, context.photoColors.onChrome);
     // 테마 기본값(흰 바탕)이면 흰 글자가 보이지 않는다.
     expect(background, context.photoColors.hudSurface);
+  });
+
+  testWidgets('녹화를 마치면 카메라 대신 촬영본을 재생해 확인하고, 다시 녹화하면 카메라로 돌아간다', (
+    tester,
+  ) async {
+    await pump(tester);
+    await tester.tap(key('video.camera.record.button'));
+    await tester.pump();
+    await tester.tap(key('video.camera.stop.button'));
+    await tester.pumpAndSettle();
+    expect(key('video.camera.review'), findsOneWidget);
+    expect(key('video.camera.preview'), findsNothing);
+    expect(openedPlayers.single.path, '${root.path}/rec.mp4');
+    expect(key('video.player.play.button'), findsOneWidget);
+    // 확인 재생기는 카메라의 세로 고정을 건드리지 않는다.
+    expect(lock.restores, 0);
+
+    await tester.tap(key('video.camera.retake.button'));
+    await tester.pumpAndSettle();
+    await tester.tap(key('video.camera.discard.confirm.button'));
+    await tester.pumpAndSettle();
+    expect(key('video.camera.review'), findsNothing);
+    expect(key('video.camera.record.button'), findsOneWidget);
+    expect(openedPlayers.single.disposed, isTrue);
+    expect(lock.restores, 0);
   });
 
   testWidgets('녹화본이 있는데 닫으면 버리기 확인을 거쳐 임시 파일을 지운다', (tester) async {

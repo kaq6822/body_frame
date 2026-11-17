@@ -76,6 +76,18 @@ final appSettingsControllerProvider =
       AppSettingsController.new,
     );
 
+/// 앱에서 촬영하는 동영상의 화질. 동영상 카메라가 열 때 읽는다.
+///
+/// 설정을 읽지 못해도 촬영은 막지 않고 기본 화질(720p)로 연다.
+final videoQualityProvider = FutureProvider<VideoQuality>((ref) async {
+  try {
+    final settings = await ref.watch(appSettingsControllerProvider.future);
+    return settings.capture.videoQuality;
+  } catch (_) {
+    return VideoQuality.defaults;
+  }
+});
+
 /// 저장 공간 사용량(screen.settings.storage).
 final storageUsageProvider = FutureProvider.autoDispose((ref) {
   return ref.watch(storageStatsServiceProvider).collect();

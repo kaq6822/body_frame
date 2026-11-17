@@ -26,6 +26,7 @@ import '../../core/widgets/direction_stepper.dart';
 import '../../core/widgets/info_row.dart';
 import '../../core/widgets/status_pill.dart';
 import '../../core/theme/app_tokens.dart';
+import '../videos/video_playback_view.dart';
 
 class PendingLessonPhoto {
   final String path;
@@ -201,6 +202,18 @@ class _LessonEditorState extends ConsumerState<LessonEditorScreen> {
       dirty = true;
     });
     _reveal(videosSectionKey);
+  }
+
+  /// 저장 전 동영상을 재생해 확인한다.
+  void previewPendingVideo(PendingLessonVideo v) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => LocalVideoPreviewScreen(
+          path: v.path,
+          title: '저장 전 ${phases[v.phase] ?? ''} 동영상',
+        ),
+      ),
+    );
   }
 
   /// 동영상 촬영 화면을 열고 녹화본을 저장 전 목록에 더한다.
@@ -1178,6 +1191,8 @@ class _LessonEditorState extends ConsumerState<LessonEditorScreen> {
                 sizeBytes: v.sizeBytes,
                 pending: true,
                 removable: true,
+                // 저장 전에도 촬영본·선택본을 열어 확인할 수 있다.
+                onTap: busyInput ? null : () => previewPendingVideo(v),
                 onRemove: saving ? null : () => removePendingVideo(v),
               ),
           ],

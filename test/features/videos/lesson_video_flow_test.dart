@@ -23,6 +23,7 @@ import 'package:bodymark/features/records/providers/records_providers.dart';
 import 'package:bodymark/features/records/services/photo_export_sink.dart';
 import 'package:bodymark/features/videos/lesson_video_tile.dart';
 import 'package:bodymark/features/videos/video_player_screen.dart';
+import 'package:bodymark/features/videos/video_playback_view.dart';
 import 'package:bodymark/features/videos/video_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -367,6 +368,41 @@ void main() {
       await tester.pumpAndSettle();
       expect(members.saved, isEmpty);
       expect(key('lessons.save.error'), findsOneWidget);
+    });
+
+    testWidgets('저장 전 동영상도 눌러서 재생해 확인할 수 있다', (tester) async {
+      final opened = <String>[];
+      await _pump(
+        tester,
+        overrides: [
+          ...editorOverrides(),
+          lessonVideoPlayerFactoryProvider.overrideWithValue((path) {
+            opened.add(path);
+            return FakeLessonVideoPlayer(path);
+          }),
+        ],
+        routes: routes,
+        push: '/new',
+      );
+      await reveal(tester, key('lessons.video.record.button'));
+      await tester.tap(key('lessons.video.record.button'));
+      await tester.pumpAndSettle();
+      await tester.tap(key('stub.recorded'));
+      await tester.pumpAndSettle();
+
+      final id = pendingIds(tester).single;
+      await tester.ensureVisible(key(id));
+      await tester.tap(key(id));
+      await tester.pumpAndSettle();
+      expect(key(LocalVideoPreviewScreen.screenId), findsOneWidget);
+      expect(opened, ['/cache/rec.mp4']);
+      expect(key('video.player.play.button'), findsOneWidget);
+
+      // 돌아와도 저장 전 목록은 그대로다.
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(key(LocalVideoPreviewScreen.screenId), findsNothing);
+      expect(pendingIds(tester), [id]);
     });
 
     testWidgets('저장된 동영상 삭제는 확인을 거쳐 리포지토리로 지운다', (tester) async {
