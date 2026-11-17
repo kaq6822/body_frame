@@ -240,7 +240,7 @@ void main() {
     await _pump(tester);
     await reveal(tester, key('home.week.members.button'));
     expect(
-      find.textContaining(keepPhrasesWhole('11.16 월요일부터')),
+      find.textContaining(keepPhrasesWhole('11.16 월 – 11.22 일')),
       findsOneWidget,
     );
     expect(
@@ -263,7 +263,7 @@ void main() {
   testWidgets('한동안 기록이 없는 회원은 경과일 pill과 함께 보이고 없으면 섹션을 숨긴다', (tester) async {
     await _pump(tester);
     await reveal(tester, key('home.idle.m3.row'));
-    expect(find.text('47일 전'), findsOneWidget);
+    expect(find.text('47일 경과'), findsOneWidget);
     await tester.tap(key('home.idle.m3.row'));
     await tester.pumpAndSettle();
     expect(find.text('at /members/m3'), findsOneWidget);
@@ -430,7 +430,7 @@ void main() {
     expect(key('home.expected.m1.row'), findsOneWidget);
     await reveal(tester, key('home.week.members.button'));
     expect(
-      find.textContaining(keepPhrasesWhole('11.16 월요일부터')),
+      find.textContaining(keepPhrasesWhole('11.16 월 – 11.22 일')),
       findsOneWidget,
     );
   });

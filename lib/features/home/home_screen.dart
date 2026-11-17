@@ -360,15 +360,14 @@ class _ExpectedSectionState extends State<_ExpectedSection> {
               ),
             ],
             for (final e in shown)
-              mark(
-                'home.expected.${e.member.id}.row',
-                InkWell(
-                  borderRadius: AppRadius.mdAll,
-                  onTap: () => context.push('/members/${e.member.id}'),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: AppSpacing.sp2,
-                    ),
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.sp2),
+                child: mark(
+                  'home.expected.${e.member.id}.row',
+                  _Tile(
+                    // 오늘 이미 기록한 회원은 바탕 없이 한 단계 낮춘다.
+                    tinted: !e.recordedToday,
+                    onTap: () => context.push('/members/${e.member.id}'),
                     child: Row(
                       children: [
                         MemberAvatar(e.member.name, active: !e.recordedToday),
@@ -527,7 +526,7 @@ class _RecentSection extends StatelessWidget {
                   Expanded(
                     child: mark(
                       'home.recent.compare.button',
-                      OutlinedButton.icon(
+                      FilledButton.icon(
                         onPressed: () =>
                             context.push('/members/${member.id}/compare'),
                         icon: const Icon(Icons.compare_arrows),
@@ -552,43 +551,47 @@ class _WeekSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final start = stats.weekStart;
-    Widget cell(String id, int value, String label) => Expanded(
-      child: mark(
-        'home.week.$id.button',
-        Semantics(
-          button: true,
-          label: '이번 주 $label $value',
-          excludeSemantics: true,
-          child: InkWell(
-            borderRadius: AppRadius.mdAll,
-            onTap: () => context.go('/records'),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                vertical: AppSpacing.sp2,
-                horizontal: AppSpacing.sp1,
-              ),
-              child: Column(
-                children: [
-                  Text(
-                    '$value',
-                    style: context.numericTexts.headlineSmall.copyWith(
-                      color: context.colors.onSurface,
-                    ),
+    final end = start.add(const Duration(days: 6));
+    Widget cell(String id, int value, String label, {bool accent = false}) =>
+        Expanded(
+          child: mark(
+            'home.week.$id.button',
+            Semantics(
+              button: true,
+              label: '이번 주 $label $value',
+              excludeSemantics: true,
+              child: InkWell(
+                borderRadius: AppRadius.mdAll,
+                onTap: () => context.go('/records'),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: AppSpacing.sp2,
+                    horizontal: AppSpacing.sp1,
                   ),
-                  Text(
-                    label,
-                    textAlign: TextAlign.center,
-                    style: context.texts.labelMedium?.copyWith(
-                      color: context.colors.onSurfaceVariant,
-                    ),
+                  child: Column(
+                    children: [
+                      Text(
+                        '$value',
+                        style: context.numericTexts.headlineSmall.copyWith(
+                          color: accent
+                              ? context.colors.primary
+                              : context.colors.onSurface,
+                        ),
+                      ),
+                      Text(
+                        label,
+                        textAlign: TextAlign.center,
+                        style: context.texts.labelMedium?.copyWith(
+                          color: context.colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
-        ),
-      ),
-    );
+        );
     return mark(
       'home.week.section',
       panel(
@@ -599,15 +602,25 @@ class _WeekSection extends StatelessWidget {
               context,
               Icons.calendar_view_week_outlined,
               '이번 주',
-              caption: '${start.month}.${_two(start.day)} 월요일부터',
+              caption:
+                  '${start.month}.${_two(start.day)} 월 – ${end.month}.${_two(end.day)} 일',
             ),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                cell('lessons', stats.lessons, '레슨'),
-                cell('photos', stats.photoRecords, '사진 기록'),
-                cell('members', stats.members, '회원'),
-              ],
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: context.colors.surfaceContainerLow,
+                borderRadius: AppRadius.mdAll,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.sp2),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    cell('lessons', stats.lessons, '레슨'),
+                    cell('photos', stats.photoRecords, '사진 기록', accent: true),
+                    cell('members', stats.members, '회원'),
+                  ],
+                ),
+              ),
             ),
           ],
         ),
@@ -649,14 +662,27 @@ class _IdleSection extends StatelessWidget {
                         MemberAvatar(e.member.name, active: false),
                         const SizedBox(width: AppSpacing.sp3),
                         Expanded(
-                          child: Text(
-                            e.member.name,
-                            style: context.texts.titleSmall,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                e.member.name,
+                                style: context.texts.titleSmall,
+                              ),
+                              if (e.lastLessonAt case final last?)
+                                Text(
+                                  '마지막 레슨 ${last.month}월 ${last.day}일',
+                                  style: context.numericTexts.bodySmall
+                                      .copyWith(
+                                        color: context.colors.onSurfaceVariant,
+                                      ),
+                                ),
+                            ],
                           ),
                         ),
                         const SizedBox(width: AppSpacing.sp2),
                         StatusPill(
-                          label: e.days == null ? '아직 레슨 없음' : '${e.days}일 전',
+                          label: e.days == null ? '아직 레슨 없음' : '${e.days}일 경과',
                           tone: e.days == null
                               ? StatusPillTone.neutral
                               : StatusPillTone.warning,
@@ -672,4 +698,26 @@ class _IdleSection extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 카드 안의 한 행. [tinted]면 옅은 바탕을 깔아 카드 테두리 안에서 행을 나눈다.
+class _Tile extends StatelessWidget {
+  final bool tinted;
+  final VoidCallback onTap;
+  final Widget child;
+  const _Tile({required this.tinted, required this.onTap, required this.child});
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: tinted ? context.colors.surfaceContainerLow : Colors.transparent,
+    borderRadius: AppRadius.mdAll,
+    clipBehavior: Clip.antiAlias,
+    child: InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.sp2),
+        child: child,
+      ),
+    ),
+  );
 }
