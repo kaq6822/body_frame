@@ -165,12 +165,9 @@ void main() {
         find.byKey(const ValueKey('settings.videoQuality.sheet')),
         findsOneWidget,
       );
+      expect(find.text(keepPhrasesWhole('자세·동작 확인에 충분해요')), findsOneWidget);
       expect(
-        find.text(keepPhrasesWhole('자세·동작 확인에 충분해요 · 1분에 약 70MB')),
-        findsOneWidget,
-      );
-      expect(
-        find.text(keepPhrasesWhole('세부까지 선명해요 · 1분에 약 115MB')),
+        find.text(keepPhrasesWhole('세부까지 선명해요 · 용량이 더 커요')),
         findsOneWidget,
       );
       expect(

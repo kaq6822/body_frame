@@ -484,8 +484,8 @@ class _VideoQualitySheet extends StatelessWidget {
   const _VideoQualitySheet({required this.current});
 
   static const _descriptions = {
-    VideoQuality.standard: '자세·동작 확인에 충분해요 · 1분에 약 70MB',
-    VideoQuality.high: '세부까지 선명해요 · 1분에 약 115MB',
+    VideoQuality.standard: '자세·동작 확인에 충분해요',
+    VideoQuality.high: '세부까지 선명해요 · 용량이 더 커요',
   };
 
   @override
