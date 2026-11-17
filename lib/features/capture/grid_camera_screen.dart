@@ -588,76 +588,80 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
         child: Scaffold(
           key: const ValueKey(GridCameraScreen.screenId),
           backgroundColor: context.photoColors.viewfinder,
-          body: SafeArea(
-            child: Stack(
-              children: [
-                Column(
-                  children: [
-                    _buildHeader(),
-                    if (!blocked)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(
-                          AppSpacing.sp2,
-                          0,
-                          AppSpacing.sp2,
-                          AppSpacing.sp2,
+          body: AnnotatedRegion<SystemUiOverlayStyle>(
+            // 어두운 촬영 화면 위에서 상태바 아이콘을 밝게 그린다.
+            value: SystemUiOverlayStyle.light,
+            child: SafeArea(
+              child: Stack(
+                children: [
+                  Column(
+                    children: [
+                      _buildHeader(),
+                      if (!blocked)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(
+                            AppSpacing.sp2,
+                            0,
+                            AppSpacing.sp2,
+                            AppSpacing.sp2,
+                          ),
+                          child: CaptureProgressBar(
+                            shots: session.shots,
+                            currentIndex: session.currentIndex,
+                            onStepSelected: (index) => ref
+                                .read(captureSessionProvider.notifier)
+                                .goTo(index),
+                          ),
                         ),
-                        child: CaptureProgressBar(
-                          shots: session.shots,
-                          currentIndex: session.currentIndex,
-                          onStepSelected: (index) => ref
-                              .read(captureSessionProvider.notifier)
-                              .goTo(index),
-                        ),
-                      ),
-                    Expanded(
-                      child: LayoutBuilder(
-                        builder: (context, constraints) => Stack(
-                          children: [
-                            Positioned.fill(
-                              child: _buildCameraArea(
-                                gridAsync.value,
-                                previousPhotoGuideAsync,
-                                direction,
-                              ),
-                            ),
-                            // 빠른 설정은 미리보기 위에 겹치는 시트다. 패널을 열어도
-                            // 미리보기 크기(3:4 contain)는 바뀌지 않는다.
-                            if (_showQuickPanel)
-                              Positioned(
-                                left: 0,
-                                right: 0,
-                                bottom: 0,
-                                child: _buildQuickPanel(
+                      Expanded(
+                        child: LayoutBuilder(
+                          builder: (context, constraints) => Stack(
+                            children: [
+                              Positioned.fill(
+                                child: _buildCameraArea(
+                                  gridAsync.value,
                                   previousPhotoGuideAsync,
-                                  maxHeight: constraints.maxHeight * 0.7,
+                                  direction,
                                 ),
                               ),
-                          ],
+                              // 빠른 설정은 미리보기 위에 겹치는 시트다. 패널을 열어도
+                              // 미리보기 크기(3:4 contain)는 바뀌지 않는다.
+                              if (_showQuickPanel)
+                                Positioned(
+                                  left: 0,
+                                  right: 0,
+                                  bottom: 0,
+                                  child: _buildQuickPanel(
+                                    previousPhotoGuideAsync,
+                                    maxHeight: constraints.maxHeight * 0.7,
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                    if (ready) _buildHint(session),
-                    if (!blocked)
-                      _buildToggleChips(
-                        gridAsync.value,
-                        previousPhotoGuideAsync,
-                      ),
-                    if (!blocked)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(
-                          AppSpacing.sp4,
-                          AppSpacing.sp2,
-                          AppSpacing.sp4,
-                          AppSpacing.sp3,
+                      if (ready) _buildHint(session),
+                      if (!blocked)
+                        _buildToggleChips(
+                          gridAsync.value,
+                          previousPhotoGuideAsync,
                         ),
-                        child: _buildBottomBar(session),
-                      ),
-                  ],
-                ),
-                if (remaining != null)
-                  Positioned.fill(child: _buildCountdownOverlay(remaining)),
-              ],
+                      if (!blocked)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(
+                            AppSpacing.sp4,
+                            AppSpacing.sp2,
+                            AppSpacing.sp4,
+                            AppSpacing.sp3,
+                          ),
+                          child: _buildBottomBar(session),
+                        ),
+                    ],
+                  ),
+                  if (remaining != null)
+                    Positioned.fill(child: _buildCountdownOverlay(remaining)),
+                ],
+              ),
             ),
           ),
         ),

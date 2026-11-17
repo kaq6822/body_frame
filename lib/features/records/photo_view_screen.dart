@@ -30,6 +30,7 @@ import '../members/ui.dart' show lessonDate, phases, shortLessonDate;
 import 'providers/records_providers.dart';
 import 'services/grid_photo_composer.dart';
 import 'services/photo_export_sink.dart';
+import '../../core/widgets/media_orientation_lock.dart';
 
 /// 원본 사진 보기 화면.
 ///
@@ -86,32 +87,42 @@ class _PhotoViewScreenState extends ConsumerState<PhotoViewScreen> {
           identifier: PhotoViewScreen.screenId,
           container: true,
           label: '원본 사진 보기',
-          child: Scaffold(
-            key: const ValueKey(PhotoViewScreen.screenId),
-            appBar: AppBar(title: _buildTitle(data)),
-            body: async.when(
-              skipLoadingOnReload: true,
-              data: (data) => _PhotoViewBody(
-                key: ValueKey(data.photo.id),
-                detailKey: detailKey,
-                data: data,
-                onChanged: () => _changed = true,
-                onSelectPhoto: (id) => setState(() => _photoId = id),
-              ),
-              loading: () => const _PaneStatus(
-                key: ValueKey('screen.records.photo.status'),
-                state: _OpState.running,
-              ),
-              error: (error, stack) => _PaneStatus(
-                key: const ValueKey('screen.records.photo.status'),
-                state: _OpState.failure,
-                message: '사진 정보를 불러오지 못했어요.',
-                onRetry: () => ref.invalidate(_photoDetailProvider(detailKey)),
-              ),
-            ),
-            bottomNavigationBar: data?.record.memberId == null
+          // 세로로 찍은 사진은 세로로 고정해 가로로 돌려도 작아지지 않게 한다.
+          child: MediaOrientationLock(
+            aspectRatio: data == null
                 ? null
-                : _buildCompareAction(data!.record.memberId!),
+                : MediaOrientationLock.aspectFromSize(
+                    data.photo.width,
+                    data.photo.height,
+                  ),
+            child: Scaffold(
+              key: const ValueKey(PhotoViewScreen.screenId),
+              appBar: AppBar(title: _buildTitle(data)),
+              body: async.when(
+                skipLoadingOnReload: true,
+                data: (data) => _PhotoViewBody(
+                  key: ValueKey(data.photo.id),
+                  detailKey: detailKey,
+                  data: data,
+                  onChanged: () => _changed = true,
+                  onSelectPhoto: (id) => setState(() => _photoId = id),
+                ),
+                loading: () => const _PaneStatus(
+                  key: ValueKey('screen.records.photo.status'),
+                  state: _OpState.running,
+                ),
+                error: (error, stack) => _PaneStatus(
+                  key: const ValueKey('screen.records.photo.status'),
+                  state: _OpState.failure,
+                  message: '사진 정보를 불러오지 못했어요.',
+                  onRetry: () =>
+                      ref.invalidate(_photoDetailProvider(detailKey)),
+                ),
+              ),
+              bottomNavigationBar: data?.record.memberId == null
+                  ? null
+                  : _buildCompareAction(data!.record.memberId!),
+            ),
           ),
         ),
       ),

@@ -127,16 +127,20 @@ class _LessonEditorState extends ConsumerState<LessonEditorScreen> {
     draftStorage = ref.read(photoStorageServiceProvider);
     draftLogger = ref.read(appLoggerProvider);
     pickerCleaner = ref.read(pickerCopyCleanerProvider);
-    if (widget.recordId == null) {
-      // 회원 상세의 "바로 촬영"으로 들어오면 첫 프레임 뒤 촬영 흐름을 연다.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        final request = ref.read(quickCaptureRequestProvider.notifier);
-        if (request.state != widget.memberId) return;
-        request.state = null;
-        capture();
-      });
-    }
+    // 회원 상세의 "사진 촬영"·"동영상 촬영"이나 레슨 상세의 "동영상 추가"로
+    // 들어오면 첫 프레임 뒤에 해당 촬영을 연다.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final request = ref.read(quickCaptureRequestProvider.notifier);
+      final value = request.state;
+      if (value == null ||
+          value.memberId != widget.memberId ||
+          value.recordId != widget.recordId) {
+        return;
+      }
+      request.state = null;
+      value.video ? recordVideo() : capture();
+    });
   }
 
   Future<void> removePending(PendingLessonPhoto p) async {

@@ -861,13 +861,14 @@ class MemberDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _MemberDetailState extends ConsumerState<MemberDetailScreen> {
-  void quickCapture(Member m) {
+  void quickCapture(Member m, {bool video = false}) {
     final request = ref.read(quickCaptureRequestProvider.notifier);
-    request.state = m.id;
+    final value = QuickCaptureRequest(memberId: m.id, video: video);
+    request.state = value;
     // 레슨 화면이 요청을 읽지 못하고 닫혀도 값이 남지 않게, 돌아오면 비운다.
     // 남아 있으면 나중의 '레슨 기록하기'가 촬영을 저절로 연다.
     context.push('/members/${m.id}/lessons/new').whenComplete(() {
-      if (request.state == m.id) request.state = null;
+      if (request.state == value) request.state = null;
     });
   }
 
@@ -941,22 +942,33 @@ class _MemberDetailState extends ConsumerState<MemberDetailScreen> {
                   padding: const EdgeInsets.all(AppSpacing.sp4),
                   children: [
                     _MemberProfileCard(member: m),
+                    mark(
+                      'members.lesson.add.button',
+                      FilledButton.icon(
+                        onPressed: () =>
+                            context.push('/members/${m.id}/lessons/new'),
+                        icon: const Icon(Icons.edit_note),
+                        label: const Text('레슨 기록하기'),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.sp2),
+                    // 촬영 두 가지를 같은 무게로 나란히 둔다. 동영상 촬영을 찾으려고
+                    // 레슨 편집 화면 아래까지 내려가지 않게 한다.
                     _TwoActions(
                       primary: mark(
-                        'members.lesson.add.button',
-                        FilledButton.icon(
-                          onPressed: () =>
-                              context.push('/members/${m.id}/lessons/new'),
-                          icon: const Icon(Icons.edit_note),
-                          label: const Text('레슨 기록하기'),
-                        ),
-                      ),
-                      secondary: mark(
                         'members.capture.button',
                         OutlinedButton.icon(
                           onPressed: () => quickCapture(m),
                           icon: const Icon(Icons.photo_camera_outlined),
-                          label: const Text('바로 촬영'),
+                          label: const Text('사진 촬영'),
+                        ),
+                      ),
+                      secondary: mark(
+                        'members.video.button',
+                        OutlinedButton.icon(
+                          onPressed: () => quickCapture(m, video: true),
+                          icon: const Icon(Icons.videocam_outlined),
+                          label: const Text('동영상 촬영'),
                         ),
                       ),
                     ),

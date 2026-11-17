@@ -362,6 +362,8 @@ class PhotoLoadError extends StatelessWidget {
                     key: ValueKey(retryId),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: onPhoto,
+                      // 테마의 흰 바탕을 덮어야 흰 글자가 보인다.
+                      backgroundColor: photo.hudSurface,
                       side: BorderSide(color: photo.controlOutline),
                     ),
                     onPressed: onRetry,

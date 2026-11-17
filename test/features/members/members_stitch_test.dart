@@ -249,6 +249,30 @@ void main() {
     expect(find.byKey(const ValueKey('screen.lessons.edit')), findsOneWidget);
   });
 
+  testWidgets('회원 상세의 동영상 촬영은 새 레슨에서 바로 동영상 카메라를 연다', (tester) async {
+    final container = await _pump(
+      tester,
+      initial: '/members/m1',
+      members: [_member('m1', '김서연')],
+      extraRoutes: [
+        GoRoute(
+          path: '/video-camera',
+          builder: (_, _) => const Scaffold(key: ValueKey('fake.video.camera')),
+        ),
+      ],
+    );
+    expect(find.text('사진 촬영'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('members.video.button')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('fake.video.camera')), findsOneWidget);
+    expect(container.read(quickCaptureRequestProvider), isNull);
+    // 사진 촬영 준비는 열지 않는다.
+    expect(
+      find.byKey(const ValueKey('screen.capture.preparation')),
+      findsNothing,
+    );
+  });
+
   testWidgets('05 주의사항은 앰버 블록, 레슨 수와 수업 전/후 요약이 보인다', (tester) async {
     await _pump(
       tester,
@@ -565,6 +589,41 @@ void main() {
     expect(find.byKey(const ValueKey('lessons.edit.button')), findsOneWidget);
   });
 
+  testWidgets('동영상 없는 회원 레슨 상세에서 동영상 촬영으로 바로 카메라를 연다', (tester) async {
+    final item = _lesson('r1', 'm1', _at, memo: '호흡 위주');
+    final container = await _pump(
+      tester,
+      initial: '/lessons/r1',
+      members: [_member('m1', '김서연')],
+      lessons: [item],
+      extraRoutes: [
+        detailRoute,
+        GoRoute(
+          path: '/members/:id/lessons/:rid/edit',
+          builder: (_, s) => LessonEditorScreen(
+            memberId: s.pathParameters['id']!,
+            recordId: s.pathParameters['rid']!,
+          ),
+        ),
+        GoRoute(
+          path: '/video-camera',
+          builder: (_, _) => const Scaffold(key: ValueKey('fake.video.camera')),
+        ),
+      ],
+      overrides: detailOverrides(item),
+    );
+    expect(find.text('이 레슨에 추가한 동영상이 없어요.'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('lessons.video.add.button')),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.byKey(const ValueKey('lessons.video.add.button')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('fake.video.camera')), findsOneWidget);
+    expect(container.read(quickCaptureRequestProvider), isNull);
+  });
+
   testWidgets('43 기존 기록 연결은 회원을 미리 고르지 않는다', (tester) async {
     final item = _lesson('r1', null, _at, phases: {'regular': 2});
     await _pump(
@@ -854,7 +913,7 @@ void main() {
     );
     await tester.tap(find.byKey(const ValueKey('members.capture.button')));
     await tester.pumpAndSettle();
-    expect(container.read(quickCaptureRequestProvider), 'm1');
+    expect(container.read(quickCaptureRequestProvider)?.memberId, 'm1');
     Navigator.of(
       tester.element(find.byKey(const ValueKey('test.lesson.stub'))),
     ).pop();

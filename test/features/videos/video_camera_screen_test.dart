@@ -13,6 +13,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:bodymark/core/theme/app_tokens.dart';
 
 import 'video_fakes.dart';
 
@@ -131,6 +132,32 @@ void main() {
     expect(result?.duration, const Duration(seconds: 65, milliseconds: 400));
     expect(result?.capturedAt, _at);
     expect(lock.restores, 1);
+  });
+
+  testWidgets('미리보기는 화면 폭을 다 쓰고 녹화 뒤 다시 녹화 버튼은 어두운 바탕이다', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await pump(tester);
+    // 카드 안에 가두지 않는다. 세로 화면에서는 미리보기가 화면 폭 전체다.
+    expect(tester.getSize(key('video.camera.preview')).width, 360);
+
+    await tester.tap(key('video.camera.record.button'));
+    await tester.pump();
+    await tester.tap(key('video.camera.stop.button'));
+    await tester.pumpAndSettle();
+    final retake = tester.widget<ButtonStyleButton>(
+      find.descendant(
+        of: key('video.camera.retake.button'),
+        matching: find.byWidgetPredicate((w) => w is ButtonStyleButton),
+      ),
+    );
+    final context = tester.element(key('video.camera.retake.button'));
+    final background = retake.style?.backgroundColor?.resolve({});
+    final foreground = retake.style?.foregroundColor?.resolve({});
+    expect(foreground, context.photoColors.onChrome);
+    // 테마 기본값(흰 바탕)이면 흰 글자가 보이지 않는다.
+    expect(background, context.photoColors.hudSurface);
   });
 
   testWidgets('녹화본이 있는데 닫으면 버리기 확인을 거쳐 임시 파일을 지운다', (tester) async {

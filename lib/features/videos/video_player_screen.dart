@@ -13,6 +13,7 @@ import '../members/ui.dart';
 import '../records/providers/records_providers.dart';
 import '../records/services/photo_export_sink.dart';
 import 'video_providers.dart';
+import '../../core/widgets/media_orientation_lock.dart';
 
 /// 레슨 동영상 재생 화면.
 ///
@@ -326,83 +327,87 @@ class _PlayerViewState extends ConsumerState<_PlayerView> {
     final shownMs = _dragMs ?? positionMs;
     final timeText =
         '${formatVideoDuration(Duration(milliseconds: shownMs.round()))} / ${formatVideoDuration(player.duration)}';
-    return Column(
-      children: [
-        Expanded(
-          child: ColoredBox(
-            color: photo.backdrop,
-            child: Center(
-              // 원본 비율을 지켜 화면 안에 맞춘다(잘라내지 않는다).
-              child: AspectRatio(
-                key: const ValueKey('video.player.view'),
-                aspectRatio: player.aspectRatio,
-                child: player.buildView(),
+    // 세로 영상은 세로로 고정한다. 가로로 돌리면 좌우가 비어 작게만 보인다.
+    return MediaOrientationLock(
+      aspectRatio: player.aspectRatio,
+      child: Column(
+        children: [
+          Expanded(
+            child: ColoredBox(
+              color: photo.backdrop,
+              child: Center(
+                // 원본 비율을 지켜 화면 안에 맞춘다(잘라내지 않는다).
+                child: AspectRatio(
+                  key: const ValueKey('video.player.view'),
+                  aspectRatio: player.aspectRatio,
+                  child: player.buildView(),
+                ),
               ),
             ),
           ),
-        ),
-        SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.sp2,
-              AppSpacing.sp1,
-              AppSpacing.sp4,
-              AppSpacing.sp2,
-            ),
-            child: Row(
-              children: [
-                mark(
-                  'video.player.play.button',
-                  IconButton(
-                    tooltip: player.isPlaying ? '일시정지' : '재생',
-                    onPressed: _togglePlay,
-                    iconSize: 32,
-                    color: photo.onChrome,
-                    icon: Icon(
-                      player.isPlaying
-                          ? Icons.pause_circle_filled
-                          : Icons.play_circle_fill,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: mark(
-                    'video.player.seek.slider',
-                    Slider(
-                      value: totalMs <= 0 ? 0 : shownMs,
-                      max: totalMs <= 0 ? 1 : totalMs,
-                      semanticFormatterCallback: (v) => formatVideoDuration(
-                        Duration(milliseconds: v.round()),
-                      ),
-                      onChanged: totalMs <= 0
-                          ? null
-                          : (v) => setState(() => _dragMs = v),
-                      onChangeEnd: totalMs <= 0
-                          ? null
-                          : (v) async {
-                              await player.seekTo(
-                                Duration(milliseconds: v.round()),
-                              );
-                              if (mounted) setState(() => _dragMs = null);
-                            },
-                    ),
-                  ),
-                ),
-                mark(
-                  'video.player.time.value',
-                  Text(
-                    timeText,
-                    style: context.numericTexts.bodySmall.copyWith(
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.sp2,
+                AppSpacing.sp1,
+                AppSpacing.sp4,
+                AppSpacing.sp2,
+              ),
+              child: Row(
+                children: [
+                  mark(
+                    'video.player.play.button',
+                    IconButton(
+                      tooltip: player.isPlaying ? '일시정지' : '재생',
+                      onPressed: _togglePlay,
+                      iconSize: 32,
                       color: photo.onChrome,
+                      icon: Icon(
+                        player.isPlaying
+                            ? Icons.pause_circle_filled
+                            : Icons.play_circle_fill,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                  Expanded(
+                    child: mark(
+                      'video.player.seek.slider',
+                      Slider(
+                        value: totalMs <= 0 ? 0 : shownMs,
+                        max: totalMs <= 0 ? 1 : totalMs,
+                        semanticFormatterCallback: (v) => formatVideoDuration(
+                          Duration(milliseconds: v.round()),
+                        ),
+                        onChanged: totalMs <= 0
+                            ? null
+                            : (v) => setState(() => _dragMs = v),
+                        onChangeEnd: totalMs <= 0
+                            ? null
+                            : (v) async {
+                                await player.seekTo(
+                                  Duration(milliseconds: v.round()),
+                                );
+                                if (mounted) setState(() => _dragMs = null);
+                              },
+                      ),
+                    ),
+                  ),
+                  mark(
+                    'video.player.time.value',
+                    Text(
+                      timeText,
+                      style: context.numericTexts.bodySmall.copyWith(
+                        color: photo.onChrome,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

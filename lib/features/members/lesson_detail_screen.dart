@@ -246,8 +246,10 @@ class _LessonDetailState extends ConsumerState<LessonDetailScreen> {
                           () => ref.invalidate(recordVideosProvider(r.id)),
                         ),
                       ],
-                      data: (videos) =>
-                          videos.isEmpty ? const [] : [_videos(r, videos)],
+                      // 회원 레슨이면 동영상이 없어도 영역을 두고 바로 추가하게 한다.
+                      data: (videos) => videos.isEmpty && r.memberId == null
+                          ? const []
+                          : [_videos(r, videos)],
                     ),
                 if (member != null)
                   mark(
@@ -396,7 +398,17 @@ class _LessonDetailState extends ConsumerState<LessonDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          cardTitle(Icons.videocam_outlined, '동영상 (${videos.length}개)'),
+          cardTitle(
+            Icons.videocam_outlined,
+            videos.isEmpty ? '동영상' : '동영상 (${videos.length}개)',
+          ),
+          if (videos.isEmpty)
+            Text(
+              '이 레슨에 추가한 동영상이 없어요.',
+              style: context.texts.bodyMedium?.copyWith(
+                color: context.colors.onSurfaceVariant,
+              ),
+            ),
           for (final v in videos)
             LessonVideoTile(
               identifier: 'lessons.video.${v.id}.button',
@@ -414,10 +426,35 @@ class _LessonDetailState extends ConsumerState<LessonDetailScreen> {
                       },
                     ),
             ),
+          if (r.memberId case final memberId?) ...[
+            const SizedBox(height: AppSpacing.sp3),
+            mark(
+              'lessons.video.add.button',
+              OutlinedButton.icon(
+                onPressed: deleting ? null : () => _addVideo(memberId, r.id),
+                icon: const Icon(Icons.videocam_outlined),
+                label: const Text('동영상 촬영'),
+              ),
+            ),
+          ],
         ],
       ),
     ),
   );
+
+  /// 레슨 편집을 열고 바로 동영상 촬영을 시작한다. 촬영 뒤 편집 화면에서 저장한다.
+  void _addVideo(String memberId, String recordId) {
+    final request = ref.read(quickCaptureRequestProvider.notifier);
+    final value = QuickCaptureRequest(
+      memberId: memberId,
+      recordId: recordId,
+      video: true,
+    );
+    request.state = value;
+    context.push('/members/$memberId/lessons/$recordId/edit').whenComplete(() {
+      if (request.state == value) request.state = null;
+    });
+  }
 
   List<Widget> _group(PhotoRecord r, String phase, List<BodyPhoto> photos) {
     final group = photos.where((p) => p.phase == phase).toList()

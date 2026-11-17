@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/korean_text.dart';
@@ -341,10 +342,12 @@ class _VideoCameraScreenState extends ConsumerState<VideoCameraScreen>
     super.dispose();
   }
 
+  // 화면 구성: 미리보기가 화면 전체(검은 바탕)를 쓰고, 조작은 그 위에 떠 있다.
+  // 미리보기는 잘라내지 않는다(contain). 녹화되는 화각과 보이는 화면이 같아야
+  // 강사가 회원의 전신이 다 들어왔는지 믿고 찍을 수 있다.
   @override
   Widget build(BuildContext context) {
     final photo = context.photoColors;
-    final onChrome = photo.onChrome;
     final ready = _status == _Status.ready;
     return mark(
       VideoCameraScreen.screenId,
@@ -355,113 +358,209 @@ class _VideoCameraScreenState extends ConsumerState<VideoCameraScreen>
         },
         child: Scaffold(
           backgroundColor: photo.viewfinder,
-          body: SafeArea(
-            child: Column(
+          body: AnnotatedRegion<SystemUiOverlayStyle>(
+            // 어두운 촬영 화면 위에서 상태바 아이콘을 밝게 그린다.
+            value: SystemUiOverlayStyle.light,
+            child: Stack(
+              fit: StackFit.expand,
               children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sp2,
-                    vertical: AppSpacing.sp1,
+                Semantics(
+                  label: '레슨 동영상 촬영',
+                  container: true,
+                  child: _cameraArea(),
+                ),
+                Positioned(top: 0, left: 0, right: 0, child: _topBar()),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: _bottomBar(ready),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 미리보기 위에 떠 있는 둥근 아이콘 버튼. 장면이 밝아도 보이게 어두운 면을 깐다.
+  Widget _hudIconButton({
+    required String id,
+    required String tooltip,
+    required IconData icon,
+    required VoidCallback? onPressed,
+    double size = AppSpacing.minTouchTarget,
+  }) {
+    final photo = context.photoColors;
+    return mark(
+      id,
+      IconButton(
+        onPressed: onPressed,
+        tooltip: tooltip,
+        style: IconButton.styleFrom(
+          backgroundColor: photo.hudSurface,
+          foregroundColor: photo.onChrome,
+          disabledBackgroundColor: photo.hudSurface,
+          disabledForegroundColor: photo.onChrome.withValues(alpha: 0.38),
+          fixedSize: Size.square(size),
+          side: BorderSide(color: photo.hudOutline),
+        ),
+        icon: Icon(icon),
+      ),
+    );
+  }
+
+  Widget _topBar() {
+    final photo = context.photoColors;
+    final showTime = _recording || _result != null;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            photo.chromeGradientTop,
+            photo.chromeGradientTop.withAlpha(0),
+          ],
+        ),
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.sp3,
+            AppSpacing.sp2,
+            AppSpacing.sp3,
+            AppSpacing.sp4,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  _hudIconButton(
+                    id: 'video.camera.close.button',
+                    tooltip: '닫기',
+                    icon: Icons.close,
+                    onPressed: _busy ? null : _requestLeave,
                   ),
-                  child: Row(
-                    children: [
-                      mark(
-                        'video.camera.close.button',
-                        IconButton(
-                          onPressed: _busy ? null : _requestLeave,
-                          tooltip: '닫기',
-                          icon: Icon(Icons.close, color: onChrome),
-                        ),
-                      ),
-                      Expanded(
-                        child: Text(
-                          '레슨 동영상',
-                          overflow: TextOverflow.ellipsis,
-                          style: context.texts.titleMedium?.copyWith(
-                            color: onChrome,
-                          ),
-                        ),
-                      ),
-                      if (_recording || _result != null)
-                        mark(
-                          'video.camera.elapsed.value',
-                          Semantics(
-                            label: _recording ? '녹화 중' : '녹화 길이',
-                            value: formatVideoDuration(
-                              _result?.duration ?? _elapsed,
-                            ),
-                            liveRegion: false,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: AppSpacing.sp3,
-                                vertical: AppSpacing.sp1,
-                              ),
-                              decoration: BoxDecoration(
-                                color: _recording
-                                    ? context.colors.error
-                                    : photo.hudSurface,
-                                borderRadius: AppRadius.fullAll,
-                              ),
-                              child: ExcludeSemantics(
-                                child: Text(
-                                  formatVideoDuration(
-                                    _result?.duration ?? _elapsed,
-                                  ),
-                                  style: context.numericTexts.bodySmall
-                                      .copyWith(
-                                        color: _recording
-                                            ? context.colors.onError
-                                            : onChrome,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      mark(
-                        'video.camera.lens.button',
-                        IconButton(
-                          onPressed:
-                              ready &&
-                                  !_recording &&
-                                  !_busy &&
-                                  _result == null &&
-                                  _controller.canSwitchLens
-                              ? _switchLens
-                              : null,
-                          tooltip: _useFrontLens ? '후면 카메라로 전환' : '전면 카메라로 전환',
-                          icon: Icon(
-                            Icons.cameraswitch_outlined,
-                            color: onChrome,
-                          ),
-                        ),
-                      ),
-                    ],
+                  Expanded(
+                    child: Center(
+                      child: showTime ? _timePill() : const SizedBox.shrink(),
+                    ),
+                  ),
+                  // 닫기 버튼과 같은 폭을 비워 시간 표시를 화면 가운데에 둔다.
+                  const SizedBox(width: AppSpacing.minTouchTarget),
+                ],
+              ),
+              if (_status == _Status.ready && !_controller.audioEnabled)
+                Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.sp2),
+                  child: _muteNotice(),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 녹화 중이면 빨간 점과 경과 시간, 녹화 뒤에는 길이를 보인다.
+  Widget _timePill() {
+    final photo = context.photoColors;
+    final text = formatVideoDuration(_result?.duration ?? _elapsed);
+    return mark(
+      'video.camera.elapsed.value',
+      Semantics(
+        label: _recording ? '녹화 중' : '녹화 길이',
+        value: text,
+        liveRegion: false,
+        child: ExcludeSemantics(
+          child: Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sp3,
+              vertical: AppSpacing.sp1,
+            ),
+            decoration: BoxDecoration(
+              color: _recording ? context.colors.error : photo.hudSurface,
+              borderRadius: AppRadius.fullAll,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_recording) ...[
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: context.colors.onError,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sp2),
+                ],
+                Text(
+                  text,
+                  style: context.numericTexts.titleMedium.copyWith(
+                    color: _recording ? context.colors.onError : photo.onChrome,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
-                Expanded(child: _cameraArea()),
-                if (ready && !_controller.audioEnabled) _muteNotice(),
-                if (_error != null)
-                  mark(
-                    'video.camera.error',
-                    Padding(
-                      padding: const EdgeInsets.all(AppSpacing.sp3),
-                      child: Semantics(
-                        liveRegion: true,
-                        child: Text(
-                          keepPhrasesWhole(_error!),
-                          textAlign: TextAlign.center,
-                          style: context.texts.bodyMedium?.copyWith(
-                            color: onChrome,
-                          ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _bottomBar(bool ready) {
+    final photo = context.photoColors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.bottomCenter,
+          end: Alignment.topCenter,
+          colors: [photo.chrome, photo.chrome.withAlpha(0)],
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.sp4,
+            AppSpacing.sp6,
+            AppSpacing.sp4,
+            AppSpacing.sp4,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_error != null)
+                mark(
+                  'video.camera.error',
+                  Container(
+                    margin: const EdgeInsets.only(bottom: AppSpacing.sp3),
+                    padding: const EdgeInsets.all(AppSpacing.sp3),
+                    decoration: BoxDecoration(
+                      color: photo.panel,
+                      borderRadius: AppRadius.lgAll,
+                    ),
+                    child: Semantics(
+                      liveRegion: true,
+                      child: Text(
+                        keepPhrasesWhole(_error!),
+                        textAlign: TextAlign.center,
+                        style: context.texts.bodyMedium?.copyWith(
+                          color: photo.onChrome,
                         ),
                       ),
                     ),
                   ),
-                if (ready) _controls(),
-              ],
-            ),
+                ),
+              if (ready) _controls(),
+            ],
           ),
         ),
       ),
@@ -497,16 +596,16 @@ class _VideoCameraScreenState extends ConsumerState<VideoCameraScreen>
         settingsPathHint: cameraPermissionSettingsHint,
       ),
     ),
-    _Status.ready => LayoutBuilder(
-      builder: (context, constraints) {
+    _Status.ready => Builder(
+      builder: (context) {
         final aspect = previewAspectFor(
           sensorAspect: _controller.aspectRatio,
           orientation: MediaQuery.orientationOf(context),
         );
         return ColoredBox(
-          color: context.photoColors.backdrop,
+          color: context.photoColors.viewfinder,
           child: Center(
-            // 미리보기는 잘라내지 않는다. 녹화되는 화각과 화면을 같게 둔다.
+            // 화면 폭을 다 쓰되 잘라내지 않는다. 녹화되는 화각과 화면을 같게 둔다.
             child: AspectRatio(
               key: const ValueKey('video.camera.preview'),
               aspectRatio: aspect,
@@ -523,24 +622,21 @@ class _VideoCameraScreenState extends ConsumerState<VideoCameraScreen>
     return mark(
       'video.camera.mute.notice',
       Container(
-        width: double.infinity,
-        margin: const EdgeInsets.fromLTRB(
+        padding: const EdgeInsets.fromLTRB(
           AppSpacing.sp3,
-          AppSpacing.sp2,
-          AppSpacing.sp3,
-          0,
+          AppSpacing.sp1,
+          AppSpacing.sp1,
+          AppSpacing.sp1,
         ),
-        padding: const EdgeInsets.all(AppSpacing.sp3),
         decoration: BoxDecoration(
           color: photo.panel,
           borderRadius: AppRadius.lgAll,
           border: Border.all(color: photo.hudOutline),
         ),
         child: Wrap(
-          alignment: WrapAlignment.spaceBetween,
+          alignment: WrapAlignment.center,
           crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: AppSpacing.sp2,
-          runSpacing: AppSpacing.sp1,
+          spacing: AppSpacing.sp1,
           children: [
             Row(
               mainAxisSize: MainAxisSize.min,
@@ -575,77 +671,94 @@ class _VideoCameraScreenState extends ConsumerState<VideoCameraScreen>
   Widget _controls() {
     final photo = context.photoColors;
     if (_result != null) {
-      return Padding(
-        padding: const EdgeInsets.all(AppSpacing.sp4),
-        child: Row(
-          children: [
-            Expanded(
-              child: mark(
-                'video.camera.retake.button',
-                OutlinedButton.icon(
-                  onPressed: _retake,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: photo.onChrome,
-                    side: BorderSide(color: photo.controlOutline),
-                  ),
-                  icon: const Icon(Icons.replay),
-                  label: const Text('다시 녹화'),
+      return Row(
+        children: [
+          Expanded(
+            child: mark(
+              'video.camera.retake.button',
+              OutlinedButton.icon(
+                onPressed: _retake,
+                // 테마의 OutlinedButton은 흰 바탕이다. 어두운 면을 직접 깔아야
+                // 흰 글자가 보인다.
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: photo.onChrome,
+                  backgroundColor: photo.hudSurface,
+                  side: BorderSide(color: photo.controlOutline),
                 ),
+                icon: const Icon(Icons.replay),
+                label: const Text('다시 녹화'),
               ),
             ),
-            const SizedBox(width: AppSpacing.sp3),
-            Expanded(
-              child: mark(
-                'video.camera.use.button',
-                FilledButton.icon(
-                  onPressed: _use,
-                  icon: const Icon(Icons.check),
-                  label: const Text('이 동영상 쓰기'),
-                ),
+          ),
+          const SizedBox(width: AppSpacing.sp3),
+          Expanded(
+            child: mark(
+              'video.camera.use.button',
+              FilledButton.icon(
+                onPressed: _use,
+                icon: const Icon(Icons.check),
+                label: const Text('이 동영상 쓰기'),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       );
     }
     final id = _recording
         ? 'video.camera.stop.button'
         : 'video.camera.record.button';
-    return Padding(
-      padding: const EdgeInsets.all(AppSpacing.sp4),
-      child: mark(
-        id,
-        Semantics(
-          button: true,
-          label: _recording ? '녹화 정지' : '녹화 시작',
-          child: ExcludeSemantics(
-            child: InkResponse(
-              onTap: _busy ? null : (_recording ? _stop : _start),
-              radius: 40,
-              child: Container(
-                width: 72,
-                height: 72,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: photo.onChrome, width: 4),
-                ),
-                alignment: Alignment.center,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  width: _recording ? 28 : 56,
-                  height: _recording ? 28 : 56,
+    final canSwitch = !_recording && !_busy && _controller.canSwitchLens;
+    // 셔터를 가운데 두고 양옆을 같은 폭으로 둔다. 렌즈 전환은 엄지가 닿는
+    // 오른쪽 아래에 둔다(녹화 중에는 막는다).
+    return Row(
+      children: [
+        const Expanded(child: SizedBox.shrink()),
+        mark(
+          id,
+          Semantics(
+            button: true,
+            label: _recording ? '녹화 정지' : '녹화 시작',
+            child: ExcludeSemantics(
+              child: InkResponse(
+                onTap: _busy ? null : (_recording ? _stop : _start),
+                radius: 44,
+                child: Container(
+                  width: 76,
+                  height: 76,
                   decoration: BoxDecoration(
-                    color: context.colors.error,
-                    borderRadius: _recording
-                        ? AppRadius.smAll
-                        : AppRadius.fullAll,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: photo.onChrome, width: 4),
+                  ),
+                  alignment: Alignment.center,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    width: _recording ? 28 : 58,
+                    height: _recording ? 28 : 58,
+                    decoration: BoxDecoration(
+                      color: context.colors.error,
+                      borderRadius: _recording
+                          ? AppRadius.smAll
+                          : AppRadius.fullAll,
+                    ),
                   ),
                 ),
               ),
             ),
           ),
         ),
-      ),
+        Expanded(
+          child: Align(
+            alignment: Alignment.center,
+            child: _hudIconButton(
+              id: 'video.camera.lens.button',
+              tooltip: _useFrontLens ? '후면 카메라로 전환' : '전면 카메라로 전환',
+              icon: Icons.cameraswitch_outlined,
+              onPressed: canSwitch ? _switchLens : null,
+              size: 56,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
