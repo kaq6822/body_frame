@@ -101,14 +101,14 @@ class _Branch extends StatelessWidget {
       ignoring: !active,
       child: ExcludeSemantics(
         excluding: !active,
-        child: TickerMode(
-          enabled: active,
-          child: AnimatedOpacity(
-            opacity: active ? 1 : 0,
-            duration: FadingBranchContainer.duration,
-            curve: Curves.easeOut,
-            child: child,
-          ),
+        // 페이드는 TickerMode 바깥에 둔다. 안쪽에 두면 비활성 탭의 티커가
+        // 먼저 멈춰 사라지는 애니메이션이 돌지 않고, 불투명한 채로 남아
+        // 마지막 탭(설정)이 다른 탭을 계속 덮는다.
+        child: AnimatedOpacity(
+          opacity: active ? 1 : 0,
+          duration: FadingBranchContainer.duration,
+          curve: Curves.easeOut,
+          child: TickerMode(enabled: active, child: child),
         ),
       ),
     );

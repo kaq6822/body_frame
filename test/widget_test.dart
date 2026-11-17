@@ -77,7 +77,25 @@ void main() {
     await tester.pumpWidget(buildApp(_CountingLostDataPicker()));
     await tester.pumpAndSettle();
     expect(find.byType(NavigationDestination), findsNWidgets(4));
-    Finder shown(String id) => find.byKey(ValueKey(id)).hitTestable();
+    // 눌리는지뿐 아니라 실제로 보이는지(불투명도)까지 본다. 페이드가 멈춰
+    // 이전 탭이 불투명하게 남으면 다른 탭을 덮는다.
+    double opacityOf(String id) => tester
+        .widgetList<FadeTransition>(
+          find.ancestor(
+            of: find.byKey(ValueKey(id)),
+            matching: find.byType(FadeTransition),
+          ),
+        )
+        .fold(1.0, (v, o) => v * o.opacity.value);
+    Finder shown(String id) {
+      final f = find.byKey(ValueKey(id)).hitTestable();
+      if (f.evaluate().isNotEmpty) {
+        expect(opacityOf(id), 1.0, reason: '$id 보임');
+      }
+      return f;
+    }
+
+    void hidden(String id) => expect(opacityOf(id), 0.0, reason: '$id 숨김');
     // 탭 바는 틀에 하나만 있고, 탭을 바꿔도 같은 요소 그대로다(같이 전환되지 않는다).
     final bar = tester.element(find.byKey(const ValueKey('main.navigation')));
     await tester.tap(find.byType(NavigationDestination).at(1));
@@ -93,6 +111,9 @@ void main() {
     await tester.tap(find.byType(NavigationDestination).at(0));
     await tester.pumpAndSettle();
     expect(shown('screen.home'), findsOneWidget);
+    hidden(SettingsScreen.screenId);
+    hidden('screen.lessons.records');
+    hidden('screen.members.list');
     expect(
       tester.element(find.byKey(const ValueKey('main.navigation'))),
       same(bar),
