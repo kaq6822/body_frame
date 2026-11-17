@@ -1,4 +1,3 @@
-import '../members/ui.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -37,7 +36,6 @@ class SettingsScreen extends ConsumerWidget {
       child: Scaffold(
         key: const ValueKey(screenId),
         appBar: AppBar(title: const Text('설정')),
-        bottomNavigationBar: const MainNavigation(3),
         body: settingsAsync.when(
           data: (settings) => const _SettingsBody(),
           loading: () => const Center(
@@ -405,7 +403,7 @@ class _SettingsBodyState extends ConsumerState<_SettingsBody> {
         onTap: () async {
           await context.push(
             Uri(
-              path: '/records',
+              path: AppRoutes.recordsPagePath,
               queryParameters: {
                 AppParams.memberFilter: AppParams.unlinkedMembers,
               },
@@ -442,6 +440,8 @@ class _SettingsBodyState extends ConsumerState<_SettingsBody> {
         ),
         onTap: () async {
           final picked = await showModalBottomSheet<VideoQuality>(
+            // 탭 틀 안에서 열면 하단 탭 위에 걸쳐 뜬다. 화면 전체를 덮게 연다.
+            useRootNavigator: true,
             context: context,
             isScrollControlled: true,
             useSafeArea: true,

@@ -464,7 +464,7 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
 
   void _openRecords() {
     _stopCountdown();
-    context.pushNamed(AppRoutes.records);
+    context.pushNamed(AppRoutes.recordsPage);
   }
 
   /// 닫기·시스템 뒤로가기·일지로 돌아가기의 공통 출구.
@@ -519,7 +519,7 @@ class _GridCameraScreenState extends ConsumerState<GridCameraScreen>
 
   void _openSettings() {
     _stopCountdown();
-    context.pushNamed(AppRoutes.settings);
+    context.pushNamed(AppRoutes.settingsPage);
   }
 
   void _onSkip() {

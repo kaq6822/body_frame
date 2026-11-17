@@ -424,7 +424,6 @@ class _LessonRecordsState extends ConsumerState<LessonRecordsScreen> {
       'screen.lessons.records',
       Scaffold(
         appBar: AppBar(title: const Text('기록')),
-        bottomNavigationBar: const MainNavigation(2),
         body: Column(
           children: [
             Padding(

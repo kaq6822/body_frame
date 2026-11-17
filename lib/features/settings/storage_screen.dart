@@ -243,7 +243,7 @@ class _MemberUsageRow extends StatelessWidget {
           if (usage.isUnlinked) {
             context.push(
               Uri(
-                path: '/records',
+                path: AppRoutes.recordsPagePath,
                 queryParameters: {
                   AppParams.memberFilter: AppParams.unlinkedMembers,
                 },

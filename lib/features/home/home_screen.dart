@@ -139,7 +139,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ),
           ],
         ),
-        bottomNavigationBar: const MainNavigation(0),
         // 복구 배너와 날짜 머리도 스크롤 안에 둔다. 가로 화면·큰 글꼴에서
         // 배너가 떠도 고정 영역이 화면을 넘치지 않는다.
         body: ListView(
@@ -266,9 +265,7 @@ class _UnlinkedBanner extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: AppSpacing.sp4),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          onTap: () => context.push(
-            '/records?${AppParams.memberFilter}=${AppParams.unlinkedMembers}',
-          ),
+          onTap: () => context.push(AppRoutes.unlinkedRecordsLocation),
           child: Padding(
             padding: const EdgeInsets.all(AppSpacing.sp4),
             child: Row(

@@ -24,6 +24,14 @@ class AppRoutes {
   /// 4. 촬영 기록 타임라인 화면.
   static const records = 'records';
 
+  /// 기록 탭과 같은 화면을 다른 화면 위에 따로 연다(하단 탭 없음, 뒤로 가기).
+  /// 카메라나 설정 위에서 열어도 아래 화면을 버리지 않는다.
+  static const recordsPage = 'records.page';
+  static const recordsPagePath = '/all-records';
+
+  /// 회원 미연결 기록만 보이는 기록 화면 위치(push용).
+  static const unlinkedRecordsLocation = '/all-records?member=unlinked';
+
   /// 5. 촬영 기록 상세 화면.
   static const recordDetail = 'records.detail';
 
@@ -46,6 +54,9 @@ class AppRoutes {
   // --- 설정 ---
   /// 11. 앱 설정 화면.
   static const settings = 'settings.home';
+
+  /// 설정 탭과 같은 화면을 다른 화면(카메라 등) 위에 따로 연다.
+  static const settingsPage = 'settings.page';
 
   /// 12. 저장 공간 관리 화면.
   static const storage = 'settings.storage';

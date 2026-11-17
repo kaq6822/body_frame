@@ -192,7 +192,7 @@ void main() {
                 Text('member:${s.pathParameters['id']}', key: const Key('m')),
           ),
           GoRoute(
-            path: '/records',
+            path: '/all-records',
             builder: (_, s) => Text(
               'records:${s.uri.queryParameters['member']}',
               key: const Key('r'),

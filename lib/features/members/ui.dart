@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import '../../core/korean_text.dart';
 import '../../core/models/models.dart';
 import '../../core/theme/app_tokens.dart';
@@ -137,6 +136,8 @@ Future<bool> confirm(
 /// 실제 레슨 일시를 날짜·시각 한 시트에서 고른다. 취소하면 null.
 Future<DateTime?> pickLessonDate(BuildContext context, DateTime current) =>
     showModalBottomSheet<DateTime>(
+      // 탭 틀 안에서 열면 하단 탭 위에 걸쳐 뜬다. 화면 전체를 덮게 연다.
+      useRootNavigator: true,
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -911,58 +912,3 @@ Widget photoGrid(List<Widget> tiles) => Column(
       ),
   ],
 );
-
-class MainNavigation extends StatelessWidget {
-  final int index;
-  const MainNavigation(this.index, {super.key});
-
-  /// 탭은 `go`로 스택을 통째로 바꾼다. 다른 화면 위에 push된 경우(카메라 →
-  /// 설정, 설정 → 기록 등) 탭을 누르면 아래의 카메라 촬영분이나 작성 중인 일지가
-  /// 확인 없이 사라진다. 그래서 탭은 탭 루트 화면에서만 보이고, 뒤로 갈 수 있는
-  /// 화면에서는 숨긴다.
-  @override
-  Widget build(BuildContext context) {
-    if (ModalRoute.of(context)?.canPop ?? false) return const SizedBox.shrink();
-    if (index == 0) return _bar(context);
-    // 홈이 아닌 탭 루트에서 시스템 뒤로가기는 앱을 닫지 않고 홈으로 간다.
-    // 홈에서는 평소처럼 앱이 닫힌다. push된 화면은 위에서 이미 걸러졌다.
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) context.go('/');
-      },
-      child: _bar(context),
-    );
-  }
-
-  Widget _bar(BuildContext context) => mark(
-    'main.navigation',
-    NavigationBar(
-      selectedIndex: index,
-      onDestinationSelected: (i) =>
-          context.go(['/', '/members', '/records', '/settings'][i]),
-      destinations: const [
-        NavigationDestination(
-          icon: Icon(Icons.home_outlined),
-          selectedIcon: Icon(Icons.home),
-          label: '홈',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.people_outline),
-          selectedIcon: Icon(Icons.people),
-          label: '회원',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.article_outlined),
-          selectedIcon: Icon(Icons.article),
-          label: '기록',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.settings_outlined),
-          selectedIcon: Icon(Icons.settings),
-          label: '설정',
-        ),
-      ],
-    ),
-  );
-}

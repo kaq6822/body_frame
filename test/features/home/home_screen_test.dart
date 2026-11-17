@@ -42,6 +42,7 @@ Future<GoRouter> _pump(
         '/members/:id/compare',
         '/lessons/:id',
         '/records',
+        '/all-records',
       ])
         GoRoute(path: path, builder: (_, s) => stub(s)),
     ],
@@ -297,7 +298,7 @@ void main() {
     expect(key('home.unlinked.banner'), findsOneWidget);
     await tester.tap(key('home.unlinked.banner'));
     await tester.pumpAndSettle();
-    expect(find.text('at /records?member=unlinked'), findsOneWidget);
+    expect(find.text('at /all-records?member=unlinked'), findsOneWidget);
   });
 
   testWidgets('미연결 기록이 없으면 안내 띠가 없다', (tester) async {
@@ -400,7 +401,7 @@ void main() {
     final linked = records.indexWhere((x) => x.record.id == 'u1');
     records[linked] = lesson('m1', DateTime(2026, 9, 1), id: 'u1');
     final container = ProviderScope.containerOf(
-      tester.element(find.text('at /records?member=unlinked')),
+      tester.element(find.text('at /all-records?member=unlinked')),
     );
     container.invalidate(timelineProvider);
     await tester.binding.handlePopRoute();

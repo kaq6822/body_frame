@@ -83,7 +83,7 @@ void main() {
             ),
             GoRoute(
               path: 'records',
-              name: AppRoutes.records,
+              name: AppRoutes.recordsPage,
               builder: (context, state) => const Scaffold(
                 key: ValueKey('screen.records.stub'),
                 body: Text('records stub'),
@@ -92,8 +92,8 @@ void main() {
           ],
         ),
         GoRoute(
-          path: '/settings',
-          name: AppRoutes.settings,
+          path: '/app-settings',
+          name: AppRoutes.settingsPage,
           builder: (context, state) => const Scaffold(
             key: ValueKey('screen.settings.stub'),
             body: Text('settings stub'),

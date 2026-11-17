@@ -95,7 +95,6 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
             ),
           ],
         ),
-        bottomNavigationBar: const MainNavigation(1),
         body: Column(
           children: [
             Padding(

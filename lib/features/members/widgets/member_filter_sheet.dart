@@ -65,6 +65,8 @@ Future<String?> showMemberFilterSheet(
   required String? selected,
   required DateTime now,
 }) => showModalBottomSheet<String>(
+  // 탭 틀 안에서 열면 하단 탭 위에 걸쳐 뜬다. 화면 전체를 덮게 연다.
+  useRootNavigator: true,
   context: context,
   isScrollControlled: true,
   useSafeArea: true,

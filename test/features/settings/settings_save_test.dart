@@ -202,6 +202,9 @@ void main() {
       expect(find.text('나의 기록, 나의 기기에'), findsNothing);
       final licenses = find.byKey(const ValueKey('settings.licenses.item'));
       await tester.scrollUntilVisible(licenses, 200);
+      // 화면 끝에 반쯤 걸쳐 멈출 수 있어 완전히 보이게 한 뒤 누른다.
+      await tester.ensureVisible(licenses);
+      await tester.pumpAndSettle();
       await tester.tap(licenses);
       await tester.pumpAndSettle();
       expect(find.byType(LicensePage), findsOneWidget);

@@ -17,24 +17,62 @@ import '../../features/settings/storage_screen.dart';
 import '../../features/videos/video_camera_screen.dart';
 import '../../features/videos/video_player_screen.dart';
 import 'app_routes.dart';
+import 'main_shell.dart';
 
-/// Members are the entry point. Camera exists only inside an explicit capture flow.
+/// 하단 탭 4개(홈·회원·기록·설정)는 한 틀([MainShell]) 안의 가지로 두어 탭
+/// 바가 고정되고 탭마다 상태(스크롤·필터)가 유지된다. 나머지 화면은 모두 루트
+/// 내비게이터에 올라가 탭 바를 덮는다.
 GoRouter createAppRouter({String initialLocation = '/'}) => GoRouter(
   initialLocation: initialLocation,
   routes: [
+    StatefulShellRoute(
+      builder: (_, _, shell) => MainShell(shell: shell),
+      navigatorContainerBuilder: (_, shell, children) => FadingBranchContainer(
+        currentIndex: shell.currentIndex,
+        children: children,
+      ),
+      branches: [
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/',
+              name: AppRoutes.home,
+              builder: (_, _) => const HomeScreen(),
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/members',
+              name: AppRoutes.members,
+              builder: (_, _) => const MembersScreen(),
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/records',
+              name: AppRoutes.records,
+              builder: (_, _) => const LessonRecordsScreen(),
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/settings',
+              name: AppRoutes.settings,
+              builder: (_, _) => const SettingsScreen(),
+            ),
+          ],
+        ),
+      ],
+    ),
     GoRoute(
       path: '/capture-guide',
       builder: (_, _) => const CaptureGuideScreen(),
-    ),
-    GoRoute(
-      path: '/',
-      name: AppRoutes.home,
-      builder: (_, _) => const HomeScreen(),
-    ),
-    GoRoute(
-      path: '/members',
-      name: AppRoutes.members,
-      builder: (_, _) => const MembersScreen(),
     ),
     GoRoute(
       path: '/members/new',
@@ -103,30 +141,29 @@ GoRouter createAppRouter({String initialLocation = '/'}) => GoRouter(
       name: AppRoutes.galleryImport,
       builder: (_, _) => const GalleryImportScreen(),
     ),
+    // 기록 탭과 같은 화면을 다른 화면 위에 연다. "기존 기록 연결"은
+    // `?member=unlinked`로 회원 미연결 기록만 연다.
     GoRoute(
-      path: '/records',
-      name: AppRoutes.records,
-      // 설정의 "기존 기록 연결"은 `?member=unlinked`로 회원 미연결 기록만 연다.
+      path: AppRoutes.recordsPagePath,
+      name: AppRoutes.recordsPage,
       builder: (_, s) => LessonRecordsScreen(
         initialMemberFilter: s.uri.queryParameters[AppParams.memberFilter],
       ),
+    ),
+    // 탭 경로 아래에 두면 탭 틀까지 함께 만들어지므로 최상위에 따로 둔다.
+    GoRoute(
+      path: '/records/:${AppParams.recordId}',
+      name: AppRoutes.recordDetail,
+      builder: (_, s) =>
+          LessonDetailScreen(recordId: s.pathParameters[AppParams.recordId]!),
       routes: [
         GoRoute(
-          path: ':${AppParams.recordId}',
-          name: AppRoutes.recordDetail,
-          builder: (_, s) => LessonDetailScreen(
+          path: 'photos/:${AppParams.photoId}',
+          name: AppRoutes.photoView,
+          builder: (_, s) => PhotoViewScreen(
             recordId: s.pathParameters[AppParams.recordId]!,
+            photoId: s.pathParameters[AppParams.photoId]!,
           ),
-          routes: [
-            GoRoute(
-              path: 'photos/:${AppParams.photoId}',
-              name: AppRoutes.photoView,
-              builder: (_, s) => PhotoViewScreen(
-                recordId: s.pathParameters[AppParams.recordId]!,
-                photoId: s.pathParameters[AppParams.photoId]!,
-              ),
-            ),
-          ],
         ),
       ],
     ),
@@ -152,22 +189,24 @@ GoRouter createAppRouter({String initialLocation = '/'}) => GoRouter(
         ),
       ],
     ),
+    // 카메라 위에서 여는 설정. 탭으로 가면 촬영 흐름이 버려진다.
     GoRoute(
-      path: '/settings',
-      name: AppRoutes.settings,
+      path: '/app-settings',
+      name: AppRoutes.settingsPage,
       builder: (_, _) => const SettingsScreen(),
-      routes: [
-        GoRoute(path: 'data', builder: (_, _) => const InformationScreen()),
-        GoRoute(
-          path: 'privacy',
-          builder: (_, _) => const InformationScreen(privacy: true),
-        ),
-        GoRoute(
-          path: 'storage',
-          name: AppRoutes.storage,
-          builder: (_, _) => const StorageScreen(),
-        ),
-      ],
+    ),
+    GoRoute(
+      path: '/settings/data',
+      builder: (_, _) => const InformationScreen(),
+    ),
+    GoRoute(
+      path: '/settings/privacy',
+      builder: (_, _) => const InformationScreen(privacy: true),
+    ),
+    GoRoute(
+      path: '/settings/storage',
+      name: AppRoutes.storage,
+      builder: (_, _) => const StorageScreen(),
     ),
   ],
   errorBuilder: (context, state) => Scaffold(

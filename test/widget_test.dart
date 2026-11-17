@@ -77,21 +77,51 @@ void main() {
     await tester.pumpWidget(buildApp(_CountingLostDataPicker()));
     await tester.pumpAndSettle();
     expect(find.byType(NavigationDestination), findsNWidgets(4));
+    Finder shown(String id) => find.byKey(ValueKey(id)).hitTestable();
+    // 탭 바는 틀에 하나만 있고, 탭을 바꿔도 같은 요소 그대로다(같이 전환되지 않는다).
+    final bar = tester.element(find.byKey(const ValueKey('main.navigation')));
     await tester.tap(find.byType(NavigationDestination).at(1));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('screen.members.list')), findsOneWidget);
+    expect(shown('screen.members.list'), findsOneWidget);
+    expect(shown('screen.home'), findsNothing);
+    await tester.tap(find.byType(NavigationDestination).at(2));
+    await tester.pumpAndSettle();
+    expect(shown('screen.lessons.records'), findsOneWidget);
+    await tester.tap(find.byType(NavigationDestination).at(3));
+    await tester.pumpAndSettle();
+    expect(shown(SettingsScreen.screenId), findsOneWidget);
+    await tester.tap(find.byType(NavigationDestination).at(0));
+    await tester.pumpAndSettle();
+    expect(shown('screen.home'), findsOneWidget);
+    expect(
+      tester.element(find.byKey(const ValueKey('main.navigation'))),
+      same(bar),
+    );
+    expect(find.byKey(const ValueKey('main.navigation')), findsOneWidget);
+  });
+
+  testWidgets('탭을 오가도 기록 탭의 검색어가 그대로 남는다', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(buildApp(_CountingLostDataPicker()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(NavigationDestination).at(2));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('lessons.search.field')),
+      '호흡',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(NavigationDestination).at(0));
+    await tester.pumpAndSettle();
     await tester.tap(find.byType(NavigationDestination).at(2));
     await tester.pumpAndSettle();
     expect(
-      find.byKey(const ValueKey('screen.lessons.records')),
+      find.descendant(
+        of: find.byKey(const ValueKey('lessons.search.field')),
+        matching: find.text('호흡'),
+      ),
       findsOneWidget,
     );
-    await tester.tap(find.byType(NavigationDestination).at(3));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey(SettingsScreen.screenId)), findsOneWidget);
-    await tester.tap(find.byType(NavigationDestination).at(0));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('screen.home')), findsOneWidget);
   });
   testWidgets('홈이 아닌 탭 루트에서 뒤로가기는 홈으로 가고 push된 화면은 평소처럼 닫힌다', (tester) async {
     SharedPreferences.setMockInitialValues({});
@@ -100,11 +130,15 @@ void main() {
     for (final tab in [1, 2, 3]) {
       await tester.tap(find.byType(NavigationDestination).at(tab));
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('screen.home')), findsNothing);
+      // 탭 화면은 상태 유지를 위해 계속 붙어 있다. 보이고 누를 수 있는지로 본다.
+      expect(
+        find.byKey(const ValueKey('screen.home')).hitTestable(),
+        findsNothing,
+      );
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
       expect(
-        find.byKey(const ValueKey('screen.home')),
+        find.byKey(const ValueKey('screen.home')).hitTestable(),
         findsOneWidget,
         reason: 'tab $tab',
       );
