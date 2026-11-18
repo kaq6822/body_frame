@@ -2,10 +2,12 @@ import 'dart:async';
 import 'package:bodymark/core/services/settings_save_queue.dart';
 import 'package:bodymark/features/records/records_timeline_logic.dart';
 import '../../members/member_providers.dart';
+import '../../members/ui.dart' show phases, shortLessonDate;
 import 'dart:io';
 
 // 이 앱에도 같은 이름의 설정 모델(core/models/app_settings.dart)이 있어 구분한다.
 import 'package:app_settings/app_settings.dart' as platform_settings;
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:bodymark/core/models/models.dart';
@@ -29,6 +31,43 @@ final captureCameraControllerFactoryProvider =
 /// "눌렀을 때 열기를 요청하는지"만 확인한다.
 final openAppSettingsProvider = Provider<Future<void> Function()>(
   (ref) => platform_settings.AppSettings.openAppSettings,
+);
+
+/// 화면 방향 고정 경계.
+///
+/// 전신 자세 사진은 3:4 세로 프레임이라 가로 화면에서는 뷰파인더가 손톱만 해진다.
+/// 카메라 화면이 떠 있는 동안만 세로로 고정하고 나갈 때 원래대로 돌린다. 플랫폼
+/// 채널을 타므로 위젯 테스트에서는 이 provider를 교체해 호출 순서만 확인한다.
+abstract class ScreenOrientationLock {
+  Future<void> lockPortrait();
+
+  /// 앱 기본값(모든 방향 허용)으로 되돌린다.
+  Future<void> restore();
+}
+
+class SystemScreenOrientationLock implements ScreenOrientationLock {
+  const SystemScreenOrientationLock();
+
+  @override
+  Future<void> lockPortrait() => SystemChrome.setPreferredOrientations(const [
+    DeviceOrientation.portraitUp,
+  ]);
+
+  @override
+  Future<void> restore() => SystemChrome.setPreferredOrientations(const []);
+}
+
+final screenOrientationLockProvider = Provider<ScreenOrientationLock>(
+  (ref) => const SystemScreenOrientationLock(),
+);
+
+/// 카메라를 쓸 수 없는 레슨 촬영에서 "사진 선택"을 눌렀다는 신호.
+///
+/// 카메라는 이 값을 true로 두고 결과 없이 닫힌다. 레슨 편집 화면이 값을 읽어
+/// false로 되돌리고 갤러리 선택을 이어서 연다. 라우트 결과 타입(촬영 컷 목록)을
+/// 바꾸지 않으려고 신호를 따로 둔다.
+final cameraGalleryFallbackRequestProvider = StateProvider<bool>(
+  (ref) => false,
 );
 
 /// 같은 촬영 방향의 **본인 기록** 사진 중 가장 최근에 저장됐고 실제 파일도 남아
@@ -173,3 +212,62 @@ final gridSettingsControllerProvider =
         ref.read(gridSettingsSaveQueueProvider.notifier),
       ),
     );
+
+/// 카메라 HUD 헤더 문구. 레슨 촬영이 아니면 null.
+class CameraHeaderInfo {
+  /// 예: "김서연".
+  final String title;
+
+  /// 예: "기준: 11.04 오후 3:00 레슨" / "첫 촬영 · 기준 사진 없음".
+  final String subtitle;
+
+  /// 기준(이전) 사진이 있는지. 없으면 보조줄을 흐리게 표시한다.
+  final bool hasBaseline;
+
+  const CameraHeaderInfo({
+    required this.title,
+    required this.subtitle,
+    required this.hasBaseline,
+  });
+}
+
+/// 레슨 촬영 컨텍스트에서 회원 이름·구분·레슨 일시·기준 기록을 읽어 헤더 문구를
+/// 만든다. 예: "김서연 · 수업 후" / "11.04 오후 3:00 레슨 · 기준: 11.03 오후 3:00 레슨".
+///
+/// 조회가 실패해도 촬영은 계속되어야 하므로 화면은 오류 시 헤더 문구만 생략한다.
+final cameraHeaderInfoProvider = FutureProvider.autoDispose<CameraHeaderInfo?>((
+  ref,
+) async {
+  final captureContext = ref.watch(lessonCaptureContextProvider);
+  if (captureContext == null) return null;
+  final members = await ref.watch(membersProvider.future);
+  final name =
+      members.where((m) => m.id == captureContext.memberId).firstOrNull?.name ??
+      '회원';
+  final phase = phases[captureContext.phase];
+  final title = phase == null ? name : '$name · $phase';
+  final lessonAt = captureContext.lessonAt;
+  final lesson = lessonAt == null ? null : '${shortLessonDate(lessonAt)} 레슨';
+
+  CameraHeaderInfo build(String baseline, {required bool hasBaseline}) =>
+      CameraHeaderInfo(
+        title: title,
+        subtitle: lesson == null ? baseline : '$lesson · $baseline',
+        hasBaseline: hasBaseline,
+      );
+
+  if (!captureContext.useBaseline) {
+    return build('첫 촬영 · 기준 사진 없음', hasBaseline: false);
+  }
+  if (captureContext.baselinePhotos != null) {
+    return build('기준: 이번 레슨 사진', hasBaseline: true);
+  }
+  final recordId = captureContext.baselineRecordId;
+  final record = recordId == null
+      ? null
+      : await ref.watch(photoRecordRepositoryProvider).getById(recordId);
+  return build(
+    record == null ? '기준: 최근 기록' : '기준: ${shortLessonDate(record.shotAt)} 레슨',
+    hasBaseline: true,
+  );
+});

@@ -10,6 +10,7 @@ import 'package:bodymark/core/router/app_routes.dart';
 import 'package:bodymark/core/services/photo_storage_service.dart';
 import 'package:bodymark/features/capture/capture_review_screen.dart';
 import 'package:bodymark/features/capture/providers/capture_session_provider.dart';
+import 'package:bodymark/core/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -165,25 +166,37 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('screen.capture.review')), findsOneWidget);
-    expect(find.text('2장 촬영됨'), findsOneWidget);
-    // 찍은 컷과 건너뛴 컷을 모두 보여준다.
+    expect(find.text('사진 2장'), findsOneWidget);
+    // 처음 찍힌 방향(정면)을 크게 보여 준다. 다른 방향은 탭으로 고른다.
     expect(
       find.byKey(const ValueKey('capture.review.shot.front')),
       findsOneWidget,
     );
     expect(
       find.byKey(const ValueKey('capture.review.shot.leftSide')),
-      findsOneWidget,
+      findsNothing,
     );
     // 찍은 컷은 촬영 당시 격자와 함께 보여준다. 건너뛴 컷에는 얹을 사진이 없다.
+    // 격자는 디코딩으로 사진 사각형을 알아낸 뒤 그 위에만 그린다.
+    final frontGrid = find.byKey(
+      const ValueKey('capture.review.shot.front.grid.overlay'),
+    );
+    await pumpUntil(tester, () => frontGrid.evaluate().isNotEmpty);
+    expect(frontGrid, findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('capture.review.step.leftSide')),
+    );
+    await tester.pumpAndSettle();
     expect(
-      find.byKey(const ValueKey('capture.review.shot.front.grid.overlay')),
+      find.byKey(const ValueKey('capture.review.shot.leftSide')),
       findsOneWidget,
     );
     expect(
       find.byKey(const ValueKey('capture.review.shot.leftSide.grid.overlay')),
       findsNothing,
     );
+    expect(find.text('건너뜀'), findsWidgets);
 
     await tester.ensureVisible(
       find.byKey(const ValueKey('capture.save.button')),
@@ -560,6 +573,164 @@ void main() {
     expect(frontFile.existsSync(), isFalse);
   });
 
+  testWidgets('좁은 화면에서도 네 방향 탭이 한 줄에 잘리지 않고 모두 보인다', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    final container = buildContainer();
+    addTearDown(container.dispose);
+    captureShots(container, {0: frontFile.path, 3: backFile.path});
+
+    await tester.pumpWidget(wrapWithRouter(container));
+    await tester.pumpAndSettle();
+
+    const screenWidth = 360.0;
+    final tops = <double>{};
+    for (final key in ['front', 'leftSide', 'rightSide', 'back']) {
+      final rect = tester.getRect(
+        find.byKey(ValueKey('capture.review.step.$key')),
+      );
+      expect(rect.left, greaterThanOrEqualTo(16));
+      expect(rect.right, lessThanOrEqualTo(screenWidth - 16));
+      tops.add(rect.top);
+    }
+    expect(tops, hasLength(1), reason: '방향 탭은 한 줄이어야 한다');
+    expect(tester.takeException(), isNull);
+
+    // 건너뛴 방향은 탭에 "건너뜀"으로 표시된다.
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('capture.review.step.leftSide')),
+        matching: find.text('건너뜀'),
+      ),
+      findsOneWidget,
+    );
+
+    // 재촬영 버튼의 접근성 라벨에 빈 공백이 끼지 않는다.
+    String retakeLabel(String key) => tester
+        .widget<Semantics>(
+          find
+              .ancestor(
+                of: find.byKey(ValueKey('capture.review.retake.$key')),
+                matching: find.byType(Semantics),
+              )
+              .first,
+        )
+        .properties
+        .label!;
+    expect(retakeLabel('front'), '정면 다시 촬영');
+
+    await tester.tap(
+      find.byKey(const ValueKey('capture.review.step.leftSide')),
+    );
+    await tester.pumpAndSettle();
+    expect(retakeLabel('leftSide'), '좌측면 촬영하기');
+    // 사진 자리의 건너뜀 문구는 어두운 사진 배경 위에서 읽히는 고정 흰색이다.
+    final skipped = tester.widget<Text>(
+      find.descendant(
+        of: find.byKey(const ValueKey('capture.review.shot.leftSide')),
+        matching: find.text('건너뜀'),
+      ),
+    );
+    expect(skipped.style?.color, const AppPhotoColors().onChrome);
+  });
+
+  testWidgets('빠진 방향 촬영은 첫 번째 건너뛴 방향으로 카메라를 돌려보낸다', (tester) async {
+    final container = buildContainer();
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      captureSessionProvider,
+      (previous, next) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    captureShots(container, {0: frontFile.path, 3: backFile.path});
+
+    await tester.pumpWidget(wrapWithRouter(container));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('capture.review.missing.button')),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('capture.review.missing.button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('screen.capture.camera.stub')),
+      findsOneWidget,
+    );
+    final session = container.read(captureSessionProvider);
+    // 좌측면(1)으로 가고, 찍어 둔 정면·후면은 그대로 남는다.
+    expect(session.currentIndex, 1);
+    expect(session.capturedCount, 2);
+    expect(frontFile.existsSync(), isTrue);
+  });
+
+  testWidgets('네 방향을 모두 찍으면 빠진 방향 버튼과 건너뜀 표시가 없다', (tester) async {
+    final container = buildContainer();
+    addTearDown(container.dispose);
+    // 이미지 인코딩은 실제 비동기라 가짜 시간 안에서는 끝나지 않는다.
+    final left = (await tester.runAsync(
+      () => writeTinyPng(tempDir, 'left.png'),
+    ))!;
+    final right = (await tester.runAsync(
+      () => writeTinyPng(tempDir, 'right.png'),
+    ))!;
+    captureShots(container, {
+      0: frontFile.path,
+      1: left.path,
+      2: right.path,
+      3: backFile.path,
+    });
+
+    await tester.pumpWidget(wrapWithRouter(container));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('capture.review.missing.button')),
+      findsNothing,
+    );
+    expect(find.text('건너뜀'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('capture.review.partial.note')),
+      findsNothing,
+    );
+    expect(find.text('사진 4장'), findsOneWidget);
+  });
+
+  testWidgets('일부 방향만 찍으면 안내와 촬영 시각을 보여주고 하단 고정 버튼이 있다', (tester) async {
+    final container = buildContainer();
+    addTearDown(container.dispose);
+    final notifier = container.read(captureSessionProvider.notifier);
+    notifier.goTo(0);
+    notifier.captureCurrent(
+      frontFile.path,
+      gridSettings: GridSettings.defaults,
+      capturedAt: DateTime(2026, 11, 4, 15, 52),
+    );
+
+    await tester.pumpWidget(wrapWithRouter(container));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('capture.review.partial.note')),
+      findsOneWidget,
+    );
+    expect(find.text('실제 촬영 15:52'), findsOneWidget);
+    expect(find.text('사진 1장'), findsOneWidget);
+    // 저장 버튼은 스크롤 영역 밖 하단 바에 있어 항상 보인다.
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('capture.review.actions')),
+        matching: find.byKey(const ValueKey('capture.save.button')),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('촬영 결과가 없으면 안내 문구만 보여준다', (tester) async {
     final container = buildContainer();
     addTearDown(container.dispose);
@@ -567,7 +738,7 @@ void main() {
     await tester.pumpWidget(wrapWithRouter(container));
     await tester.pumpAndSettle();
 
-    expect(find.text('확인할 촬영 결과가 없습니다.'), findsOneWidget);
+    expect(find.text('확인할 촬영 결과가 없어요.'), findsOneWidget);
     expect(find.byKey(const ValueKey('capture.save.button')), findsNothing);
   });
 }

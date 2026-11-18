@@ -36,3 +36,32 @@ bool directionAvailable(
   return photoForDirection(beforePhotos, direction) != null &&
       photoForDirection(afterPhotos, direction) != null;
 }
+
+/// 이미 고른 두 사진과 같은 수업 단계(phase)의 사진 중에서, 양쪽 기록에 모두
+/// 있는 방향.
+///
+/// 같은 레슨의 수업 전·후를 비교할 때 방향을 바꿔도 단계가 섞이지 않게
+/// 단계를 고정한 채로 방향만 고른다.
+List<BodyDirection> pairedDirections({
+  required List<BodyPhoto> beforePhotos,
+  required String beforePhase,
+  required List<BodyPhoto> afterPhotos,
+  required String afterPhase,
+}) {
+  return commonDirections(
+    beforePhotos.where((p) => p.phase == beforePhase).toList(),
+    afterPhotos.where((p) => p.phase == afterPhase).toList(),
+  );
+}
+
+/// [photos] 중 [phase] 단계의 [direction] 사진. 없으면 null.
+BodyPhoto? photoForPhaseDirection(
+  List<BodyPhoto> photos,
+  String phase,
+  BodyDirection direction,
+) {
+  return photoForDirection(
+    photos.where((p) => p.phase == phase).toList(),
+    direction,
+  );
+}

@@ -9,6 +9,8 @@ import 'package:bodymark/core/repositories/body_photo_repository.dart';
 import 'package:bodymark/core/repositories/photo_record_repository.dart';
 import 'package:bodymark/core/services/photo_storage_service.dart';
 import 'package:bodymark/features/capture/providers/capture_providers.dart';
+import 'package:bodymark/features/members/member.dart';
+import 'package:bodymark/features/members/member_providers.dart';
 import 'package:bodymark/features/records/providers/records_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -133,6 +135,59 @@ void main() {
     container.invalidate(timelineProvider);
 
     expect(await container.read(guide.future), older);
+  });
+
+  group('cameraHeaderInfoProvider', () {
+    final t = DateTime(2026, 11, 4, 15);
+    ProviderContainer headerContainer(LessonCaptureContext? context) {
+      final container = ProviderContainer(
+        overrides: [
+          photoRecordRepositoryProvider.overrideWithValue(records),
+          membersProvider.overrideWith(
+            (ref) async => [
+              Member(id: 'm1', name: '김서연', createdAt: t, updatedAt: t),
+            ],
+          ),
+          lessonCaptureContextProvider.overrideWith((ref) => context),
+        ],
+      );
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    test('레슨 촬영이 아니면 헤더 문구가 없다', () async {
+      final c = headerContainer(null);
+      expect(await c.read(cameraHeaderInfoProvider.future), isNull);
+    });
+
+    test('기준 기록이 있으면 회원 이름과 기준 레슨 일시를 보여준다', () async {
+      await records.insert(
+        // 헤더는 기준 기록의 일시만 읽는다(회원 연결은 FK가 있어 생략).
+        PhotoRecord(id: 'r1', shotAt: t, createdAt: t, updatedAt: t),
+      );
+      final c = headerContainer(
+        LessonCaptureContext(
+          'm1',
+          baselineRecordId: 'r1',
+          lessonAt: DateTime(2026, 11, 11, 9, 30),
+          phase: 'after',
+        ),
+      );
+      final info = await c.read(cameraHeaderInfoProvider.future);
+      expect(info!.title, '김서연 · 수업 후');
+      expect(info.subtitle, '11.11 오전 9:30 레슨 · 기준: 11.04 오후 3:00 레슨');
+      expect(info.hasBaseline, isTrue);
+    });
+
+    test('기준 없이 촬영하면 첫 촬영으로 표시한다', () async {
+      final c = headerContainer(
+        const LessonCaptureContext('m1', useBaseline: false),
+      );
+      final info = await c.read(cameraHeaderInfoProvider.future);
+      expect(info!.title, '김서연');
+      expect(info.subtitle, '첫 촬영 · 기준 사진 없음');
+      expect(info.hasBaseline, isFalse);
+    });
   });
 }
 

@@ -215,18 +215,18 @@ class BrandWordmark extends StatelessWidget {
         children: [
           BrandSymbol(size: symbolSize, color: color),
           SizedBox(width: symbolSize * 0.3),
-          // "Body"가 굵고 "Frame"이 가벼운 것은 의도다. 몸(피사체)이 주인공이고
-          // 프레임(도구)이 받친다.
+          // "Body"가 굵고 "Mark"가 가벼운 것은 의도다. 몸(피사체)이 주인공이고
+          // 기록(표시)이 받친다. 한 단어로 붙여 쓴다.
           ExcludeSemantics(
             child: Text.rich(
               TextSpan(
                 children: const [
                   TextSpan(
-                    text: 'Body ',
+                    text: 'Body',
                     style: TextStyle(fontWeight: FontWeight.w600),
                   ),
                   TextSpan(
-                    text: 'Frame',
+                    text: 'Mark',
                     style: TextStyle(fontWeight: FontWeight.w400),
                   ),
                 ],

@@ -48,7 +48,7 @@ class AsyncValueView<T> extends StatelessWidget {
       error: (error, _) => Semantics(
         identifier: statusId,
         liveRegion: true,
-        label: '불러오지 못했습니다',
+        label: '불러오지 못했어요',
         child: KeyedSubtree(
           key: ValueKey(statusId),
           child: Center(
@@ -59,7 +59,7 @@ class AsyncValueView<T> extends StatelessWidget {
                 children: [
                   const Icon(Icons.error_outline, size: 40),
                   const SizedBox(height: 8),
-                  const Text('불러오지 못했습니다', textAlign: TextAlign.center),
+                  const Text('불러오지 못했어요', textAlign: TextAlign.center),
                   const SizedBox(height: 12),
                   if (onRetry != null)
                     FilledButton(

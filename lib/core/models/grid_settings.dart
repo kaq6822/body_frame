@@ -20,11 +20,14 @@ class GridSettings {
   /// 선 색상 (ARGB 32비트 정수).
   final int colorValue;
 
+  /// 기본값은 자세 평가에 맞춘 성긴 격자다(360dp 폭 ≈ 6칸, 투명도 40%).
+  /// 수직 기준선(다림줄)이 핵심이라 촘촘한 격자는 피사체만 가린다.
+  /// 저장된 사용자 설정·사진별 격자 기록은 그대로 두고 기본값만 바꾼다.
   const GridSettings({
     this.visible = true,
-    this.opacity = 0.5,
+    this.opacity = 0.4,
     this.lineWidth = 1.0,
-    this.spacing = 40.0,
+    this.spacing = 60.0,
     this.colorValue = 0xFFFFFFFF,
   });
 
@@ -60,9 +63,9 @@ class GridSettings {
   factory GridSettings.fromMap(Map<String, dynamic> map) {
     return GridSettings(
       visible: (map['visible'] as bool?) ?? true,
-      opacity: (map['opacity'] as num?)?.toDouble() ?? 0.5,
-      lineWidth: (map['lineWidth'] as num?)?.toDouble() ?? 1.0,
-      spacing: (map['spacing'] as num?)?.toDouble() ?? 40.0,
+      opacity: (map['opacity'] as num?)?.toDouble() ?? defaults.opacity,
+      lineWidth: (map['lineWidth'] as num?)?.toDouble() ?? defaults.lineWidth,
+      spacing: (map['spacing'] as num?)?.toDouble() ?? defaults.spacing,
       colorValue: (map['colorValue'] as int?) ?? 0xFFFFFFFF,
     );
   }

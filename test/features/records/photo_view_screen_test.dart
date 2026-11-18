@@ -9,6 +9,9 @@ import 'package:bodymark/core/repositories/body_photo_repository.dart';
 import 'package:bodymark/core/repositories/photo_record_repository.dart';
 import 'package:bodymark/core/services/app_image_picker.dart';
 import 'package:bodymark/core/services/photo_storage_service.dart';
+import 'package:bodymark/core/theme/app_tokens.dart';
+import 'package:bodymark/features/members/member.dart';
+import 'package:bodymark/features/members/member_providers.dart';
 import 'package:bodymark/features/records/photo_view_screen.dart';
 import 'package:bodymark/features/records/services/grid_photo_composer.dart';
 import 'package:bodymark/features/records/services/photo_export_sink.dart';
@@ -96,10 +99,24 @@ void main() {
     String routeRecordId = recordId,
     String routePhotoId = photoId,
     AppImagePickerCoordinator? pickerCoordinator,
+    String? memberName,
   }) {
     return ProviderScope(
       overrides: [
-        photoRecordRepositoryProvider.overrideWithValue(records),
+        photoRecordRepositoryProvider.overrideWithValue(
+          memberName == null ? records : _MemberLinkedRecords(records),
+        ),
+        if (memberName != null)
+          membersProvider.overrideWith(
+            (ref) async => [
+              Member(
+                id: _memberId,
+                name: memberName,
+                createdAt: shotAt,
+                updatedAt: shotAt,
+              ),
+            ],
+          ),
         bodyPhotoRepositoryProvider.overrideWithValue(photos),
         photoStorageServiceProvider.overrideWithValue(storage),
         photoExportSinkProvider.overrideWithValue(exportSink),
@@ -243,6 +260,26 @@ void main() {
         find.byKey(const ValueKey('records.viewer.memo.field')),
       );
       expect(memoField.controller?.text, '원본 메모');
+
+      // 레슨 일시와 실제 촬영 시각을 따로 보여준다(촬영 시각이 없으면 그렇다고 알린다).
+      expect(
+        find.byKey(const ValueKey('records.viewer.lessonAt')),
+        findsOneWidget,
+      );
+      expect(find.text('촬영 시각을 확인할 수 없어요'), findsOneWidget);
+      // 앱 전역 레슨 일시 형식(요일 포함)을 쓴다.
+      expect(find.text('2026.01.10 (토) 오전 12:00'), findsOneWidget);
+
+      // 사진 상자는 촬영 프레임과 같은 3:4다. 가로 사진도 그 안에 contain된다.
+      final box = tester.getSize(
+        find
+            .ancestor(
+              of: find.byKey(const ValueKey('records.viewer.image')),
+              matching: find.byType(AspectRatio),
+            )
+            .first,
+      );
+      expect(box.width / box.height, closeTo(3 / 4, 0.01));
     });
   });
 
@@ -251,7 +288,7 @@ void main() {
       await tester.pumpWidget(buildApp(routeRecordId: 'other-record'));
       await pumpUntil(
         tester,
-        () => find.text('사진 정보를 불러오지 못했습니다.').evaluate().isNotEmpty,
+        () => find.text('사진 정보를 불러오지 못했어요.').evaluate().isNotEmpty,
       );
       expect(
         find.byKey(const ValueKey('records.viewer.replace.button')),
@@ -476,6 +513,30 @@ void main() {
 
       expect(overlay, findsOneWidget);
 
+      // 4:3 가로 사진이 정사각 뷰어에 contain으로 놓이므로 격자는 위아래
+      // letterbox를 빼고 사진 사각형에만 그려진다.
+      final viewer = tester.getRect(
+        find.byKey(const ValueKey('records.viewer.image')),
+      );
+      final grid = tester.getRect(overlay);
+      expect(grid.width, moreOrLessEquals(viewer.width));
+      expect(grid.height, moreOrLessEquals(viewer.width * 3 / 4));
+      expect(grid.center.dy, moreOrLessEquals(viewer.center.dy));
+
+      // letterbox는 테마와 무관한 중립 사진 배경이다.
+      final frame = tester.widget<Container>(
+        find
+            .ancestor(
+              of: find.byKey(const ValueKey('records.viewer.image')),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      expect(
+        (frame.decoration! as BoxDecoration).color,
+        const AppPhotoColors().backdrop,
+      );
+
       await tester.tap(toggle);
       await tester.pump();
       expect(overlay, findsNothing);
@@ -660,6 +721,9 @@ void main() {
       expect(exportSink.pngNames.single, contains('_grid'));
       expect(gridComposer.sourceBytes, hasLength(1));
       expect(gridComposer.settings.single.visible, isTrue);
+      // 화면 오버레이와 같은 기준 폭으로 격자 밀도를 맞춘다.
+      expect(gridComposer.referenceWidths.single, isNotNull);
+      expect(gridComposer.referenceWidths.single, greaterThan(0));
       expect(exportSink.pngBytes.single, isNot(orderedEquals(originalBytes)));
       expect(await originalFile.readAsBytes(), orderedEquals(originalBytes));
     });
@@ -692,6 +756,9 @@ void main() {
       expect(exportSink.sharedPngNames.single, contains('_grid'));
       expect(exportSink.sharedOriginalPaths, isEmpty);
       expect(gridComposer.settings.single.visible, isTrue);
+      // 화면 오버레이와 같은 기준 폭으로 격자 밀도를 맞춘다.
+      expect(gridComposer.referenceWidths.single, isNotNull);
+      expect(gridComposer.referenceWidths.single, greaterThan(0));
     });
   });
 
@@ -764,6 +831,151 @@ void main() {
       expect(gridComposer.sourceBytes, isEmpty);
     });
   });
+
+  group('사진 상세 구조(Stitch 26)·삭제 범위', () {
+    Finder textWith(String needle) => find.byWidgetPredicate(
+      (w) =>
+          w is Text && (w.data ?? '').replaceAll('\u2060', '').contains(needle),
+    );
+
+    Future<void> openViewer(WidgetTester tester, {String? memberName}) async {
+      await tester.pumpWidget(buildApp(memberName: memberName));
+      await pumpUntil(
+        tester,
+        () => find
+            .byKey(const ValueKey('records.viewer.image'))
+            .evaluate()
+            .isNotEmpty,
+      );
+    }
+
+    testWidgets('삭제 확인창이 레슨·구분·방향 범위와 남는 것을 알린다', (tester) async {
+      await tester.runAsync(() async {
+        await openViewer(tester, memberName: '김서연');
+        final delete = find.byKey(
+          const ValueKey('records.viewer.delete.button'),
+        );
+        await tester.ensureVisible(delete);
+        await tester.tap(delete);
+        await pumpUntil(
+          tester,
+          () => find
+              .byKey(const ValueKey('records.viewer.delete.confirm.dialog'))
+              .evaluate()
+              .isNotEmpty,
+        );
+
+        expect(find.text('이 사진을 삭제할까요?'), findsOneWidget);
+        final scope = textWith('레슨의 정기 정면 사진 1장을 삭제해요.');
+        expect(scope, findsOneWidget);
+        expect(
+          tester.widget<Text>(scope).data!.replaceAll('\u2060', ''),
+          startsWith('김서연 · '),
+        );
+        expect(textWith('일지와 다른 사진은 그대로 남아요.'), findsOneWidget);
+        expect(find.text('사진 삭제'), findsOneWidget);
+        expect(find.text('삭제 후 되돌릴 수 없어요.'), findsOneWidget);
+
+        await tester.tap(
+          find.byKey(const ValueKey('records.viewer.delete.cancel.button')),
+        );
+        await tester.pump();
+        expect(await photos.getById(photoId), isNotNull);
+      });
+    });
+
+    testWidgets('회원 레슨이면 머리에 회원·구분, 아래에 비교 버튼을 둔다', (tester) async {
+      await tester.runAsync(() async {
+        await openViewer(tester, memberName: '김서연');
+        expect(find.text('김서연 · 정기'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('records.viewer.compare.button')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('records.viewer.badge')),
+          findsOneWidget,
+        );
+        // 사진을 어두운 바탕에서 본다.
+        final scaffold = find.byKey(const ValueKey(PhotoViewScreen.screenId));
+        expect(Theme.of(tester.element(scaffold)).brightness, Brightness.dark);
+      });
+    });
+
+    testWidgets('회원 미연결 기록이면 비교 버튼 없이 화면 이름만 보인다', (tester) async {
+      await tester.runAsync(() async {
+        await openViewer(tester);
+        expect(find.text('사진 상세'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('records.viewer.compare.button')),
+          findsNothing,
+        );
+      });
+    });
+
+    testWidgets('방향 탭으로 같은 레슨의 다른 방향 사진으로 옮겨 간다', (tester) async {
+      await tester.runAsync(() async {
+        final backPath = await storage.saveBytes(
+          shotAt: shotAt,
+          bytes: await _solidPngBytes(3, 4),
+          fileName: 'back.png',
+        );
+        await photos.insert(
+          BodyPhoto(
+            id: 'photo-back',
+            recordId: recordId,
+            filePath: backPath,
+            direction: BodyDirection.back,
+            width: 3,
+            height: 4,
+            memo: '후면 메모',
+            createdAt: shotAt,
+          ),
+        );
+        await openViewer(tester);
+
+        // 사진이 없는 방향은 "없음"으로 표시된다.
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('records.viewer.step.leftSide')),
+            matching: find.text('없음'),
+          ),
+          findsOneWidget,
+        );
+
+        await tester.tap(
+          find.byKey(const ValueKey('records.viewer.step.back')),
+        );
+        await pumpUntil(
+          tester,
+          () => find
+              .byWidgetPredicate(
+                (w) => w is TextField && w.controller?.text == '후면 메모',
+              )
+              .evaluate()
+              .isNotEmpty,
+        );
+        final direction = tester.widget<DropdownButton<BodyDirection>>(
+          find.byKey(const ValueKey('records.viewer.direction.field')),
+        );
+        expect(direction.value, BodyDirection.back);
+
+        // 없는 방향은 눌러도 바뀌지 않는다.
+        await tester.tap(
+          find.byKey(const ValueKey('records.viewer.step.leftSide')),
+        );
+        await tester.pump();
+        expect(
+          tester
+              .widget<DropdownButton<BodyDirection>>(
+                find.byKey(const ValueKey('records.viewer.direction.field')),
+              )
+              .value,
+          BodyDirection.back,
+        );
+      });
+    });
+  });
 }
 
 Future<Uint8List> _solidPngBytes(
@@ -789,16 +1001,19 @@ class FakeGridPhotoComposer implements GridPhotoComposer {
   final Uint8List result;
   final List<Uint8List> sourceBytes = [];
   final List<GridSettings> settings = [];
+  final List<double?> referenceWidths = [];
 
   FakeGridPhotoComposer(this.result);
 
   @override
   Future<Uint8List> compose(
     Uint8List sourceBytes,
-    GridSettings settings,
-  ) async {
+    GridSettings settings, {
+    double? referenceWidth,
+  }) async {
     this.sourceBytes.add(Uint8List.fromList(sourceBytes));
     this.settings.add(settings);
+    referenceWidths.add(referenceWidth);
     return Uint8List.fromList(result);
   }
 }
@@ -859,6 +1074,9 @@ class _LostReplacementPicker implements AppImagePicker {
   Future<List<XFile>> pickMultiImage() async => const [];
 
   @override
+  Future<XFile?> pickVideo({required ImageSource source}) async => null;
+
+  @override
   Future<LostDataResponse> retrieveLostData() async {
     return LostDataResponse(file: XFile(file.path));
   }
@@ -884,4 +1102,30 @@ class _MemoryRequestStore implements ImagePickerRequestStore {
   Future<void> save(ImagePickerRequestContext context) async {
     current = context;
   }
+}
+
+const _memberId = 'member-1';
+
+/// 기록을 회원에 연결된 것처럼 돌려준다. 실제 DB에 회원 행을 만들지 않고도
+/// 머리 문구와 비교 버튼을 확인한다.
+class _MemberLinkedRecords implements PhotoRecordRepository {
+  final PhotoRecordRepository inner;
+
+  _MemberLinkedRecords(this.inner);
+
+  @override
+  Future<PhotoRecord?> getById(String id) async =>
+      (await inner.getById(id))?.copyWith(memberId: _memberId);
+
+  @override
+  Future<List<PhotoRecord>> listAll() => inner.listAll();
+
+  @override
+  Future<void> insert(PhotoRecord record) => inner.insert(record);
+
+  @override
+  Future<void> update(PhotoRecord record) => inner.update(record);
+
+  @override
+  Future<void> delete(String id) => inner.delete(id);
 }

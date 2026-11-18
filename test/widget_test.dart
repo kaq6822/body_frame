@@ -1,9 +1,11 @@
 import 'package:bodymark/features/members/member.dart';
 import 'package:bodymark/features/members/member_repository.dart';
 import 'package:bodymark/features/members/member_providers.dart';
+import 'package:bodymark/core/korean_text.dart';
 import 'package:bodymark/core/models/models.dart';
 import 'package:bodymark/core/providers.dart';
 import 'package:bodymark/core/repositories/body_photo_repository.dart';
+import 'package:bodymark/core/repositories/lesson_video_repository.dart';
 import 'package:bodymark/core/repositories/photo_record_repository.dart';
 import 'package:bodymark/core/services/app_image_picker.dart';
 import 'package:bodymark/features/capture/providers/capture_providers.dart';
@@ -42,6 +44,9 @@ void main() {
         bodyPhotoRepositoryProvider.overrideWithValue(
           _EmptyBodyPhotoRepository(),
         ),
+        lessonVideoRepositoryProvider.overrideWithValue(
+          _EmptyLessonVideoRepository(),
+        ),
         appImagePickerProvider.overrideWithValue(picker),
         imagePickerRequestStoreProvider.overrideWithValue(
           _EmptyImagePickerRequestStore(),
@@ -55,33 +60,136 @@ void main() {
     );
   }
 
-  testWidgets('앱은 회원 화면으로 시작하고 카메라 권한을 요청하지 않는다', (tester) async {
+  testWidgets('앱은 홈 화면으로 시작하고 카메라 권한을 요청하지 않는다', (tester) async {
     SharedPreferences.setMockInitialValues({});
     final picker = _CountingLostDataPicker();
     final camera = FakeCaptureCameraController();
     await tester.pumpWidget(buildApp(picker, camera: camera));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('screen.members.list')), findsOneWidget);
+    expect(find.byKey(const ValueKey('screen.home')), findsOneWidget);
+    // 회원이 없으면 첫 회원 등록 안내 하나만 보인다.
+    expect(find.byKey(const ValueKey('home.empty')), findsOneWidget);
     expect(camera.initializeCalls, 0);
     expect(picker.retrieveLostDataCalls, 1);
   });
-  testWidgets('회원·기록·설정 하단 탐색이 동작한다', (tester) async {
+  testWidgets('홈·회원·기록·설정 하단 탐색 4탭이 동작한다', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(buildApp(_CountingLostDataPicker()));
+    await tester.pumpAndSettle();
+    expect(find.byType(NavigationDestination), findsNWidgets(4));
+    // 눌리는지뿐 아니라 실제로 보이는지(불투명도)까지 본다. 페이드가 멈춰
+    // 이전 탭이 불투명하게 남으면 다른 탭을 덮는다.
+    double opacityOf(String id) => tester
+        .widgetList<FadeTransition>(
+          find.ancestor(
+            of: find.byKey(ValueKey(id)),
+            matching: find.byType(FadeTransition),
+          ),
+        )
+        .fold(1.0, (v, o) => v * o.opacity.value);
+    Finder shown(String id) {
+      final f = find.byKey(ValueKey(id)).hitTestable();
+      if (f.evaluate().isNotEmpty) {
+        expect(opacityOf(id), 1.0, reason: '$id 보임');
+      }
+      return f;
+    }
+
+    void hidden(String id) => expect(opacityOf(id), 0.0, reason: '$id 숨김');
+    // 탭 바는 틀에 하나만 있고, 탭을 바꿔도 같은 요소 그대로다(같이 전환되지 않는다).
+    final bar = tester.element(find.byKey(const ValueKey('main.navigation')));
+    await tester.tap(find.byType(NavigationDestination).at(1));
+    await tester.pumpAndSettle();
+    expect(shown('screen.members.list'), findsOneWidget);
+    expect(shown('screen.home'), findsNothing);
+    await tester.tap(find.byType(NavigationDestination).at(2));
+    await tester.pumpAndSettle();
+    expect(shown('screen.lessons.records'), findsOneWidget);
+    await tester.tap(find.byType(NavigationDestination).at(3));
+    await tester.pumpAndSettle();
+    expect(shown(SettingsScreen.screenId), findsOneWidget);
+    await tester.tap(find.byType(NavigationDestination).at(0));
+    await tester.pumpAndSettle();
+    expect(shown('screen.home'), findsOneWidget);
+    hidden(SettingsScreen.screenId);
+    hidden('screen.lessons.records');
+    hidden('screen.members.list');
+    expect(
+      tester.element(find.byKey(const ValueKey('main.navigation'))),
+      same(bar),
+    );
+    expect(find.byKey(const ValueKey('main.navigation')), findsOneWidget);
+  });
+
+  testWidgets('탭을 오가도 기록 탭의 검색어가 그대로 남는다', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(buildApp(_CountingLostDataPicker()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(NavigationDestination).at(2));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('lessons.search.field')),
+      '호흡',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(NavigationDestination).at(0));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(NavigationDestination).at(2));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('lessons.search.field')),
+        matching: find.text('호흡'),
+      ),
+      findsOneWidget,
+    );
+  });
+  testWidgets('홈이 아닌 탭 루트에서 뒤로가기는 홈으로 가고 push된 화면은 평소처럼 닫힌다', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(buildApp(_CountingLostDataPicker()));
+    await tester.pumpAndSettle();
+    for (final tab in [1, 2, 3]) {
+      await tester.tap(find.byType(NavigationDestination).at(tab));
+      await tester.pumpAndSettle();
+      // 탭 화면은 상태 유지를 위해 계속 붙어 있다. 보이고 누를 수 있는지로 본다.
+      expect(
+        find.byKey(const ValueKey('screen.home')).hitTestable(),
+        findsNothing,
+      );
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('screen.home')).hitTestable(),
+        findsOneWidget,
+        reason: 'tab $tab',
+      );
+    }
+
+    // push된 화면(회원 등록)은 탭 규칙과 무관하게 바로 아래로 돌아간다.
+    await tester.tap(find.byType(NavigationDestination).at(1));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('members.add.button')));
+    await tester.pumpAndSettle();
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('screen.members.list')), findsOneWidget);
+
+    // 홈에서는 가로채지 않는다(앱 종료는 시스템이 처리한다).
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(NavigationDestination).at(0));
+    await tester.pumpAndSettle();
+    final handled = await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('screen.home')), findsOneWidget);
+    expect(handled, isFalse);
+  });
+
+  testWidgets('회원 등록은 전체 화면에서 이름과 목표를 저장한다', (tester) async {
     SharedPreferences.setMockInitialValues({});
     await tester.pumpWidget(buildApp(_CountingLostDataPicker()));
     await tester.pumpAndSettle();
     await tester.tap(find.byType(NavigationDestination).at(1));
-    await tester.pumpAndSettle();
-    expect(
-      find.byKey(const ValueKey('screen.lessons.records')),
-      findsOneWidget,
-    );
-    await tester.tap(find.byType(NavigationDestination).at(2));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey(SettingsScreen.screenId)), findsOneWidget);
-  });
-  testWidgets('회원 등록은 전체 화면에서 이름과 목표를 저장한다', (tester) async {
-    SharedPreferences.setMockInitialValues({});
-    await tester.pumpWidget(buildApp(_CountingLostDataPicker()));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('members.add.button')));
     await tester.pumpAndSettle();
@@ -102,6 +210,8 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     await tester.pumpWidget(buildApp(_CountingLostDataPicker()));
     await tester.pumpAndSettle();
+    await tester.tap(find.byType(NavigationDestination).at(1));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('members.add.button')));
     await tester.pumpAndSettle();
     await tester.enterText(
@@ -120,10 +230,13 @@ void main() {
     await tester.tap(addLesson);
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('screen.lessons.edit')), findsOneWidget);
-    expect(find.textContaining('2026.11.04 오후 3:00'), findsOneWidget);
+    expect(
+      find.textContaining('2026.11.04 (수) ${keepPhrasesWhole('오후')}\u00A03:00'),
+      findsOneWidget,
+    );
     await tester.tap(find.byKey(const ValueKey('lessons.save.button')));
     await tester.pumpAndSettle();
-    expect(find.text('일지 또는 사진을 추가해주세요.'), findsOneWidget);
+    expect(find.text('일지, 사진 또는 동영상을 추가해주세요.'), findsOneWidget);
     final memo = find.descendant(
       of: find.byKey(const ValueKey('lessons.memo.field')),
       matching: find.byType(TextField),
@@ -185,6 +298,20 @@ class _EmptyBodyPhotoRepository implements BodyPhotoRepository {
   Future<void> update(BodyPhoto photo) async {}
 }
 
+class _EmptyLessonVideoRepository implements LessonVideoRepository {
+  @override
+  Future<List<LessonVideo>> listAll() async => const [];
+
+  @override
+  Future<List<LessonVideo>> listByRecord(String recordId) async => const [];
+
+  @override
+  Future<LessonVideo?> getById(String id) async => null;
+
+  @override
+  Future<void> delete(String id) async {}
+}
+
 class _CountingLostDataPicker implements AppImagePicker {
   int retrieveLostDataCalls = 0;
 
@@ -196,6 +323,9 @@ class _CountingLostDataPicker implements AppImagePicker {
 
   @override
   Future<List<XFile>> pickMultiImage() async => const [];
+
+  @override
+  Future<XFile?> pickVideo({required ImageSource source}) async => null;
 
   @override
   Future<LostDataResponse> retrieveLostData() async {
@@ -237,8 +367,9 @@ class _MemoryMembers implements MemberRepository {
   @override
   Future<void> saveLesson(
     PhotoRecord record,
-    List<BodyPhoto> addedPhotos,
-  ) async {
+    List<BodyPhoto> addedPhotos, {
+    List<LessonVideo> addedVideos = const [],
+  }) async {
     records.records[record.id] = record;
   }
 

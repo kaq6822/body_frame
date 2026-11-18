@@ -1,128 +1,66 @@
 import 'package:flutter/material.dart';
 
+import 'package:bodymark/core/models/models.dart';
+import 'package:bodymark/core/widgets/direction_stepper.dart';
 import '../providers/capture_session_provider.dart';
 
-/// 연속 촬영 세션의 단계 진행 표시.
+/// 연속 촬영 세션의 단계 진행 표시(카메라 HUD용 [DirectionStepper]).
 ///
-/// 각 방향이 현재 단계인지, 이미 찍었는지, 아직 안 찍었는지를 한눈에 보여주고
-/// 탭하면 그 단계로 이동해 재촬영할 수 있다.
+/// 현재 단계는 측정 시안으로 채우고 "정면 1/4"처럼 순번을 붙인다. 이미 찍은
+/// 방향에는 체크 표시가 붙는다. 탭하면 그 단계로 이동해 재촬영할 수 있다.
+/// 세그먼트 키·식별자는 `capture.progress.step.<direction.key>`다.
+///
+/// 단계가 바뀌어도 뷰파인더 크기가 흔들리지 않게 항상 한 줄·고정 높이로 그리고,
+/// 라벨은 짧은 이름("좌측")을 쓴다.
 class CaptureProgressBar extends StatelessWidget {
   final List<CaptureShot> shots;
   final int currentIndex;
   final ValueChanged<int> onStepSelected;
-  final Color foreground;
 
   const CaptureProgressBar({
     super.key,
     required this.shots,
     required this.currentIndex,
     required this.onStepSelected,
-    required this.foreground,
   });
 
   @override
   Widget build(BuildContext context) {
     final captured = shots.where((shot) => shot.isCaptured).length;
+    final directions = [for (final s in shots) s.direction];
+    final current = shots[currentIndex].direction;
 
     return Semantics(
       identifier: 'capture.progress',
       label: '촬영 진행 ${currentIndex + 1} / ${shots.length}, $captured장 촬영됨',
-      child: Column(
+      container: true,
+      child: KeyedSubtree(
         key: const ValueKey('capture.progress'),
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            '${currentIndex + 1} / ${shots.length} · ${shots[currentIndex].direction.label}',
-            style: TextStyle(
-              color: foreground,
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 6),
-          // 글꼴을 축소하지 않고 줄바꿈해 터치 영역과 읽기 크기를 보존한다.
-          Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (var i = 0; i < shots.length; i++)
-                _StepChip(
-                  shot: shots[i],
-                  isCurrent: i == currentIndex,
-                  foreground: foreground,
-                  onTap: () => onStepSelected(i),
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StepChip extends StatelessWidget {
-  final CaptureShot shot;
-  final bool isCurrent;
-  final Color foreground;
-  final VoidCallback onTap;
-
-  const _StepChip({
-    required this.shot,
-    required this.isCurrent,
-    required this.foreground,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final id = 'capture.progress.step.${shot.direction.key}';
-    final state = shot.isCaptured ? '촬영 완료' : '미촬영';
-
-    return Semantics(
-      identifier: id,
-      button: true,
-      selected: isCurrent,
-      value: state,
-      label: '${shot.direction.label} $state, 탭하여 이 단계로 이동',
-      child: InkWell(
-        key: ValueKey(id),
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            color: shot.isCaptured
-                ? foreground.withValues(alpha: 0.22)
-                : Colors.transparent,
-            border: Border.all(
-              color: isCurrent
-                  ? foreground
-                  : foreground.withValues(alpha: 0.35),
-              width: isCurrent ? 2 : 1,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                shot.isCaptured
-                    ? Icons.check_circle
-                    : Icons.radio_button_unchecked,
-                size: 14,
-                color: foreground,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                shot.direction.label,
-                style: TextStyle(color: foreground, fontSize: 12),
-              ),
-            ],
-          ),
+        child: DirectionStepper(
+          identifier: 'capture.progress.step',
+          onDark: true,
+          singleRow: true,
+          directions: directions,
+          selected: current,
+          recorded: {
+            for (final s in shots)
+              if (s.isCaptured) s.direction,
+          },
+          labelBuilder: (d) => d == current
+              ? '${shortDirectionLabel(d)} ${currentIndex + 1}/${shots.length}'
+              : shortDirectionLabel(d),
+          onSelected: (d) => onStepSelected(directions.indexOf(d)),
         ),
       ),
     );
   }
 }
+
+/// 카메라 HUD용 짧은 방향 이름. 네 칸이 한 줄에 들어가게 "면"을 뺀다.
+String shortDirectionLabel(BodyDirection direction) => switch (direction) {
+  BodyDirection.front => '정면',
+  BodyDirection.leftSide => '좌측',
+  BodyDirection.rightSide => '우측',
+  BodyDirection.back => '후면',
+  BodyDirection.etc => '기타',
+};

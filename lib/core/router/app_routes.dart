@@ -5,10 +5,13 @@
 class AppRoutes {
   AppRoutes._();
 
-  /// 1. 홈 = 회원 목록.
+  /// 1. 홈: 오늘 예상 회원·최근 레슨·이번 주 요약.
   ///
   /// 촬영은 레슨 작성에서 명시적으로 진입한다.
   static const home = 'home';
+
+  /// 1-1. 회원 목록.
+  static const members = 'members';
 
   // --- 사진 등록 ---
   /// 2. 촬영 결과 일괄 확인 화면.
@@ -20,6 +23,14 @@ class AppRoutes {
   // --- 기록 ---
   /// 4. 촬영 기록 타임라인 화면.
   static const records = 'records';
+
+  /// 기록 탭과 같은 화면을 다른 화면 위에 따로 연다(하단 탭 없음, 뒤로 가기).
+  /// 카메라나 설정 위에서 열어도 아래 화면을 버리지 않는다.
+  static const recordsPage = 'records.page';
+  static const recordsPagePath = '/all-records';
+
+  /// 회원 미연결 기록만 보이는 기록 화면 위치(push용).
+  static const unlinkedRecordsLocation = '/all-records?member=unlinked';
 
   /// 5. 촬영 기록 상세 화면.
   static const recordDetail = 'records.detail';
@@ -37,15 +48,25 @@ class AppRoutes {
   /// 9. 전후 사진 비교 화면.
   static const compareView = 'compare.view';
 
-  /// 10. 비교 이미지 저장 설정 화면.
+  /// 10. 공유 이미지 구성 → 미리보기(2단계) 화면.
   static const compareExport = 'compare.export';
 
   // --- 설정 ---
   /// 11. 앱 설정 화면.
   static const settings = 'settings.home';
 
+  /// 설정 탭과 같은 화면을 다른 화면(카메라 등) 위에 따로 연다.
+  static const settingsPage = 'settings.page';
+
   /// 12. 저장 공간 관리 화면.
   static const storage = 'settings.storage';
+
+  // --- 레슨 동영상 ---
+  /// 13. 레슨 동영상 촬영 화면.
+  static const videoCamera = 'video.camera';
+
+  /// 14. 레슨 동영상 재생 화면.
+  static const videoPlayer = 'video.player';
 }
 
 /// 경로 파라미터 키. 안정적 UUID 식별자를 전달한다.
@@ -54,9 +75,14 @@ class AppParams {
 
   static const recordId = 'recordId';
   static const photoId = 'photoId';
+  static const videoId = 'videoId';
 
   /// 방향/날짜 등은 쿼리 파라미터로 전달한다.
   static const direction = 'direction';
   static const beforePhotoId = 'beforePhotoId';
   static const afterPhotoId = 'afterPhotoId';
+
+  /// 기록 탭의 처음 회원 필터. 값 [unlinkedMembers]는 회원 미연결 기록만 보여 준다.
+  static const memberFilter = 'member';
+  static const unlinkedMembers = 'unlinked';
 }

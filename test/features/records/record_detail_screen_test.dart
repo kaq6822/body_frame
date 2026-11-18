@@ -19,7 +19,7 @@ import 'pump_helpers.dart';
 
 /// 1x1 투명 PNG. 위젯 테스트에서 실제 디코딩 가능한 최소 이미지 파일이 필요할 때 사용.
 final Uint8List _onePixelPng = base64Decode(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUAAScY42YAAAAASUVORK5CYII=',
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
 );
 
 void main() {
@@ -128,7 +128,15 @@ void main() {
         findsOneWidget,
       );
 
-      // 사진에는 기본적으로 정렬 격자가 함께 얹힌다.
+      // 사진에는 기본적으로 정렬 격자가 함께 얹힌다. 크기 메타데이터가 없는
+      // 사진은 디코딩으로 사진 사각형을 알아낸 뒤 그 위에만 격자를 그린다.
+      await pumpUntil(
+        tester,
+        () => find
+            .byKey(const ValueKey('records.photo.front.image.grid.overlay'))
+            .evaluate()
+            .isNotEmpty,
+      );
       expect(
         find.byKey(const ValueKey('records.photo.front.image.grid.overlay')),
         findsOneWidget,
@@ -143,6 +151,31 @@ void main() {
         find.byKey(const ValueKey('records.memo.field')),
       );
       expect(memoField.controller?.text, '기존 메모');
+    });
+  });
+
+  testWidgets('사진 파일을 읽지 못하면 문구와 재시도를 보여 준다', (tester) async {
+    await tester.runAsync(() async {
+      final photo = (await photos.getById('photo-front'))!;
+      await File(photo.filePath).delete();
+
+      await tester.pumpWidget(buildApp());
+      const errorKey = ValueKey('records.photo.front.image.photo.error');
+      await pumpUntil(tester, () => find.byKey(errorKey).evaluate().isNotEmpty);
+
+      expect(find.byKey(errorKey), findsOneWidget);
+      expect(find.text('사진을 불러오지 못했어요'), findsOneWidget);
+      expect(
+        find.byKey(
+          const ValueKey('records.photo.front.image.photo.retry.button'),
+        ),
+        findsOneWidget,
+      );
+      // 사진 사각형을 알 수 없으면 격자를 여백에 그리지 않는다.
+      expect(
+        find.byKey(const ValueKey('records.photo.front.image.grid.overlay')),
+        findsNothing,
+      );
     });
   });
 
@@ -239,7 +272,7 @@ void main() {
       await tester.pumpWidget(buildApp(routeRecordId: 'missing-record'));
       await pumpUntil(
         tester,
-        () => find.text('촬영 기록을 불러오지 못했습니다.').evaluate().isNotEmpty,
+        () => find.text('촬영 기록을 불러오지 못했어요.').evaluate().isNotEmpty,
       );
 
       expect(find.byKey(const ValueKey('records.memo.field')), findsNothing);

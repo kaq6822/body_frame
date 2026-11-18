@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -10,7 +12,15 @@ import 'core/services/app_image_picker.dart';
 import 'core/theme/app_theme.dart';
 
 void main() {
+  LicenseRegistry.addLicense(_pretendardLicense);
   runApp(const ProviderScope(child: BodyMarkApp()));
+}
+
+/// 번들한 Pretendard 글꼴의 OFL 원문을 오픈소스 라이선스 화면에 노출한다.
+/// OFL은 글꼴과 함께 라이선스 원문을 배포하도록 요구한다.
+Stream<LicenseEntry> _pretendardLicense() async* {
+  final text = await rootBundle.loadString('assets/fonts/Pretendard-OFL.txt');
+  yield LicenseEntryWithLineBreaks(const ['Pretendard'], text);
 }
 
 /// 체형 변화 기록 앱.

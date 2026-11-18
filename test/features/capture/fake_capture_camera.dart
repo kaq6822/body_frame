@@ -17,6 +17,12 @@ class FakeCaptureCameraController implements CaptureCameraController {
   /// "거부로 실패한 뒤 같은 컨트롤러가 성공하는" 흐름으로만 재현할 수 있다.
   Object? initializeError;
 
+  /// 지정하면 [initialize]가 이 Future가 끝날 때까지 기다린 뒤 결과를 낸다.
+  ///
+  /// 실기기에서는 권한 창이 떠 있는 동안 초기화가 끝나지 않은 채 lifecycle이
+  /// inactive → resumed로 흔들린다. 그 순서를 재현할 때 쓴다.
+  Future<void>? initializeGate;
+
   /// 전면/후면이 모두 있는 기기를 흉내낼지. 기본은 전환 불가.
   @override
   final bool canSwitchLens;
@@ -58,6 +64,8 @@ class FakeCaptureCameraController implements CaptureCameraController {
   Future<void> initialize({bool useFrontLens = false}) async {
     initializeCalls += 1;
     requestedFrontLens.add(useFrontLens);
+    final gate = initializeGate;
+    if (gate != null) await gate;
     final error = initializeError;
     if (error != null) throw error;
     if (initializeShouldFail) {

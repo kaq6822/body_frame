@@ -2,11 +2,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'database/app_database.dart';
 import 'repositories/body_photo_repository.dart';
+import 'repositories/lesson_video_repository.dart';
 import 'repositories/photo_ingest_repository.dart';
 import 'repositories/photo_record_repository.dart';
 import 'services/app_logger.dart';
 import 'services/grid_settings_service.dart';
 import 'services/photo_storage_service.dart';
+import 'services/video_storage_service.dart';
 
 /// core 계층 의존성 주입 지점.
 ///
@@ -34,6 +36,20 @@ final appDatabaseProvider = Provider<AppDatabase>((ref) {
 /// 사진 파일 저장 서비스.
 final photoStorageServiceProvider = Provider<PhotoStorageService>((ref) {
   return PhotoStorageServiceImpl(logger: ref.watch(appLoggerProvider));
+});
+
+/// 레슨 동영상 파일 저장 서비스.
+final videoStorageServiceProvider = Provider<VideoStorageService>((ref) {
+  return VideoStorageServiceImpl(logger: ref.watch(appLoggerProvider));
+});
+
+/// 레슨 동영상 리포지토리.
+final lessonVideoRepositoryProvider = Provider<LessonVideoRepository>((ref) {
+  return LessonVideoRepositoryImpl(
+    database: ref.watch(appDatabaseProvider),
+    storage: ref.watch(videoStorageServiceProvider),
+    logger: ref.watch(appLoggerProvider),
+  );
 });
 
 /// 격자 설정 영속화 서비스.
@@ -64,6 +80,7 @@ final photoRecordRepositoryProvider = Provider<PhotoRecordRepository>((ref) {
   return PhotoRecordRepositoryImpl(
     database: ref.watch(appDatabaseProvider),
     storage: ref.watch(photoStorageServiceProvider),
+    videoStorage: ref.watch(videoStorageServiceProvider),
     logger: ref.watch(appLoggerProvider),
   );
 });

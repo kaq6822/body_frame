@@ -6,7 +6,7 @@ import 'package:intl/intl.dart';
 import '../../core/models/models.dart';
 import '../../core/router/app_routes.dart';
 import '../../core/theme/app_tokens.dart';
-import 'compare_dates_screen.dart' show CompareQueryKeys;
+import 'compare_query_keys.dart';
 import 'compare_logic.dart';
 import 'compare_providers.dart';
 import 'widgets/compare_missing_context.dart';
@@ -51,8 +51,8 @@ class _CompareDirectionScreenState
         body: (hasMissingRecord || hasSameRecord)
             ? CompareMissingContext(
                 message: hasSameRecord
-                    ? '이전과 이후에는 서로 다른 촬영 기록을 선택해 주세요.'
-                    : '비교 날짜 선택 화면에서 다시 진입해 주세요.',
+                    ? '이전과 이후에는 서로 다른 촬영 기록을 선택해주세요.'
+                    : '비교 날짜 선택 화면에서 다시 진입해주세요.',
                 backButtonId: 'compare.direction.backToDates.button',
               )
             : _DirectionBody(
@@ -98,7 +98,7 @@ class _DirectionBody extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           key: const ValueKey('screen.compare.direction.status'),
           children: [
-            const Text('사진 목록을 불러오지 못했습니다.'),
+            const Text('사진 목록을 불러오지 못했어요.'),
             TextButton(
               onPressed: () {
                 ref.invalidate(recordPhotosProvider(beforeRecordId));
@@ -120,7 +120,7 @@ class _DirectionBody extends ConsumerWidget {
         child: Padding(
           padding: EdgeInsets.all(24),
           child: Text(
-            '두 촬영 기록에 공통으로 존재하는 촬영 방향이 없습니다.\n다른 날짜를 선택해 주세요.',
+            '두 촬영 기록에 공통으로 존재하는 촬영 방향이 없어요.\n다른 날짜를 선택해주세요.',
             key: ValueKey('screen.compare.direction.status'),
             textAlign: TextAlign.center,
           ),

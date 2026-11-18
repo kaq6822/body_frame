@@ -16,7 +16,7 @@ enum CompareMode {
   String get label {
     switch (this) {
       case CompareMode.sideBySide:
-        return '좌우 비교';
+        return '나란히 보기';
       case CompareMode.overlay:
         return '겹쳐 보기';
       case CompareMode.slider:

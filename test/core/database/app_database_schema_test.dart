@@ -81,7 +81,7 @@ void main() {
   test('더 높은 버전의 DB는 삭제하지 않고 열기를 거부한다', () async {
     final legacy = await openDatabase(
       dbPath,
-      version: 3,
+      version: AppDatabase.schemaVersion + 1,
       onCreate: (db, _) async => db.execute(_legacyPhotoRecords),
     );
     await legacy.insert('photo_records', {
@@ -96,7 +96,7 @@ void main() {
     await expectLater(appDatabase.database, throwsStateError);
     final untouched = await openDatabase(dbPath, readOnly: true);
     expect((await untouched.query('photo_records')).single['id'], 'r1');
-    expect(await untouched.getVersion(), 3);
+    expect(await untouched.getVersion(), AppDatabase.schemaVersion + 1);
     await untouched.close();
   });
 
@@ -142,7 +142,99 @@ void main() {
     expect(photo['phase'], 'regular');
     expect(photo['captured_at'], isNull);
     expect(await db.query('members'), isEmpty);
-    expect(await db.getVersion(), 2);
+    expect(await db.query(AppDatabase.tableLessonVideos), isEmpty);
+    expect(await db.getVersion(), AppDatabase.schemaVersion);
+  });
+
+  test('버전 2의 회원·레슨·사진을 보존하고 동영상 테이블을 추가한다', () async {
+    // 버전 2 스키마를 그대로 재현한다(현재 _onCreate의 v1 + _addMemberSchema).
+    final old = await openDatabase(
+      dbPath,
+      version: 2,
+      onCreate: (db, _) async {
+        await db.execute(
+          'CREATE TABLE photo_records(id TEXT PRIMARY KEY, shot_at INTEGER NOT NULL, label TEXT, memo TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, member_id TEXT, condition TEXT)',
+        );
+        await db.execute(
+          "CREATE TABLE body_photos(id TEXT PRIMARY KEY, record_id TEXT NOT NULL, file_path TEXT NOT NULL, direction TEXT NOT NULL DEFAULT 'etc', width INTEGER NOT NULL DEFAULT 0, height INTEGER NOT NULL DEFAULT 0, orientation INTEGER NOT NULL DEFAULT 1, grid_settings TEXT, capture_grid_settings TEXT, memo TEXT, created_at INTEGER NOT NULL, phase TEXT NOT NULL DEFAULT 'regular', captured_at INTEGER, FOREIGN KEY(record_id) REFERENCES photo_records(id) ON DELETE CASCADE)",
+        );
+        await db.execute(
+          "CREATE TABLE members(id TEXT PRIMARY KEY, name TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '', goal TEXT NOT NULL DEFAULT '', precautions TEXT NOT NULL DEFAULT '', report TEXT NOT NULL DEFAULT '', observation TEXT NOT NULL DEFAULT '', memo TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
+        );
+      },
+    );
+    await old.insert('members', {
+      'id': 'm',
+      'name': '김서연',
+      'created_at': 1,
+      'updated_at': 1,
+    });
+    await old.insert('photo_records', {
+      'id': 'r',
+      'member_id': 'm',
+      'shot_at': 123,
+      'memo': '레슨 메모',
+      'condition': '허리 뻐근함',
+      'created_at': 456,
+      'updated_at': 789,
+    });
+    await old.insert('body_photos', {
+      'id': 'p',
+      'record_id': 'r',
+      'file_path': 'photos/202611/original.jpg',
+      'direction': 'front',
+      'phase': 'before',
+      'captured_at': 111,
+      'created_at': 456,
+    });
+    await old.close();
+
+    final migrated = AppDatabase(path: dbPath);
+    addTearDown(migrated.close);
+    final db = await migrated.database;
+    expect(await db.getVersion(), 3);
+    expect((await db.query('members')).single['name'], '김서연');
+    final record = (await db.query('photo_records')).single;
+    expect(record['member_id'], 'm');
+    expect(record['memo'], '레슨 메모');
+    expect(record['condition'], '허리 뻐근함');
+    final photo = (await db.query('body_photos')).single;
+    expect(photo['file_path'], 'photos/202611/original.jpg');
+    expect(photo['phase'], 'before');
+    expect(photo['captured_at'], 111);
+
+    final columns = await db.rawQuery(
+      'PRAGMA table_info(${AppDatabase.tableLessonVideos})',
+    );
+    expect(
+      columns.map((c) => c['name']),
+      containsAll([
+        'id',
+        'record_id',
+        'file_path',
+        'phase',
+        'duration_ms',
+        'size_bytes',
+        'captured_at',
+        'source',
+        'memo',
+        'created_at',
+      ]),
+    );
+    await db.insert(AppDatabase.tableLessonVideos, {
+      'id': 'v',
+      'record_id': 'r',
+      'file_path': 'videos/202611/a.mp4',
+      'source': 'camera',
+      'created_at': 1,
+    });
+    expect(
+      (await db.query(AppDatabase.tableLessonVideos)).single['phase'],
+      'regular',
+    );
+    // 기록을 지우면 동영상 행도 cascade로 지워진다(파일은 리포지토리가 지운다).
+    await db.delete('photo_records', where: 'id = ?', whereArgs: ['r']);
+    expect(await db.query(AppDatabase.tableLessonVideos), isEmpty);
   });
 
   test('같은 DB를 두 번 열어도 스키마가 그대로 유지된다', () async {

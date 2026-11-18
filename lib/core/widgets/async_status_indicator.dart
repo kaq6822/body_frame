@@ -19,7 +19,7 @@ class AsyncStatusIndicator extends StatelessWidget {
     super.key,
     required this.statusId,
     required this.status,
-    this.busyLabel = '처리 중입니다.',
+    this.busyLabel = '처리하고 있어요.',
     this.failureMessage,
     this.successLabel,
     this.onRetry,
@@ -53,7 +53,7 @@ class AsyncStatusIndicator extends StatelessWidget {
         children: [
           Flexible(
             child: Text(
-              failureMessage ?? '오류가 발생했습니다.',
+              failureMessage ?? '오류가 생겼어요.',
               style: TextStyle(color: context.colors.error),
             ),
           ),

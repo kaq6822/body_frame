@@ -32,7 +32,9 @@ class GridPainter extends CustomPainter {
 
     final centerX = size.width / 2;
     final centerY = size.height / 2;
-    final spacing = settings.spacing <= 0 ? 40.0 : settings.spacing;
+    final spacing = settings.spacing <= 0
+        ? GridSettings.defaults.spacing
+        : settings.spacing;
 
     // 일정 간격 세로선(중앙 기준 좌우 대칭 배치).
     for (
@@ -82,9 +84,13 @@ class GridPainter extends CustomPainter {
     _drawDashedVerticalLine(canvas, size.width * 0.25, size.height, linePaint);
     _drawDashedVerticalLine(canvas, size.width * 0.75, size.height, linePaint);
 
-    // 중앙 세로 기준선(강조, 다른 선 위에 그려 항상 보이게 함).
+    // 중앙 세로 기준선(다림줄). 자세 평가의 핵심 기준이라 다른 선보다 굵고
+    // 진하게, 다른 선 위에 그려 항상 보이게 한다. 내보내기 합성도 이 painter를
+    // 쓰므로 미리보기와 결과물이 같다.
     final emphasisPaint = Paint()
-      ..color = color
+      ..color = Color(
+        settings.colorValue,
+      ).withValues(alpha: math.min(1.0, settings.opacity.clamp(0.0, 1.0) * 1.6))
       ..strokeWidth = lineWidth * 2
       ..style = PaintingStyle.stroke;
     canvas.drawLine(

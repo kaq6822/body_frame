@@ -3,7 +3,7 @@ import '../../core/models/models.dart';
 import 'providers/records_providers.dart';
 
 // 타임라인 경과일 계산은 공용 함수 하나로 통일한다. 화면마다 날짜 공식을
-// 따로 두면 서머타임 경계에서 값이 어긋난다(compare_dates_screen 참조).
+// 따로 두면 서머타임 경계에서 값이 어긋난다(core/dates.dart 참조).
 export '../../core/dates.dart' show dateOnly, daysBetween;
 
 /// 타임라인 한 행. 화면은 이 값만 읽어 그린다.
