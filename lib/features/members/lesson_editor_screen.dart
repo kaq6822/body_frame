@@ -10,6 +10,7 @@ import '../../core/providers.dart';
 import '../../core/services/photo_storage_service.dart';
 import '../../core/services/app_image_picker.dart';
 import '../../core/services/video_storage_service.dart';
+import '../videos/lesson_video_content.dart';
 import '../videos/lesson_video_tile.dart';
 import '../videos/video_providers.dart';
 import '../capture/providers/capture_providers.dart';
@@ -377,14 +378,13 @@ class _LessonEditorState extends ConsumerState<LessonEditorScreen> {
   bool _isLastSavedContent(LessonVideo v) {
     final id = widget.recordId;
     if (id == null) return false;
-    final photos = ref.read(recordPhotosProvider(id)).valueOrNull;
-    final videos = ref.read(recordVideosProvider(id)).valueOrNull;
-    if (photos == null || videos == null) return false;
-    return photos.isEmpty &&
-        videos.length == 1 &&
-        videos.single.id == v.id &&
-        (original?.memo ?? '').trim().isEmpty &&
-        (original?.condition ?? '').trim().isEmpty &&
+    return deletingVideoLeavesLessonEmpty(
+          videoId: v.id,
+          photos: ref.read(recordPhotosProvider(id)).valueOrNull,
+          videos: ref.read(recordVideosProvider(id)).valueOrNull,
+          memo: original?.memo,
+          condition: original?.condition,
+        ) &&
         memo.text.trim().isEmpty &&
         condition.text.trim().isEmpty &&
         pending.isEmpty &&

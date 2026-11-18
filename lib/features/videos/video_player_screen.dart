@@ -12,6 +12,7 @@ import '../../core/theme/app_tokens.dart';
 import '../members/ui.dart';
 import '../records/providers/records_providers.dart';
 import '../records/services/photo_export_sink.dart';
+import 'lesson_video_content.dart';
 import 'video_playback_view.dart';
 
 /// 레슨 동영상 재생 화면.
@@ -45,6 +46,18 @@ class _LessonVideoPlayerScreenState
     if (deleting) return;
     await _playerKey.currentState?.pause();
     if (!mounted) return;
+    final record = ref.read(recordProvider(widget.recordId)).valueOrNull;
+    if (record != null &&
+        deletingVideoLeavesLessonEmpty(
+          videoId: video.id,
+          photos: ref.read(recordPhotosProvider(widget.recordId)).valueOrNull,
+          videos: ref.read(recordVideosProvider(widget.recordId)).valueOrNull,
+          memo: record.memo,
+          condition: record.condition,
+        )) {
+      await _offerLessonDelete(record);
+      return;
+    }
     if (!await confirm(
           context,
           '이 동영상을 삭제할까요?',
@@ -72,6 +85,44 @@ class _LessonVideoPlayerScreenState
     }
   }
 
+  /// 마지막 내용인 동영상만 지우면 다시 저장할 수 없는 빈 레슨이 남는다.
+  /// 레슨 편집 화면처럼 레슨 기록까지 함께 지울지 묻는다.
+  Future<void> _offerLessonDelete(PhotoRecord record) async {
+    if (!await confirm(
+          context,
+          '마지막 동영상이에요',
+          '이 동영상을 지우면 레슨에 남는 내용이 없어요. 레슨 기록까지 함께 삭제할까요?',
+          button: '레슨 삭제',
+          icon: Icons.delete_outline,
+          destructive: true,
+          warning: '삭제 후 되돌릴 수 없어요.',
+        ) ||
+        !mounted) {
+      return;
+    }
+    setState(() {
+      deleting = true;
+      actionError = null;
+    });
+    try {
+      // 기록 리포지토리가 사진·동영상 행과 파일을 함께 정리한다.
+      await ref.read(photoRecordRepositoryProvider).delete(record.id);
+      ref.invalidate(timelineProvider);
+      ref.invalidate(allRecordsProvider);
+      ref.invalidate(recordProvider(record.id));
+      ref.invalidate(recordPhotosProvider(record.id));
+      ref.invalidate(recordVideosProvider(record.id));
+      if (!mounted) return;
+      // 레슨 상세도 사라졌으므로 그 아래 화면으로 돌아간다.
+      final memberId = record.memberId;
+      context.go(memberId == null ? '/' : '/members/$memberId');
+    } catch (_) {
+      if (mounted) setState(() => actionError = '레슨을 삭제하지 못했어요. 다시 시도해주세요.');
+    } finally {
+      if (mounted) setState(() => deleting = false);
+    }
+  }
+
   Future<void> _share(LessonVideo video, Rect? origin) async {
     setState(() => actionError = null);
     await _playerKey.currentState?.pause();
@@ -87,6 +138,9 @@ class _LessonVideoPlayerScreenState
   @override
   Widget build(BuildContext context) {
     final videos = ref.watch(recordVideosProvider(widget.recordId));
+    // 삭제할 때 빈 레슨이 남는지 판단하려고 기록과 사진 목록도 읽어 둔다.
+    ref.watch(recordProvider(widget.recordId));
+    ref.watch(recordPhotosProvider(widget.recordId));
     final video = videos.valueOrNull
         ?.where((v) => v.id == widget.videoId)
         .firstOrNull;

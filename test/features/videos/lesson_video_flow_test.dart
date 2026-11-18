@@ -608,24 +608,27 @@ void main() {
     late List<FakeLessonVideoPlayer> players;
     late bool failNext;
     late _FakeVideoRepo videoRepo;
+    late _FakeRecords records;
     late _FakeShare share;
 
     setUp(() {
       players = [];
       failNext = false;
       videoRepo = _FakeVideoRepo();
+      records = _FakeRecords();
       share = _FakeShare();
     });
 
     List<Override> detailOverrides({
       Future<List<LessonVideo>> Function()? videos,
+      String? memo = '메모',
     }) => [
       recordProvider.overrideWith(
         (ref, id) async => PhotoRecord(
           id: id,
           memberId: 'm1',
           shotAt: _at,
-          memo: '메모',
+          memo: memo,
           createdAt: _at,
           updatedAt: _at,
         ),
@@ -636,6 +639,7 @@ void main() {
       ),
       timelineProvider.overrideWith((ref) async => const []),
       lessonVideoRepositoryProvider.overrideWithValue(videoRepo),
+      photoRecordRepositoryProvider.overrideWithValue(records),
       photoExportSinkProvider.overrideWithValue(share),
       lessonVideoPlayerFactoryProvider.overrideWithValue((path) {
         final player = FakeLessonVideoPlayer(path, fail: failNext);
@@ -649,6 +653,11 @@ void main() {
         path: '/lessons/:recordId',
         builder: (_, s) =>
             LessonDetailScreen(recordId: s.pathParameters['recordId']!),
+      ),
+      GoRoute(
+        path: '/members/:memberId',
+        builder: (_, s) =>
+            Scaffold(body: Text('member ${s.pathParameters['memberId']}')),
       ),
       GoRoute(
         path: '/lessons/:recordId/videos/:videoId',
@@ -725,6 +734,30 @@ void main() {
       await tester.pumpAndSettle();
       expect(videoRepo.deleted, ['v1']);
       expect(find.text('home'), findsOneWidget);
+    });
+
+    testWidgets('재생 화면에서 동영상만 남은 레슨의 마지막 동영상은 레슨 삭제를 제안한다', (tester) async {
+      await _pump(
+        tester,
+        overrides: detailOverrides(memo: null),
+        routes: routes,
+        push: '/lessons/r1/videos/v1',
+      );
+      await tester.tap(key('video.player.delete.button'));
+      await tester.pumpAndSettle();
+      expect(find.text('마지막 동영상이에요'), findsOneWidget);
+      await tester.tap(key('common.confirm.cancel.button'));
+      await tester.pumpAndSettle();
+      expect(records.deleted, isEmpty);
+      expect(videoRepo.deleted, isEmpty);
+
+      await tester.tap(key('video.player.delete.button'));
+      await tester.pumpAndSettle();
+      await tester.tap(key('common.confirm.accept.button'));
+      await tester.pumpAndSettle();
+      expect(records.deleted, ['r1']);
+      expect(videoRepo.deleted, isEmpty);
+      expect(find.text('member m1'), findsOneWidget);
     });
 
     testWidgets('재생 화면 앱바 제목과 아이콘은 어두운 바탕용 밝은 색이다', (tester) async {

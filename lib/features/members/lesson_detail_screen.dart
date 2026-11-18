@@ -38,13 +38,14 @@ class _LessonDetailState extends ConsumerState<LessonDetailScreen> {
         ? '일지가'
         : '일지와 $photos이';
     if (!await confirm(
-      context,
-      '이 레슨 기록을 삭제할까요?',
-      '${shortLessonDate(r.shotAt)} 레슨의 $what 함께 삭제돼요. 회원 정보와 다른 레슨은 그대로 남아요.',
-      icon: Icons.delete_outline,
-      destructive: true,
-      warning: '삭제 후 되돌릴 수 없어요.',
-    )) {
+          context,
+          '이 레슨 기록을 삭제할까요?',
+          '${shortLessonDate(r.shotAt)} 레슨의 $what 함께 삭제돼요. 회원 정보와 다른 레슨은 그대로 남아요.',
+          icon: Icons.delete_outline,
+          destructive: true,
+          warning: '삭제 후 되돌릴 수 없어요.',
+        ) ||
+        !mounted) {
       return;
     }
     setState(() {
